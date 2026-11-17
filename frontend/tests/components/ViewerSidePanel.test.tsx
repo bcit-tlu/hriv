@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import ViewerSidePanel, { ViewerPanelToggle } from '../../src/components/ViewerSidePanel'
 import type { ViewerPanelTab } from '../../src/useViewerPanelState'
 
-function Example({ error = false }: { error?: boolean }) {
+function Example({ error = false, onShareView }: { error?: boolean; onShareView?: () => void }) {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<ViewerPanelTab>('inuksuks')
   return (
@@ -17,6 +17,7 @@ function Example({ error = false }: { error?: boolean }) {
         onTabChange={setTab}
         onClose={() => setOpen(false)}
         count={0}
+        onShareView={onShareView}
         inuksuks={
           error ? (
             <div role="alert">Unable to load Inuksuks.</div>
@@ -70,4 +71,27 @@ it('surfaces list loading errors without removing the panel controls', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Open viewer panel' }))
   expect(screen.getByRole('alert')).toHaveTextContent('Unable to load Inuksuks.')
   expect(screen.getByRole('button', { name: 'Close viewer panel' })).toBeEnabled()
+})
+it('places Shared View between Inuksuks and Details and invokes the existing copy action', () => {
+  const copy = vi.fn()
+  render(<Example onShareView={copy} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Open viewer panel' }))
+  expect(screen.getByRole('group', { name: 'Viewer panel content' }).textContent).toBeDefined()
+  const tabs = screen
+    .getByRole('group', { name: 'Viewer panel content' })
+    .querySelectorAll('button')
+  expect([...tabs].map((tab) => tab.getAttribute('aria-label'))).toEqual([
+    'Show Inuksuks',
+    'Show Shared View',
+    'Show image details',
+  ])
+  fireEvent.click(screen.getByRole('button', { name: 'Show Shared View' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Copy current view' }))
+  expect(copy).toHaveBeenCalledTimes(1)
+})
+it('disables copying when no view action is available', () => {
+  render(<Example />)
+  fireEvent.click(screen.getByRole('button', { name: 'Open viewer panel' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Show Shared View' }))
+  expect(screen.getByRole('button', { name: 'Copy current view' })).toBeDisabled()
 })

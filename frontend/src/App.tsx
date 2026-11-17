@@ -3062,16 +3062,18 @@ export default function App() {
                       </span>
                     </Tooltip>
                   )}
-                  <Tooltip title="Copy shareable link to clipboard">
-                    <Button
-                      variant="outlined"
-                      startIcon={<LinkIcon />}
-                      onClick={copyShareLink}
-                      sx={inactiveViewerActionSx}
-                    >
-                      Share View
-                    </Button>
-                  </Tooltip>
+                  {features?.inuksuks !== true && (
+                    <Tooltip title="Copy shareable link to clipboard">
+                      <Button
+                        variant="outlined"
+                        startIcon={<LinkIcon />}
+                        onClick={copyShareLink}
+                        sx={inactiveViewerActionSx}
+                      >
+                        Share View
+                      </Button>
+                    </Tooltip>
+                  )}
                 </Box>
               </Box>
 
@@ -3089,6 +3091,7 @@ export default function App() {
               >
                 <ImageViewer
                   inuksuksEnabled={features?.inuksuks === true}
+                  onShareView={copyShareLink}
                   key={selectedImage.id}
                   height={{ xs: '70vh', md: '100%' }}
                   tileSources={selectedImage.tileSources}

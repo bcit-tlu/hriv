@@ -122,8 +122,10 @@ limit is reached.
 
 ## Add an image to a collection
 
-While viewing an image, click **Add to Collection** (next to **Share View**)
-and pick one of your collections — or one owned by a program you teach in.
+While viewing an image, click **Add to Collection** and pick one of your collections
+— or one owned by a program you teach in. It sits next to **Share View**
+when the legacy viewer is active. With Inuksuks enabled, Add to Collection stays
+in the header and sharing moves to the right panel's **Shared View** link tab.
 Type in the filter box to narrow a long list.
 
 - The image is added to the end of the collection. If it is already there,

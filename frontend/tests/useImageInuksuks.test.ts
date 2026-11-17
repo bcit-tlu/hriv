@@ -26,6 +26,16 @@ describe('useImageInuksuks', () => {
     expect(result.current.items).toEqual([])
     expect(mocks.fetch).toHaveBeenNthCalledWith(2, 42)
   })
+  it('keeps own and instructor groups but excludes public views from all viewer consumers', async () => {
+    const instructor = { ...INUKSUK_FIXTURE, id: 8, source: 'instructor' as const }
+    const publicView = { ...INUKSUK_FIXTURE, id: 9, source: 'public' as const }
+    mocks.fetch.mockResolvedValue([INUKSUK_FIXTURE, instructor, publicView])
+    const { result } = renderHook(() => useImageInuksuks(42, true))
+    await waitFor(() => expect(result.current.items).toEqual([INUKSUK_FIXTURE, instructor]))
+    mocks.fetch.mockResolvedValue([publicView])
+    await act(() => result.current.reload())
+    expect(result.current.items).toEqual([])
+  })
   it('discards an old image response, hides old records immediately and surfaces failures', async () => {
     let resolve!: (value: unknown) => void
     mocks.fetch

@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import Box from '@mui/material/Box'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, within } from 'storybook/test'
 import ViewerSidePanel, { ViewerPanelToggle } from './ViewerSidePanel'
 import { ImageInuksuksList } from './ImageInuksuksDrawer'
 import { ImageDetailsContent } from './ImageDetailsDrawer'
 import { INUKSUK_FIXTURE } from './inuksukFixtures'
 import { useInuksukVisibilityPrefs } from '../useInuksukVisibilityPrefs'
 import type { ViewerPanelTab } from '../useViewerPanelState'
+
+const copyView = fn()
 
 function Example({
   initialOpen = false,
@@ -35,7 +37,7 @@ function Example({
         sx={{
           height: '100%',
           objectFit: 'cover',
-          width: { xs: '100%', sm: open ? 'calc(100% - 320px)' : '100%' },
+          width: { xs: '100%', sm: open ? 'calc(100% - 256px)' : '100%' },
         }}
       />
       {!open && (
@@ -50,6 +52,7 @@ function Example({
         onClose={() => setOpen(false)}
         panelId="example-panel"
         count={items.length}
+        onShareView={copyView}
         inuksuks={
           <ImageInuksuksList
             items={items}
@@ -115,6 +118,18 @@ export const Details: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Show image details' }))
     await expect(canvas.getByText('Dimensions:').parentElement).toHaveTextContent('4820 × 3210')
     await expect(canvas.getByRole('button', { name: 'Show image details' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  },
+}
+export const SharedView: Story = {
+  args: { initialOpen: true, initialTab: 'share' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Copy current view' }))
+    await expect(copyView).toHaveBeenCalled()
+    await expect(canvas.getByRole('button', { name: 'Show Shared View' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )

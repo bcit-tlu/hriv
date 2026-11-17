@@ -81,8 +81,8 @@ describe('SequenceCollectionViewer', () => {
     renderViewer({ inuksuksEnabled: true })
     const resize = lastViewerProps?.onViewerPanelWidthChange
     if (typeof resize !== 'function') throw new Error('Missing panel width callback')
-    act(() => resize(320))
-    expect(screen.getByTestId('sequence-nav-overlay')).toHaveStyle({ right: '320px' })
+    act(() => resize(256))
+    expect(screen.getByTestId('sequence-nav-overlay')).toHaveStyle({ right: '256px' })
     expect(lastViewerProps?.viewportControl).toBeNull()
     expect(lastViewerProps?.sidePanelDetails).toBeTruthy()
     act(() => resize(0))

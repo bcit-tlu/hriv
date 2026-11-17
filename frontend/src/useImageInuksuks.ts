@@ -14,7 +14,12 @@ export function useImageInuksuks(imageId: number | undefined, enabled: boolean) 
     if (!enabled || imageId == null) return Promise.resolve()
     return fetchImageInuksuks(imageId).then(
       (items) => {
-        if (token === generation.current.value) setState({ imageId, items, error: null })
+        if (token === generation.current.value)
+          setState({
+            imageId,
+            items: items.filter((item) => item.source === 'mine' || item.source === 'instructor'),
+            error: null,
+          })
       },
       (error) => {
         if (token === generation.current.value)

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import {
   Box,
+  Button,
   IconButton,
   Paper,
   SvgIcon,
@@ -11,7 +12,7 @@ import {
   Typography,
 } from '@mui/material'
 import { alpha } from '@mui/material/styles'
-import { CompassCalibration, InfoOutlined } from '@mui/icons-material'
+import { CompassCalibration, InfoOutlined, Link } from '@mui/icons-material'
 import { ViewerControlHints } from './ImageDetailsDrawer'
 import type { ViewerPanelTab } from '../useViewerPanelState'
 
@@ -81,6 +82,7 @@ export interface ViewerSidePanelProps {
   count: number
   inuksuks: ReactNode
   details?: ReactNode
+  onShareView?: () => void
 }
 
 export default function ViewerSidePanel({
@@ -92,6 +94,7 @@ export default function ViewerSidePanel({
   count,
   inuksuks,
   details,
+  onShareView,
 }: ViewerSidePanelProps) {
   const ref = useRef<HTMLElement>(null)
   useEffect(() => {
@@ -119,7 +122,7 @@ export default function ViewerSidePanel({
         top: 0,
         right: 0,
         bottom: 0,
-        width: { xs: open ? '100%' : 0, sm: open ? 320 : 0 },
+        width: { xs: open ? '100%' : 0, sm: open ? 256 : 0 },
         visibility: open ? 'visible' : 'hidden',
         overflow: 'hidden',
         zIndex: 30,
@@ -175,6 +178,11 @@ export default function ViewerSidePanel({
                   <CompassCalibration />
                 </Tooltip>
               </ToggleButton>
+              <ToggleButton disableRipple value="share" aria-label="Show Shared View">
+                <Tooltip title="Shared View">
+                  <Link />
+                </Tooltip>
+              </ToggleButton>
               <ToggleButton disableRipple value="details" aria-label="Show image details">
                 <Tooltip title="Image details">
                   <InfoOutlined />
@@ -188,26 +196,42 @@ export default function ViewerSidePanel({
             variant="body2"
             sx={{ px: 1.5, py: 0.75, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
           >
-            {tab === 'inuksuks' ? `Inuksuks (${count})` : 'Image details'}
+            {tab === 'inuksuks'
+              ? `Inuksuks (${count})`
+              : tab === 'share'
+                ? 'Shared View'
+                : 'Image details'}
           </Typography>
           <Box
             tabIndex={0}
             role="region"
-            aria-label={tab === 'inuksuks' ? 'Inuksuks list' : 'Image metadata'}
+            aria-label={
+              tab === 'inuksuks'
+                ? 'Inuksuks list'
+                : tab === 'share'
+                  ? 'Shared View'
+                  : 'Image metadata'
+            }
             sx={{
               flex: 1,
               minHeight: 0,
               overflowY: 'auto',
-              ...(tab === 'details' ? { px: 1.5, py: 1 } : {}),
+              ...(tab !== 'inuksuks' ? { px: 1.5, py: 1 } : {}),
             }}
           >
-            {tab === 'inuksuks'
-              ? inuksuks
-              : (details ?? (
-                  <Typography variant="caption" component="p" color="text.secondary">
-                    No details available.
-                  </Typography>
-                ))}
+            {tab === 'inuksuks' ? (
+              inuksuks
+            ) : tab === 'share' ? (
+              <Button startIcon={<Link />} onClick={onShareView} disabled={!onShareView}>
+                Copy current view
+              </Button>
+            ) : (
+              (details ?? (
+                <Typography variant="caption" component="p" color="text.secondary">
+                  No details available.
+                </Typography>
+              ))
+            )}
           </Box>
           <Box
             sx={{

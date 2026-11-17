@@ -8,6 +8,50 @@ import { parseCollectionIdParam, parseCollectionItemParam } from './collectionUt
 import type { Category, ImageItem } from './types'
 import { parseBoardLocation } from './boardUtils'
 
+export function copyViewLink(
+  url: string,
+  onCopied: () => void,
+  imageId?: number,
+  categoryId?: number,
+) {
+  const startedAt = performance.now()
+  const emitShareEvent = (outcome: 'success' | 'failure') => {
+    emitEvent({
+      event: 'image.share_selected',
+      action: 'share',
+      outcome,
+      duration_ms: Math.round(performance.now() - startedAt),
+      image_id: imageId,
+      category_id: categoryId,
+    })
+  }
+  const fallbackCopy = () => {
+    const input = document.createElement('input')
+    input.value = url
+    document.body.appendChild(input)
+    input.select()
+    const copied = document.execCommand('copy')
+    document.body.removeChild(input)
+    if (copied) {
+      onCopied()
+      emitShareEvent('success')
+      return
+    }
+    emitShareEvent('failure')
+  }
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        onCopied()
+        emitShareEvent('success')
+      })
+      .catch(() => fallbackCopy())
+  } else {
+    fallbackCopy()
+  }
+}
+
 interface ParsedShareableUrl {
   boardId?: number | null
   imageId: number | null
@@ -446,43 +490,12 @@ export function useShareableImageState(
   }, [selectedImage?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const copyShareLink = useCallback(() => {
-    const url = window.location.href
-    const startedAt = performance.now()
-    const emitShareEvent = (outcome: 'success' | 'failure') => {
-      emitEvent({
-        event: 'image.share_selected',
-        action: 'share',
-        outcome,
-        duration_ms: Math.round(performance.now() - startedAt),
-        image_id: selectedImage?.id,
-        category_id: selectedImage?.categoryId ?? undefined,
-      })
-    }
-    const fallbackCopy = () => {
-      const input = document.createElement('input')
-      input.value = url
-      document.body.appendChild(input)
-      input.select()
-      const copied = document.execCommand('copy')
-      document.body.removeChild(input)
-      if (copied) {
-        setSnackOpen(true)
-        emitShareEvent('success')
-        return
-      }
-      emitShareEvent('failure')
-    }
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard
-        .writeText(url)
-        .then(() => {
-          setSnackOpen(true)
-          emitShareEvent('success')
-        })
-        .catch(() => fallbackCopy())
-    } else {
-      fallbackCopy()
-    }
+    copyViewLink(
+      window.location.href,
+      () => setSnackOpen(true),
+      selectedImage?.id,
+      selectedImage?.categoryId ?? undefined,
+    )
   }, [selectedImage?.categoryId, selectedImage?.id])
 
   const clearImage = useCallback(() => {

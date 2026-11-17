@@ -85,10 +85,18 @@ the original Inuksuk. See [Collections](collections) for the viewer controls.
 ## Image and Sequence viewer panel
 
 When Inuksuks is enabled, use **Open viewer panel** at the image's top-right.
-Choose the compass for **Inuksuks**, or the info icon for **Image details**.
+Choose the compass for **Inuksuks**, the link icon for **Shared View**, or the info icon for **Image details**.
 The panel stays open until you choose **Close viewer panel**; it does not need
 pinning and canvas clicks do not retract it. Your open state and selected content
 carry across images, Sequence steps and reloads for your account.
+The panel is 256px wide on larger screens. Shared View's **Copy current view**
+copies the current image location, zoom and selection boxes; it replaces the old
+Share View button. In Sequence it creates a standalone image link at that view.
+With the feature disabled the original Share View control remains unchanged.
+
+Image, Sequence and Synchronized lists and image markers show only your own and
+Instructor Inuksuks (including instructor/admin or program-owned Boards).
+Find other users' public/shared views through **Boards & Inuksuks → Public & shared Boards**.
 
 On larger screens the image and minimap make room for the panel. On phones it
 covers the image until closed. The existing row and group **⋮** menus control
