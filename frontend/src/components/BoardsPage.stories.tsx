@@ -92,6 +92,11 @@ export const Basic: Story = {
     await expect(
       await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' }),
     ).toBeVisible()
+    const card = canvas
+      .getByRole('button', { name: 'Open Inuksuk: Rose window' })
+      .closest('[data-testid="inuksuk-card"]')!
+    await expect(card.getBoundingClientRect().width).toBe(234)
+    await expect(card.querySelector('img')!.getBoundingClientRect().height).toBe(96)
     await expect(
       canvas
         .getAllByRole('button', { name: /^Open Inuksuk:/ })

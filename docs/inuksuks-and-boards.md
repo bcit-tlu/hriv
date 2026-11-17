@@ -468,8 +468,8 @@ fetched in pages of 200 without the former recent-60 cap.
 The overview's outlined Select button is right-aligned on the Filter by row in both views.
 Each card shows the
 image's parent category below its title (`category_name`, null if unfiled).
-The heading uses the same h5/h1 typography as Collections. Inuksuk cards are 195px
-wide (25% wider than the previous 156px), with proportionally scaled 80px covers,
+The heading uses the same h5/h1 typography as Collections. Inuksuk cards are 234px
+wide (20% wider than the previous 195px), with proportionally scaled 96px covers,
 including inside Board dialogs. They reuse Collections' scope-pill component.
 The compass replaces the collection icon; category replaces the image count, with
 Uncategorized as the fallback. Top-right actions are Favourite (Star/StarBorder,

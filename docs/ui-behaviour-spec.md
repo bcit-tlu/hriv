@@ -1455,7 +1455,7 @@ selection MouseTracker ignores their presses.
   favourite/membership updates do not affect order. Filled stars use the primary accent.
   Both views show only personally owned Inuksuks, fetched in pages of 200. Cards
   show the image's parent category below the title, or Uncategorized when absent.
-  Cards are 195px wide with proportionally scaled 80px covers, including in Board dialogs.
+  Cards are 234px wide with proportionally scaled 96px covers, including in Board dialogs.
   Compass, title-row edit pencil and reused Collections scope pills follow Collection cards.
   Top-right Star/StarBorder favourite takes Collections' cover-picker position, beside Move/Save.
   The pencil opens the existing editor; Delete and Remove from this Board remain there.

@@ -808,12 +808,12 @@ export default function BoardsPage({
                 image={{ id: item.id, thumb: item.thumb }}
                 renewThumb={fetchInuksuk}
                 alt=""
-                sx={{ width: '100%', height: 80, display: 'block', objectFit: 'cover' }}
+                sx={{ width: '100%', height: 96, display: 'block', objectFit: 'cover' }}
               />
             ) : (
               <Box
                 sx={{
-                  height: 80,
+                  height: 96,
                   display: 'grid',
                   placeItems: 'center',
                   bgcolor: 'primary.main',
@@ -1439,7 +1439,7 @@ export default function BoardsPage({
           <>
             {view === 'cards' ? (
               <Box
-                sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 195px)', gap: 2 }}
+                sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 234px)', gap: 2 }}
               >
                 {filteredItems.map((item, index) => memberCard(item, index))}
               </Box>
@@ -1537,7 +1537,7 @@ export default function BoardsPage({
             {board && (
               <>
                 <Box
-                  sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 195px)', gap: 2 }}
+                  sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 234px)', gap: 2 }}
                 >
                   {board.inuksuks.map((item, index) => memberCard(item, index, true))}
                 </Box>

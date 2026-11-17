@@ -220,6 +220,10 @@ describe('BoardsPage', () => {
       .getByRole('button', { name: 'Open Inuksuk: Rose window' })
       .closest('[data-testid="inuksuk-card"]')!
     expect(card).not.toHaveStyle({ minHeight: '235px' })
+    expect(card.parentElement?.parentElement).toHaveStyle({
+      gridTemplateColumns: 'repeat(auto-fill, 234px)',
+    })
+    expect(card.querySelector('img')).toHaveStyle({ height: '96px' })
     expect(within(card).getByTestId('collection-visibility-chip')).toHaveTextContent('Private')
     expect(within(card).getByTestId('StarIcon')).toBeInTheDocument()
     expect(within(card).getByRole('button', { name: 'Edit Inuksuk: Rose window' })).toBeVisible()

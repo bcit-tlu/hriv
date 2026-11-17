@@ -61,7 +61,7 @@ The outlined **Select** button sits at the right of the Filter by row in both vi
 Both overview views are alphabetical by title, ignoring case. Favouriting or moving
 a view does not move its position; renaming places it at the new alphabetical position.
 Favourite stars are filled in the card's accent colour.
-Cards are 195px wide and use Collections-style compass/title/category/scope metadata.
+Cards are 234px wide with 96px thumbnails and content-fit height, and use Collections-style compass/title/category/scope metadata.
 Table shows title, category, scope, Boards, favourite and actions. Click a Board name
 in the table to open it. Views on multiple Board scopes show each scope pill.
 The top-right star toggles Favourite; the move icon opens **Move/Save to…**.
