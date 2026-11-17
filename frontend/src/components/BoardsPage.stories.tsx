@@ -153,7 +153,7 @@ export const ErrorState: Story = { args: { state: 'error' } }
 export const KeyboardReorder: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const handle = await canvas.findByRole('button', { name: 'Reorder Architecture inspiration' })
+    const handle = await canvas.findByRole('group', { name: 'Architecture inspiration' })
     handle.focus()
     await userEvent.keyboard('[Space][ArrowRight][Space]')
     await waitFor(() =>
@@ -170,7 +170,7 @@ export const ReadOnlyOwnedBoard: Story = {
   args: { readOnlyOwned: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const handle = await canvas.findByRole('button', { name: 'Reorder Architecture inspiration' })
+    const handle = await canvas.findByRole('group', { name: 'Architecture inspiration' })
     await expect(
       canvas.getByRole('button', { name: 'Open Board: Next studio project' }),
     ).toBeVisible()

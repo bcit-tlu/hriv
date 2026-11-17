@@ -1119,6 +1119,7 @@ export default function BoardsPage({
                 group="boards"
                 disabled={filtered || !reorderableBoards.some((b) => b.id === row.id)}
                 label={row.name}
+                hideHandle
               >
                 <DropArea
                   id={`save:${row.id}`}
@@ -1150,7 +1151,6 @@ export default function BoardsPage({
                         sx={{
                           px: 1,
                           py: 0.75,
-                          pr: reorderableBoards.some((b) => b.id === row.id) && !filtered ? 4 : 2,
                         }}
                         title={row.name}
                       >

@@ -88,6 +88,15 @@ function dropOnBoard(boardId: number) {
   } as unknown as DragEndEvent)
 }
 describe('BoardsPage', () => {
+  it('uses a Board chip surface without a grip and still opens on click', async () => {
+    const { onSelectBoard } = await setup()
+    const chip = screen.getByRole('group', { name: 'Architecture inspiration' })
+    expect(within(chip).queryByTestId('DragIndicatorIcon')).not.toBeInTheDocument()
+    fireEvent.click(
+      within(chip).getByRole('button', { name: 'Open Board: Architecture inspiration' }),
+    )
+    expect(onSelectBoard).toHaveBeenCalledWith(1)
+  })
   it('orders discovery, chip Boards, My Inuksuks and the filter bar like Collections', async () => {
     await setup()
     const link = screen.getByRole('button', { name: 'Public & shared Boards' })
@@ -462,9 +471,7 @@ describe('BoardsPage', () => {
       expect(
         screen.queryByRole('button', { name: `Reorder ${readOnly.name}` }),
       ).not.toBeInTheDocument()
-      expect(
-        screen.getByRole('button', { name: `Reorder ${BOARDS_FIXTURES[0].name}` }),
-      ).toBeVisible()
+      expect(screen.getByRole('group', { name: BOARDS_FIXTURES[0].name })).toBeVisible()
     },
   )
   it('renews an Inuksuk thumbnail via its own endpoint, not the image id', async () => {

@@ -41,6 +41,8 @@ remove filter chips or use Clear filters to reset. Each saved view shows its
 image's parent category under the title.
 The page heading matches Collections. Boards are rounded chips with a square cover
 and one-line name. Program-owned Boards remain in your row when you belong to that program.
+Drag an editable Board chip by its surface to reorder it; there is no grip icon.
+Clicking still opens the Board. Active filters disable Board reordering.
 Use **Public & shared Boards**, above that row, to list other people's Boards you can view in a dialog.
 Choose a Board to open its usual dialog and see its authorized saved views.
 The discovery list is independent of the overview filters.

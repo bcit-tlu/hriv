@@ -506,8 +506,9 @@ Board reorder applies only to editable owned Boards. Read-only program-owned
 Boards remain listed but have no drag handle and are omitted from reorder writes.
 They appear in the same compact row as other owned Boards. Board positions
 are stored globally, not per user; only the complete editable-owned subset is
-submitted on reorder. Board handles are hidden while filters are active so a
+submitted on reorder. Board surface dragging is disabled while filters are active so a
 filtered subset can never replace that complete order.
+Editable Board chips drag by their surfaces with no grip icon; clicking still opens them.
 These are isolated from Browse's
 near/far-half collision rules; see [drag-and-drop.md](drag-and-drop.md#boards-page-1771).
 Dragging an editable overview Inuksuk card onto another editable Board chip

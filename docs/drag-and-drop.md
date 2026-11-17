@@ -298,11 +298,11 @@ Notes: <…>
 
 `components/BoardsPage.tsx` owns a separate `DragDropProvider`. Browse's
 `SortableTileGrid` detectors, zones, priorities and activation logic are untouched.
-The Boards provider has two typed surfaces. Board chips keep their drag handles;
-Inuksuks use the card surface without a separate handle icon:
+The Boards provider has two typed surfaces. Board chips and Inuksuks both use
+their surfaces for dragging without a separate grip icon. Clicking still opens them:
 
 - `board-card` / `board:{id}`: editable owned Board tabs reorder within the row;
-  non-owned/read-only tabs have no handles. Filters hide Board handles so a
+  non-owned/read-only tabs cannot drag. Filters disable Board dragging so a
   subset cannot replace the complete owned order. That order and per-Board
   versions go to `PUT /boards/order`.
 - `board-member` / `item:{id}`: members sort in one flat Board group. The
@@ -322,7 +322,7 @@ cannot be drop targets. The Board dialog retains sortable member card surfaces i
 independently scrolling collage, without involving Browse's collision machinery.
 
 Sensors follow the existing policy: Pointer distance 8px, touch hold 250ms with
-5px tolerance, plus KeyboardSensor. Board chip handles activate Board sorting;
+5px tolerance, plus KeyboardSensor. Board chip surfaces activate Board sorting;
 member card surfaces activate member dragging. Clicks and icon actions below the
 activation threshold retain their normal behavior. Move/Save and the editor are
 the explicit alternatives to dragging. Cancelled
@@ -331,5 +331,5 @@ the dnd-kit projected source index. No Browse near/far-half split applies here.
 Failures retain the server-rendered order and 409s require explicit reload.
 
 Verify Board/member reorder,
-cross-Board save, keyboard handles, and touch scroll on the new surface before
+cross-Board save, keyboard surface activation, and touch scroll on the new surface before
 merge. The Browse feel-test contract above remains unchanged.

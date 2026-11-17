@@ -1435,6 +1435,7 @@ selection MouseTracker ignores their presses.
 
 - The page title uses Collections' h5 variant and h1 element exactly.
 - One short horizontally scrolling owned-Board row begins with New Board. Rounded,
+  editable chips reorder by surface drag without grip icons; clicking still opens a Board.
   outlined chips have a flush-left square cover/placeholder and single-line name. Read-only
   Boards stay visible, without drag handles or drop targets.
 - Public & shared Boards sits above that row and opens a dialog listing other authorized Boards independent
