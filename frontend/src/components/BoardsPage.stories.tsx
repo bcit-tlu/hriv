@@ -333,6 +333,9 @@ function rejectedDrop(name: string, message: string): NonNullable<Story['play']>
       expect(within(canvasElement.ownerDocument.body).getByText(message)).toBeVisible(),
     )
     await waitFor(() => expect(source).toHaveStyle({ opacity: '1' }))
+    await expect(within(canvasElement.ownerDocument.body).getByRole('alert')).toHaveClass(
+      'MuiAlert-filledInfo',
+    )
     await expect(writes).not.toHaveBeenCalled()
   }
 }

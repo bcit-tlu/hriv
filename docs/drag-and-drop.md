@@ -334,6 +334,10 @@ Chip eligibility always uses the API edit permission, without role exemptions.
 Item permissions, stale/missing Board or Inuksuk data, and busy/conflict guards also
 explain rejected drops. Cancelled drags remain silent and make no request.
 
+Drop notifications use the app's filled MUI Alert inside a bottom-centre Snackbar:
+successful saves are green/success, duplicate membership is info, and other refusals
+are warning. The close control and timeout dismiss it; click-away does not.
+
 Sensors follow the existing policy: Pointer distance 8px, touch hold 250ms with
 5px tolerance, plus KeyboardSensor. Board chip surfaces activate Board sorting;
 member card surfaces activate member dragging. Clicks and icon actions below the

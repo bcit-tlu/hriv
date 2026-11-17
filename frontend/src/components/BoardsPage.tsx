@@ -497,7 +497,12 @@ export default function BoardsPage({
   const [scopes, setScopes] = useState<string[]>([])
   const [owner, setOwner] = useState('any')
   const [discovery, setDiscovery] = useState<'shared' | 'all' | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{
+    message: string
+    severity: 'success' | 'info' | 'warning'
+  } | null>(null)
+  const notify = (message: string, severity: 'success' | 'info' | 'warning' = 'warning') =>
+    setNotice({ message, severity })
   const [boardMenu, setBoardMenu] = useState<HTMLElement | null>(null)
   const [favourites, setFavourites] = useState(false)
   const data = useBoardsData(boardId, favourites, enabled)
@@ -639,7 +644,7 @@ export default function BoardsPage({
     if (event.canceled || !source) return
     if (busy || conflict) {
       if (source.type === 'board-member' && target)
-        setNotice(
+        notify(
           conflict
             ? 'Reload latest changes before dropping Inuksuks.'
             : 'Wait for the current change to finish.',
@@ -663,35 +668,35 @@ export default function BoardsPage({
     } else if (source.type === 'board-member' && target) {
       const item = (board?.inuksuks ?? data.recent).find((row) => `item:${row.id}` === source.id)
       if (!item) {
-        setNotice('This Inuksuk is no longer available. Reload before saving.')
+        notify('This Inuksuk is no longer available. Reload before saving.')
         return
       }
       const key = String(target.id)
       if (key.startsWith('save:')) {
         const destination = data.boards.find((row) => row.id === Number(key.split(':')[1]))
         if (!destination) {
-          setNotice('This Board is no longer available. Reload before saving.')
+          notify('This Board is no longer available. Reload before saving.')
           return
         }
         if (!destination.permissions.can_edit) {
-          setNotice(`You can't add Inuksuks to ${destination.name}`)
+          notify(`You can't add Inuksuks to ${destination.name}`)
           return
         }
         if (item.board_ids.includes(destination.id)) {
-          setNotice(`Already in ${destination.name}`)
+          notify(`Already in ${destination.name}`, 'info')
           return
         }
         if (!item.permissions.can_edit) {
-          setNotice(`You can't add this Inuksuk to ${destination.name}`)
+          notify(`You can't add this Inuksuk to ${destination.name}`)
           return
         }
         void run(() => saveToBoard(item, destination.id, null)).then((ok) => {
-          if (ok) setNotice(`Saved to ${destination.name}`)
+          if (ok) notify(`Saved to ${destination.name}`, 'success')
         })
       } else if (board && canEdit) {
         const targetItem = board.inuksuks.find((row) => `item:${row.id}` === target.id)
         if (!targetItem) {
-          setNotice('This drop target is no longer available. Reload before reordering.')
+          notify('This drop target is no longer available. Reload before reordering.')
           return
         }
         const index = isSortable(source) ? source.index : board.inuksuks.indexOf(targetItem)
@@ -702,7 +707,7 @@ export default function BoardsPage({
           }),
         )
       } else if (board) {
-        setNotice(`You can't reorder Inuksuks in ${board.name}`)
+        notify(`You can't reorder Inuksuks in ${board.name}`)
       }
     }
   }
@@ -1590,9 +1595,20 @@ export default function BoardsPage({
       <Snackbar
         open={!!notice}
         autoHideDuration={5000}
-        onClose={() => setNotice(null)}
-        message={notice}
-      />
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ zIndex: 1500 }}
+        onClose={(_event, reason) => {
+          if (reason !== 'clickaway') setNotice(null)
+        }}
+      >
+        <Alert
+          variant="filled"
+          severity={notice?.severity ?? 'info'}
+          onClose={() => setNotice(null)}
+        >
+          {notice?.message}
+        </Alert>
+      </Snackbar>
       {edit && (edit === 'new' || board) && (
         <BoardEditDialog
           board={edit === 'edit' ? board : null}

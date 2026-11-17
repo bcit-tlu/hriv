@@ -511,6 +511,10 @@ describe('BoardsPage', () => {
       }),
     )
     expect(await screen.findByText('Saved to Next studio project')).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveClass('MuiAlert-filledSuccess')
+    expect(screen.getByRole('alert').parentElement).toHaveClass(
+      'MuiSnackbar-anchorOriginBottomCenter',
+    )
   })
   it.each([
     [2, "You can't add Inuksuks to Shared discoveries"],
@@ -520,6 +524,12 @@ describe('BoardsPage', () => {
     await setup()
     dropOnBoard(id)
     expect(await screen.findByText(message)).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveClass(
+      id === 1 ? 'MuiAlert-filledInfo' : 'MuiAlert-filledWarning',
+    )
+    expect(screen.getByRole('alert').parentElement).toHaveClass(
+      'MuiSnackbar-anchorOriginBottomCenter',
+    )
     expect(api.updateInuksuk).not.toHaveBeenCalled()
   })
   it('explains when the dropped Inuksuk cannot be edited', async () => {
