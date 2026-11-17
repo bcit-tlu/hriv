@@ -912,7 +912,11 @@ describe('BoardsPage', () => {
     expect(scope.parentElement).toHaveTextContent('Managed by Alex, Morgan')
     expect(screen.queryByRole('button', { name: 'Board options' })).not.toBeInTheDocument()
     expect(within(dialog).queryByRole('button', { name: 'Delete Board' })).not.toBeInTheDocument()
-    const sequence = within(dialog).getByRole('button', { name: 'Create Sequence Collection' })
+    expect(within(dialog).getByRole('heading', { name: 'Architecture inspiration' })).toHaveClass(
+      'MuiTypography-h6',
+    )
+    expect(within(dialog).getByText('(6 Inuksuks)')).toHaveClass('MuiTypography-body2')
+    const sequence = within(dialog).getByRole('button', { name: 'Create Collection' })
     expect(sequence).toHaveClass('MuiButton-outlined')
     expect(sequence.nextElementSibling).toBe(
       within(dialog).getByRole('button', { name: 'Close Board' }),
@@ -923,7 +927,7 @@ describe('BoardsPage', () => {
   it('disables sequence creation for an empty Board and respects the feature flag', async () => {
     vi.mocked(api.fetchBoard).mockResolvedValue(BOARDS_FIXTURES[1])
     const view = await setup(3)
-    expect(screen.getByRole('button', { name: 'Create Sequence Collection' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Create Collection' })).toBeDisabled()
     view.rerender(
       <BoardsPage
         enabled
@@ -934,9 +938,7 @@ describe('BoardsPage', () => {
         onOpenInuksuk={vi.fn()}
       />,
     )
-    expect(
-      screen.queryByRole('button', { name: 'Create Sequence Collection' }),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Create Collection' })).not.toBeInTheDocument()
   })
   it('hides management actions without permissions', async () => {
     vi.mocked(api.fetchBoard).mockResolvedValue(BOARDS_FIXTURES[2])
@@ -1087,7 +1089,7 @@ it('creates a Sequence from the Board source and navigates to it', async () => {
     onOpenCollection: open,
     categories: [makeCategory({ id: 10, label: 'Studies' })],
   })
-  fireEvent.click(screen.getByRole('button', { name: 'Create Sequence Collection' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Create Collection' }))
   fireEvent.change(screen.getByRole('textbox', { name: 'Collection name' }), {
     target: { value: 'Board sequence' },
   })

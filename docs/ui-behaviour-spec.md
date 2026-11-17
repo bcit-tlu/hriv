@@ -1480,7 +1480,8 @@ selection MouseTracker ignores their presses.
 - A Board opens in a large dialog, full-screen below the small breakpoint. Its
   fixed heading holds title, authorized edit pencil, count and Select. The exact
   Collections scope pill sits beside Managed by and the permitted owner-management
-  transfer icon. Create Sequence Collection is a right-aligned outlined button
+  transfer icon. The title uses Collections-style h6 typography; its count uses
+  smaller secondary body2 text. Create Collection is a right-aligned outlined button
   immediately left of Close, disabled for empty Boards. There is no Board overflow.
   Delete is in Edit Board, with a second confirmation and orphan-Inuksuk warning;
   version conflicts block mutations until an explicit reload. Its ordered collage

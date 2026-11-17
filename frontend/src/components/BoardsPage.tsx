@@ -1487,7 +1487,7 @@ export default function BoardsPage({
                 <Typography
                   id="board-dialog-title"
                   component="h2"
-                  variant="body2"
+                  variant="h6"
                   sx={{ minWidth: 0, overflowWrap: 'anywhere' }}
                 >
                   {board?.name ?? 'Board'}
@@ -1497,7 +1497,7 @@ export default function BoardsPage({
                     component="span"
                     variant="body2"
                     color="text.secondary"
-                    sx={{ ml: 0.5, fontSize: '0.9em' }}
+                    sx={{ ml: 0.5 }}
                   >
                     ({board.inuksuk_count} Inuksuks)
                   </Typography>
@@ -1525,7 +1525,7 @@ export default function BoardsPage({
                     })
                   }
                 >
-                  Create Sequence Collection
+                  Create Collection
                 </Button>
               )}
               <IconButton aria-label="Close Board" onClick={() => onSelectBoard(null)}>

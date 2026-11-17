@@ -589,8 +589,10 @@ snapshots because the old coordinates no longer describe the new source.
 Boards now offer a Select toolbar: any selected Inuksuks can seed a Sequence,
 and 2–4 can seed a Synchronized Collection. Both reuse the existing collection
 form and Add to Collection destination dialog. Board headers create
-ordered Sequences directly, while the collection Manage dialog can stage a
+ordered Sequences directly through **Create Collection**, while the collection Manage dialog can stage a
 Board into its draft.
+The Board dialog title uses Collections-style h6 typography, with its Inuksuk count
+in smaller secondary body2 text; the action still creates a Sequence Collection.
 Selected views follow the displayed Board member order. Click order does not change
 the resulting Collection sequence.
 

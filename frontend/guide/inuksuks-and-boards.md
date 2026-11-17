@@ -80,11 +80,12 @@ info for an existing link and warning for other refusals.
 
 Click a Board tab to open its large dialog (full-screen on a phone). The heading
 keeps its title, scope, count and controls visible while the saved views scroll.
+The title is larger than its smaller secondary Inuksuk count, matching Collections.
 The Collections-style scope pill sits beside **Managed by {owner names}**; its
 transfer icon opens owner management when permitted. The pencil opens Edit Board,
 where **Delete Board** sits below the fields. It requires confirmation and warns
 that Inuksuks left without a Board will be permanently deleted. Conflicts require
-Reload latest before saving or deleting. **Create Sequence Collection** is an
+Reload latest before saving or deleting. **Create Collection** is an
 outlined button just left of Close (disabled for an empty Board). There is no Board
 **⋮** menu. Reorder cards by dragging them to arrange
 the study. **Select**, at the right of the collage toolbar, enables Collection
@@ -102,7 +103,7 @@ Boards and Inuksuks you can view.
 
 ## Turn saved views into a Collection
 
-Use a Board's **Create Sequence Collection** action to make an ordered
+Use a Board's **Create Collection** action to make an ordered
 walkthrough. In **Select** mode, select any number of cards for a Sequence, or 2–4
 cards for a Synchronized comparison. You can also add selected views to an existing
 Collection, subject to that Collection's limits and your editing permissions.

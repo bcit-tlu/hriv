@@ -155,9 +155,14 @@ export const SelectedBoard: Story = {
     await expect(
       within(dialog).queryByRole('button', { name: 'Board options' }),
     ).not.toBeInTheDocument()
-    await expect(
-      within(dialog).getByRole('button', { name: 'Create Sequence Collection' }),
-    ).toHaveClass('MuiButton-outlined')
+    await expect(within(dialog).getByRole('button', { name: 'Create Collection' })).toHaveClass(
+      'MuiButton-outlined',
+    )
+    const title = within(dialog).getByRole('heading', { name: 'Architecture inspiration' })
+    const count = within(dialog).getByText('(6 Inuksuks)')
+    await expect(parseFloat(getComputedStyle(title).fontSize)).toBeGreaterThan(
+      parseFloat(getComputedStyle(count).fontSize),
+    )
     await waitFor(() =>
       expect(
         within(dialog).getByRole('button', { name: 'Open Inuksuk: Rose window' }),
@@ -193,9 +198,7 @@ export const NewlyCreatedBoard: Story = {
     await expect(
       within(dialog).getByRole('group', { name: 'Board scope and owners' }),
     ).toHaveTextContent('Managed by Alex')
-    await expect(
-      within(dialog).getByRole('button', { name: 'Create Sequence Collection' }),
-    ).toBeDisabled()
+    await expect(within(dialog).getByRole('button', { name: 'Create Collection' })).toBeDisabled()
   },
 }
 export const Favourites: Story = {
