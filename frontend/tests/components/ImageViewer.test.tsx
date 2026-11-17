@@ -388,8 +388,8 @@ import { INUKSUK_FIXTURE } from '../../src/components/inuksukFixtures'
 import type { InuksukFormDialogProps } from '../../src/components/InuksukFormDialog'
 const CREATED_INUKSUK = { ...INUKSUK_FIXTURE, id: 99, title: 'New saved view' }
 vi.mock('../../src/components/InuksukFormDialog', () => ({
-  default: ({ view, item, onChanged, onClose }: InuksukFormDialogProps) => (
-    <div role="dialog">
+  default: ({ view, item, onChanged, onClose, inline }: InuksukFormDialogProps) => (
+    <div role={inline ? 'form' : 'dialog'} aria-label={inline ? 'Edit Inuksuk' : 'Add Inuksuk'}>
       <span>
         {JSON.stringify({ x: view.x, y: view.y, zoom: view.zoom, rotation: view.rotation })}
       </span>
@@ -840,7 +840,7 @@ describe('Inuksuk viewer tool', () => {
     fireEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
     fireEvent.click(canvas.getByRole('menuitem', { name: 'Edit' }))
-    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(within(viewer().container).getByRole('form', { name: 'Edit Inuksuk' })).toBeDefined()
     expect(apiMocks.fetchImageInuksuks).toHaveBeenCalledTimes(1)
     fireEvent.click(within(drawer).getByRole('button', { name: 'Close viewer panel' }))
     expect(onOpenChange).toHaveBeenLastCalledWith(0)
@@ -910,18 +910,52 @@ describe('Inuksuk viewer tool', () => {
       const marker = await within(viewer().container).findByRole('button', {
         name: 'View Inuksuk: Rose window',
       })
+      const canvas = within(viewer().container)
       fireEvent.click(marker)
       expect(viewer().container).toContainElement(
         within(viewer().container).getByRole('region', { name: 'Inuksuk information' }),
       )
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
       fireEvent.click(within(viewer().container).getByRole('button', { name: 'Edit Rose window' }))
-      expect(screen.getByText('Editing Inuksuk 7')).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: action + ' Inuksuk' }))
+      expect(canvas.getByText('Editing Inuksuk 7')).toBeDefined()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(canvas.getByRole('region', { name: 'Inuksuk information' })).toContainElement(
+        canvas.getByRole('form', { name: 'Edit Inuksuk' }),
+      )
+      fireEvent.click(canvas.getByRole('button', { name: action + ' Inuksuk' }))
       await waitFor(() => expect(apiMocks.fetchImageInuksuks).toHaveBeenCalledTimes(2))
       expect(apiMocks.fetchImageInuksuks).toHaveBeenLastCalledWith(42)
     },
   )
+  it('dismisses marker information and selection on outside presses, and opens drawer edits in place', async () => {
+    apiMocks.fetchImageInuksuks.mockResolvedValue([INUKSUK_FIXTURE])
+    render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
+    const marker = await within(viewer().container).findByRole('button', {
+      name: 'View Inuksuk: Rose window',
+    })
+    const canvas = within(viewer().container)
+    fireEvent.click(marker)
+    expect(marker).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.pointerDown(document.body)
+    expect(canvas.queryByRole('region', { name: 'Inuksuk information' })).toBeNull()
+    expect(marker).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(within(viewer().container).getByRole('button', { name: 'Open viewer panel' }))
+    const drawer = screen.getByRole('complementary')
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }))
+    const card = canvas.getByRole('region', { name: 'Inuksuk information' })
+    expect(card).toContainElement(canvas.getByRole('form', { name: 'Edit Inuksuk' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(marker).toHaveAttribute('aria-pressed', 'true')
+    expect(viewer().viewport.panTo).toHaveBeenCalledWith(
+      expect.objectContaining({ x: 0.46, y: 0.29 }),
+      false,
+    )
+    fireEvent.pointerDown(document.body)
+    expect(canvas.getByRole('region', { name: 'Inuksuk information' })).toBe(card)
+    fireEvent.click(marker)
+    expect(card).toContainElement(canvas.getByRole('form', { name: 'Edit Inuksuk' }))
+  })
 })
 
 const setViewportAtHome = (v: MockViewer) => {

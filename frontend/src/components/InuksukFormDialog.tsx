@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Collapse from '@mui/material/Collapse'
 import Paper from '@mui/material/Paper'
@@ -7,12 +7,16 @@ import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Checkbox from '@mui/material/Checkbox'
+import CheckBox from '@mui/icons-material/CheckBox'
+import CheckBoxOutlineBlank from '@mui/icons-material/CheckBoxOutlineBlank'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
+import Star from '@mui/icons-material/Star'
+import StarBorder from '@mui/icons-material/StarBorder'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -45,6 +49,8 @@ export interface InuksukFormDialogProps {
   onTitleChange?: (title: string) => void
   initialDelete?: boolean
   onRemoveFromBoard?: () => void
+  inline?: boolean
+  onEscape?: () => void
 }
 function storageKey(userId: number) {
   return `hrivpref:inuksuk:lastBoard:${userId}`
@@ -72,10 +78,12 @@ export default function InuksukFormDialog({
   placement = false,
   onTitleChange,
   initialDelete = false,
+  inline = false,
+  onEscape,
 }: InuksukFormDialogProps) {
   const [baseline, setBaseline] = useState<api.InuksukConflict | null>(item)
   const [title, setTitle] = useState(item?.title ?? (placement ? 'New Inuksuk' : ''))
-  const [moreOptions, setMoreOptions] = useState(!placement)
+  const [moreOptions, setMoreOptions] = useState(!placement && !inline)
   const [description, setDescription] = useState(item?.description ?? '')
   const [favourite, setFavourite] = useState(item?.favourite ?? false)
   const [boards, setBoards] = useState<ApiBoardSummary[]>([])
@@ -88,8 +96,24 @@ export default function InuksukFormDialog({
   const [conflict, setConflict] = useState<api.InuksukConflict | null>(null)
   const [creatingBoard, setCreatingBoard] = useState(false)
   const [boardName, setBoardName] = useState('')
+  const [boardQuery, setBoardQuery] = useState('')
+  const [boardsMenuOpen, setBoardsMenuOpen] = useState(false)
+  const boardsDescriptionId = useId()
+  const deleteTitleId = useId()
   const [confirmDelete, setConfirmDelete] = useState(initialDelete)
   const editable = !baseline || baseline.permissions.can_edit
+
+  useEffect(() => {
+    if (!inline) return
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || confirmDelete) return
+      event.stopPropagation()
+      if (!busy) (onEscape ?? onClose)()
+    }
+    const document = container?.ownerDocument ?? window.document
+    document.addEventListener('keydown', escape)
+    return () => document.removeEventListener('keydown', escape)
+  }, [inline, busy, container, onClose, onEscape, confirmDelete])
 
   useEffect(() => {
     let cancelled = false
@@ -141,12 +165,12 @@ export default function InuksukFormDialog({
         .catch((err) => setError(api.userMessage(err, 'Unable to load this Board.')))
     }
   }
-  const createBoard = async () => {
-    if (!boardName.trim()) return
+  const createBoard = async (name = boardName) => {
+    if (!name.trim()) return
     setBusy(true)
     setError(null)
     try {
-      const board = await services.createBoard({ name: boardName.trim(), visibility: 'private' })
+      const board = await services.createBoard({ name: name.trim(), visibility: 'private' })
       setBoards((previous) => [...previous, board])
       setDetails((previous) => ({ ...previous, [board.id]: board }))
       setAssignments((previous) => [...previous, { board_id: board.id }])
@@ -201,7 +225,10 @@ export default function InuksukFormDialog({
       setError(
         err instanceof api.ApiError && err.status === 409
           ? 'This Inuksuk changed since you opened it. Reload the current values before saving again.'
-          : api.userMessage(err, 'Unable to save Inuksuk.'),
+          : api.userMessage(
+              err,
+              deleting ? 'Unable to delete Inuksuk.' : 'Unable to save Inuksuk.',
+            ),
       )
     } finally {
       setBusy(false)
@@ -219,17 +246,79 @@ export default function InuksukFormDialog({
     setLoading(true)
   }
   const selected = boards.filter((board) => assignments.some((link) => link.board_id === board.id))
+  const selectedText =
+    selected
+      .slice(0, 2)
+      .map((board) => board.name)
+      .join(', ') + (selected.length > 2 ? ` +${selected.length - 2}` : '')
+  const matchingBoards = boards
+    .filter((board) =>
+      board.name.toLocaleLowerCase().includes(boardQuery.trim().toLocaleLowerCase()),
+    )
+    .sort(
+      (a, b) => a.name.toLocaleLowerCase().localeCompare(b.name.toLocaleLowerCase()) || a.id - b.id,
+    )
   const missingDetails = assignments.some((link) => !details[link.board_id])
+  const errorAlert = error && (
+    <Alert
+      severity="error"
+      action={
+        conflict ? (
+          <Button size="small" color="inherit" onClick={reloadConflict}>
+            Reload current
+          </Button>
+        ) : undefined
+      }
+    >
+      {error}
+    </Alert>
+  )
   const content = (
     <>
       <DialogTitle
+        component="div"
         variant="subtitle2"
-        sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1.25 }}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.5,
+          px: inline ? 0 : 2,
+          py: inline ? 0 : 1.25,
+          mb: inline ? 1 : 0,
+        }}
       >
-        <CompassCalibration color="primary" fontSize="small" />
-        {baseline ? (editable ? 'Edit Inuksuk' : 'Inuksuk details') : 'Save a view'}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1, minWidth: 0 }}>
+          <CompassCalibration color="primary" fontSize="small" />
+          <Typography
+            component="h2"
+            variant="subtitle2"
+            sx={{ overflowWrap: 'anywhere', minWidth: 0 }}
+          >
+            {inline
+              ? baseline?.title
+              : baseline
+                ? editable
+                  ? 'Edit Inuksuk'
+                  : 'Inuksuk details'
+                : 'Add Inuksuk'}
+          </Typography>
+        </Box>
+        {editable && (
+          <Tooltip title={favourite ? 'Remove favourite' : 'Add favourite'}>
+            <IconButton
+              size="small"
+              aria-label="Favourite"
+              aria-pressed={favourite}
+              disabled={busy}
+              onClick={() => setFavourite(!favourite)}
+              color={favourite ? 'primary' : 'default'}
+            >
+              {favourite ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+        )}
       </DialogTitle>
-      <DialogContent sx={{ px: 2 }}>
+      <DialogContent sx={{ px: inline ? 0 : 2 }}>
         {baseline && !loading && !boardsLoaded && (
           <Alert severity="error" sx={{ mb: 2 }}>
             Existing Board assignments could not be loaded. Close and reopen this dialog before
@@ -237,25 +326,12 @@ export default function InuksukFormDialog({
           </Alert>
         )}
         <Stack spacing={1} sx={{ pt: 1 }}>
-          {!placement && (
+          {!placement && !inline && (
             <Typography variant="caption" component="p" color="text.secondary">
               Keep this exact position, zoom and rotation on your Boards.
             </Typography>
           )}
-          {error && (
-            <Alert
-              severity="error"
-              action={
-                conflict ? (
-                  <Button size="small" color="inherit" onClick={reloadConflict}>
-                    Reload current
-                  </Button>
-                ) : undefined
-              }
-            >
-              {error}
-            </Alert>
-          )}
+          {!confirmDelete && errorAlert}
           <TextField
             label="Title"
             required
@@ -274,21 +350,77 @@ export default function InuksukFormDialog({
           />
           {editable ? (
             <>
-              <Autocomplete
+              <Autocomplete<ApiBoardSummary, true>
                 size="small"
                 slotProps={{ popper: { container } }}
                 multiple
-                options={boards}
+                disableCloseOnSelect
+                open={boardsMenuOpen}
+                onOpen={() => {
+                  setBoardsMenuOpen(true)
+                }}
+                onClose={() => {
+                  setBoardsMenuOpen(false)
+                  setBoardQuery('')
+                }}
+                inputValue={boardQuery}
+                onInputChange={(_event, value, reason) => {
+                  if (reason === 'input') setBoardQuery(value)
+                }}
+                renderTags={() =>
+                  boardsMenuOpen ? null : (
+                    <Box
+                      component="span"
+                      id={boardsDescriptionId}
+                      sx={{
+                        maxWidth: 'calc(100% - 30px)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {selectedText}
+                    </Box>
+                  )
+                }
+                options={matchingBoards}
+                filterOptions={(options) => options}
                 value={selected}
                 loading={loading}
                 disabled={busy || loading}
                 getOptionLabel={(board) => board.name}
                 isOptionEqualToValue={(a, b) => a.id === b.id}
                 onChange={(_event, value) => chooseBoards(value)}
+                renderOption={({ key, ...props }, option, state) => (
+                  <li key={key} {...props}>
+                    <Box
+                      component="span"
+                      aria-hidden="true"
+                      sx={{
+                        display: 'inline-flex',
+                        p: 1,
+                        color: state.selected ? 'primary.main' : 'text.secondary',
+                      }}
+                    >
+                      {state.selected ? (
+                        <CheckBox fontSize="small" />
+                      ) : (
+                        <CheckBoxOutlineBlank fontSize="small" />
+                      )}
+                    </Box>
+                    {option.name}
+                  </li>
+                )}
                 renderInput={(params) => (
                   <TextField
                     {...params}
                     label="Boards"
+                    slotProps={{
+                      htmlInput: {
+                        ...params.inputProps,
+                        'aria-describedby': `${params.id}-helper-text ${boardsDescriptionId}`,
+                      },
+                    }}
                     required
                     helperText={
                       loading
@@ -306,6 +438,7 @@ export default function InuksukFormDialog({
                     label="New private Board name"
                     size="small"
                     value={boardName}
+                    autoFocus
                     disabled={busy}
                     onChange={(event) => setBoardName(event.target.value)}
                     slotProps={{ htmlInput: { maxLength: 255 } }}
@@ -321,9 +454,9 @@ export default function InuksukFormDialog({
               ) : (
                 <Button
                   size="small"
+                  disabled={busy}
                   onClick={() => setCreatingBoard(true)}
                   sx={{ alignSelf: 'flex-start' }}
-                  disabled={busy || loading}
                 >
                   + Create new board
                 </Button>
@@ -334,7 +467,7 @@ export default function InuksukFormDialog({
               Saved on {baseline?.board_ids.length} Board(s). Only its owners can edit this Inuksuk.
             </Typography>
           )}
-          {placement && (
+          {(placement || inline) && (
             <Button
               size="small"
               aria-expanded={moreOptions}
@@ -355,22 +488,10 @@ export default function InuksukFormDialog({
               onChange={(event) => setDescription(event.target.value)}
               disabled={busy || !editable}
             />
-            <FormControlLabel
-              control={
-                <Checkbox
-                  size="small"
-                  checked={favourite}
-                  disabled={busy || !editable}
-                  onChange={(event) => setFavourite(event.target.checked)}
-                />
-              }
-              label="Favourite"
-              slotProps={{ typography: { variant: 'caption' } }}
-            />
           </Collapse>
         </Stack>
       </DialogContent>
-      <DialogActions sx={{ px: 2, py: 1 }}>
+      <DialogActions sx={{ px: inline ? 0 : 2, py: 1 }}>
         {onRemoveFromBoard && (
           <Button
             size="small"
@@ -386,9 +507,9 @@ export default function InuksukFormDialog({
             size="small"
             color="error"
             disabled={busy || !!conflict}
-            onClick={() => (confirmDelete ? void persist(true) : setConfirmDelete(true))}
+            onClick={() => setConfirmDelete(true)}
           >
-            {confirmDelete ? 'Confirm delete' : 'Delete'}
+            Delete
           </Button>
         )}
         <Box sx={{ flex: 1 }} />
@@ -410,17 +531,27 @@ export default function InuksukFormDialog({
             }
             onClick={() => void persist()}
           >
-            {busy ? 'Saving…' : baseline ? 'Save changes' : placement ? 'Save' : 'Save to Board'}
+            {busy
+              ? 'Saving…'
+              : inline || placement
+                ? 'Save'
+                : baseline
+                  ? 'Save changes'
+                  : 'Save to Board'}
           </Button>
         )}
       </DialogActions>
     </>
   )
-  return placement ? (
+  const form = inline ? (
+    <Box role="form" aria-label="Edit Inuksuk" sx={formSx}>
+      {content}
+    </Box>
+  ) : placement ? (
     createPortal(
       <Paper
         role="dialog"
-        aria-label="Save a view"
+        aria-label="Add Inuksuk"
         aria-modal={false}
         data-hriv-canvas-ui
         elevation={8}
@@ -448,5 +579,41 @@ export default function InuksukFormDialog({
     >
       {content}
     </Dialog>
+  )
+  return (
+    <>
+      {form}
+      {baseline?.permissions.can_delete && confirmDelete && (
+        <Dialog
+          open
+          container={container}
+          data-hriv-canvas-ui
+          aria-labelledby={deleteTitleId}
+          onClose={busy ? undefined : () => setConfirmDelete(false)}
+        >
+          <DialogTitle id={deleteTitleId}>Delete Inuksuk?</DialogTitle>
+          <DialogContent>
+            {errorAlert}
+            <Typography>
+              “{baseline.title}” will be permanently deleted from all its Boards. This cannot be
+              undone.
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button disabled={busy} onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+            <Button
+              color="error"
+              variant="contained"
+              disabled={busy || !!conflict}
+              onClick={() => void persist(true)}
+            >
+              Delete
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
+    </>
   )
 }

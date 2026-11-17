@@ -216,6 +216,13 @@ describe('ImageInuksuksDrawer', () => {
     const edit = vi.fn()
     render(<Example onSelect={select} onEdit={edit} />)
     fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (4)' }))
+    expect(screen.queryByRole('heading', { name: /^Inuksuks \(/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'My Inuksuks (2)' })).toHaveClass(
+      'MuiTypography-body2',
+    )
+    expect(screen.getByRole('heading', { name: 'Instructor Inuksuks (1)' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Public Inuksuks (1)' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'My Inuksuks' })).toHaveAccessibleDescription('(2)')
     expect(screen.getByRole('button', { name: 'My Inuksuks' })).toHaveAttribute(
       'aria-expanded',
       'true',
@@ -264,12 +271,22 @@ describe('ImageInuksuksDrawer', () => {
       'aria-checked',
       'true',
     )
+    expect(
+      within(screen.getByRole('menuitemcheckbox', { name: 'Rose window labels' })).getByTestId(
+        'LabelOffIcon',
+      ),
+    ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Rose window labels' }))
     fireEvent.click(screen.getByRole('button', { name: 'My Inuksuks options' }))
     expect(screen.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' })).toHaveAttribute(
       'aria-checked',
       'mixed',
     )
+    expect(
+      within(screen.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' })).getByTestId(
+        'LabelIcon',
+      ),
+    ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' }))
     openOptions('My Inuksuks')
     expect(screen.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' })).toHaveAttribute(

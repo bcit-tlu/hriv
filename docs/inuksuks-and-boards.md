@@ -311,10 +311,12 @@ existing dirty-draft/discard flow, and captures OSD viewport x/y, zoom and
 rotation without converting to image pixels. Placement stays armed after saving;
 toggle the compass or press Escape without a draft to disarm it. Normal drag,
 scroll and pinch navigation remain available. Only OSD quick clicks/taps place.
-A preview marker and non-modal **Save a view** panel appear immediately at the
+A preview marker and non-modal **Add Inuksuk** panel appear immediately at the
 top-right. Title is selected for typing; choose a required Board (the last used
-editable Board is remembered), or create one inline. Description and Favourite
-are under collapsed **More options**. Save keeps placement armed; Cancel or
+editable Board is remembered and visible before opening the menu), or create one inline.
+Description is under collapsed **More options**; Favourite is a tooltip-labelled
+outlined/filled star toggle at the title row's right with `aria-pressed`.
+Save keeps placement armed; Cancel or
 Escape removes the draft first. Only one unsaved placement is open at a time.
 If a new point would sit beneath the panel, the viewer pans it clear of the panel.
 
@@ -330,8 +332,20 @@ markers are hidden. The drawer's shared visibility preferences drive the
 viewer layer directly, without separate viewer-level overrides. Clicking a marker smoothly restores its
 saved pan/zoom/rotation, highlights it and opens a non-modal information card.
 The card shows title, optional description, visible Board names and favourite
-state. Only authorized editors see the pencil, which opens the full existing
-OCC-protected edit form. Its close X dismisses the card without editing.
+state, with the Inuksuk icon left of the title and pencil immediately to its right.
+Authorized users can toggle the view-mode star through the versioned API; conflicts
+require Reload current. It has no close X: outside pointer presses deselect and dismiss it; Escape
+also closes it. Other marker presses select that marker instead. Only authorized
+editors see the pencil, which turns the card itself into the OCC-protected edit
+form (title, Boards, favourite star, Save/Cancel and permitted Delete). Description
+starts collapsed under More options, including existing text, without auto-expansion.
+Delete opens a secondary confirmation dialog; cancelling it retains the editor draft.
+Drawer row Edit selects/pans to the Inuksuk, focuses its row and
+opens that same in-place editor, not a central dialog. Cancel restores view mode.
+Outside presses keep the editor open, whether changed or not; other markers/rows
+do not replace an open editor. Use Save/Cancel or explicit Escape (cancel and close)
+first. Clicks within the portalled Boards menu never discard the edit. This applies
+to single-image, Sequence and Synchronized viewers; BoardsPage keeps its modal editor.
 
 Flip remains a presentation setting, not a saved coordinate transform.
 Placement unmirrors screen x before converting to viewport coordinates;
@@ -349,10 +363,16 @@ other mutations send body versions.
 
 `InuksukFormDialog` requires a nonblank title and at least one editable Board.
 The multi-picker only lists `permissions.can_edit` Boards. Selected Boards retain their existing membership when editing. Other Boards' links are preserved by the backend assignment
-contract. **+ Create new board** always creates a private Board and selects
-it. The last successfully used Board is remembered under the user-scoped
+contract. The searchable checkbox menu sorts names case-insensitively, with stable
+ID ties. There are no selected chips: its closed field shows names as text (first
+two, then `+N`). The separate **+ Create new board** link below the menu opens an
+inline name field and Create Board action, creating and selecting a private,
+name-only Board. Empty names disable creation; failures preserve the entered name.
+The last successfully used Board is remembered under the user-scoped
 `hrivpref:inuksuk:lastBoard:<userId>` localStorage key, validated against the
 editable list on the next create; blocked storage is optional, not an error.
+Drawer and viewer-panel lists omit the redundant Inuksuks total heading. Each
+body2 group heading shows its saved-view count in parentheses, excluding drafts.
 
 Title, description, favourite and Board assignments are editable according
 to API permissions; other viewers get read-only details. Delete requires
