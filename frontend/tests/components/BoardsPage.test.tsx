@@ -100,6 +100,7 @@ describe('BoardsPage', () => {
     expect(screen.queryByRole('button', { name: 'Graph view' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Drag Rose window' })).not.toBeInTheDocument()
     const card = screen.getAllByTestId('inuksuk-card')[0]
+    expect(card).not.toHaveStyle({ minHeight: '235px' })
     expect(within(card).getByTestId('collection-visibility-chip')).toHaveTextContent('Private')
     expect(within(card).getByTestId('StarIcon')).toBeInTheDocument()
     expect(within(card).getByRole('button', { name: 'Edit Inuksuk: Rose window' })).toBeVisible()

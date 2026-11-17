@@ -743,11 +743,7 @@ export default function BoardsPage({
       sortable={inBoard}
       label={item.title}
     >
-      <Card
-        elevation={2}
-        data-testid="inuksuk-card"
-        sx={{ position: 'relative', height: '100%', minHeight: 235 }}
-      >
+      <Card elevation={2} data-testid="inuksuk-card" sx={{ position: 'relative', height: '100%' }}>
         <Box sx={{ position: 'relative' }}>
           <CardActionArea
             onClick={() => (selecting ? toggleSelected(item.id) : onOpenInuksuk(item))}
