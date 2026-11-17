@@ -113,7 +113,7 @@ export const LongNote: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const showMore = canvas.getByRole('button', { name: 'Show full note' })
+    const showMore = canvas.getByRole('button', { name: 'Show full description' })
     await userEvent.click(showMore)
     const dialog = await canvas.findByRole('dialog', { name: 'Notes' })
     await expect(within(dialog).getByText(/stained-glass windows/)).toBeInTheDocument()

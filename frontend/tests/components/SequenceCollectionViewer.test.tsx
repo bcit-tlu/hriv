@@ -573,9 +573,9 @@ describe('caption note', () => {
     expect(noteEl.compareDocumentPosition(position) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('offers no "Show full note" control without a note', () => {
+  it('offers no "Show full description" control without a note', () => {
     renderViewer()
-    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show full description' })).not.toBeInTheDocument()
   })
 
   it('treats a whitespace-only note as absent', () => {
@@ -584,15 +584,15 @@ describe('caption note', () => {
         images: [makeImage({ id: 1, name: 'Slice A', description: '  \n  ' })],
       }),
     })
-    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
-    expect(screen.queryByText(/^Notes:/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show full description' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Description:/)).not.toBeInTheDocument()
   })
 
   it('opens a dialog inside the viewer with the full multi-line note on overflow', () => {
     stubOverflow()
     renderViewer({ collection: noted() })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show full description' }))
     const viewer = screen.getByTestId('image-viewer')
     const dialog = within(viewer).getByRole('dialog', { name: 'Notes' })
     expect(within(dialog).getByText(/Fracture line/).textContent).toContain(
@@ -1021,7 +1021,7 @@ describe('annotation and overlay editing (#1863)', () => {
         }),
         canEditContent: true,
       })
-      fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Show full description' }))
       const viewer = screen.getByTestId('image-viewer')
       expect(within(viewer).getByRole('dialog', { name: 'Notes' })).toBeInTheDocument()
 

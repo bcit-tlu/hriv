@@ -48,9 +48,9 @@ describe('ImageCaptionRow', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows a visible "Notes:" label and the flattened note', () => {
+  it('shows a visible "Description:" label and the flattened note', () => {
     render(<ImageCaptionRow name="Slice A" note={'Line one.\nLine two.'} onShowNote={vi.fn()} />)
-    expect(screen.getByText('Notes:')).toBeInTheDocument()
+    expect(screen.getByText('Description:')).toBeInTheDocument()
     expect(screen.getByText('Line one. Line two.')).toBeInTheDocument()
   })
 
@@ -73,7 +73,7 @@ describe('ImageCaptionRow', () => {
 
   it('treats a whitespace-only note as absent', () => {
     render(<ImageCaptionRow name="Slice A" note={'  \n  '} onShowNote={vi.fn()} />)
-    expect(screen.queryByText(/^Notes:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Description:/)).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2 })).toHaveStyle({ flex: '1' })
   })
 
@@ -81,7 +81,7 @@ describe('ImageCaptionRow', () => {
     stubOverflow()
     const onShowNote = vi.fn()
     render(<ImageCaptionRow name="Slice A" note="A long note" onShowNote={onShowNote} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show full description' }))
     expect(onShowNote).toHaveBeenCalledTimes(1)
   })
 

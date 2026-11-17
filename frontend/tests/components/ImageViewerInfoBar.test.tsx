@@ -84,7 +84,7 @@ describe('ImageViewerInfoBar', () => {
     render(<ImageViewerInfoBar {...defaultProps} />)
     expect(screen.getByRole('heading', { level: 2, name: 'Skull — frontal' })).toBeInTheDocument()
     expect(screen.queryByText('Collections:', { exact: true })).not.toBeInTheDocument()
-    expect(screen.queryByText('Notes:', { exact: true })).not.toBeInTheDocument()
+    expect(screen.queryByText('Description:', { exact: true })).not.toBeInTheDocument()
   })
 
   it('shows the Notes label and flattened note, and "…more" calls onShowNote', () => {
@@ -98,16 +98,16 @@ describe('ImageViewerInfoBar', () => {
       />,
     )
 
-    expect(screen.getByText('Notes:', { exact: true })).toBeInTheDocument()
+    expect(screen.getByText('Description:', { exact: true })).toBeInTheDocument()
     expect(screen.getByText('First line Second line')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show full description' }))
     expect(onShowNote).toHaveBeenCalledTimes(1)
   })
 
   it('does not render the note affordance without overflow', () => {
     render(<ImageViewerInfoBar {...defaultProps} note="Short" />)
-    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show full description' })).not.toBeInTheDocument()
   })
 
   it('renders collection links and hides overflow behind "+ N more"', () => {

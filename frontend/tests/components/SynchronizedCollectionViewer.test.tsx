@@ -1059,9 +1059,9 @@ describe('caption note', () => {
   it('shows the flattened note between the title and the Open image button (#1686)', () => {
     renderViewer({ collection: noted() })
 
-    // The noted pane gets the "Notes:" label plus the single-line-clamped
+    // The noted pane gets the "Description:" label plus the single-line-clamped
     // note; the blank-note pane gets neither.
-    expect(screen.getAllByText(/^Notes:/)).toHaveLength(1)
+    expect(screen.getAllByText(/^Description:/)).toHaveLength(1)
     const heading = screen.getByRole('heading', { level: 2, name: 'Skull — frontal' })
     const noteEl = screen.getByText('Frontal suture intact. No asymmetry detected.')
     const openButton = screen.getByRole('button', { name: 'Open Skull — frontal' })
@@ -1073,9 +1073,9 @@ describe('caption note', () => {
     expect(screen.queryByRole('button', { name: /^Show notes for / })).not.toBeInTheDocument()
   })
 
-  it('offers no "Show full note" control without a note', () => {
+  it('offers no "Show full description" control without a note', () => {
     renderViewer()
-    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show full description' })).not.toBeInTheDocument()
   })
 
   it('treats a whitespace-only note as absent', () => {
@@ -1087,9 +1087,9 @@ describe('caption note', () => {
         ],
       }),
     })
-    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show full description' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Show notes for / })).not.toBeInTheDocument()
-    expect(screen.queryByText(/^Notes:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Description:/)).not.toBeInTheDocument()
   })
 
   it('opens the notes dialog inside the matching pane on overflow', () => {
@@ -1098,7 +1098,7 @@ describe('caption note', () => {
 
     // The clamped note overflows → the row's "…more" affordance opens the
     // dialog (only the noted pane has one).
-    const more = screen.getByRole('button', { name: 'Show full note' })
+    const more = screen.getByRole('button', { name: 'Show full description' })
     expect(more).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(more)
     // Exactly one dialog opens, inside the noted image's viewer pane.

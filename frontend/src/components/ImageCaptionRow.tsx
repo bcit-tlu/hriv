@@ -20,7 +20,7 @@ export interface ImageCaptionRowProps {
 
 /**
  * The caption row shared by the image view and the collection viewers:
- * `[h2 image title] [Notes: note …more] {end}`. The note clamps to one line
+ * `[h2 image title] [Description: note …more] {end}`. The note clamps to one line
  * with an "…more" affordance that opens the caller's dialog. When a note is
  * present the title is capped at min(468px, 40%) so the note gets the room
  * in narrow panes while typical image names still fit.
@@ -69,7 +69,7 @@ export default function ImageCaptionRow({
             display: 'flex',
             gap: 0.5,
             alignItems: 'baseline',
-            // Match the title→Notes gap before the end slot.
+            // Match the title→Description gap before the end slot.
             ...(end != null ? { mr: 4 } : {}),
           }}
         >
@@ -79,13 +79,13 @@ export default function ImageCaptionRow({
             component="span"
             sx={{ whiteSpace: 'nowrap', flexShrink: 0, fontWeight: 'bold' }}
           >
-            Notes:
+            Description:
           </Typography>
           <ClampedContent
             lines={1}
             onMore={onShowNote}
             expanded={noteDialogOpen}
-            moreAriaLabel="Show full note"
+            moreAriaLabel="Show full description"
             sx={{ flex: 1, minWidth: 0 }}
           >
             {note.replace(/\s*\n\s*/g, ' ')}
