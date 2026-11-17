@@ -160,7 +160,7 @@ export function apiImageToItem(img: ApiImage): ImageItem {
     tileSources: img.tile_sources,
     categoryId: img.category_id,
     copyright: img.copyright,
-    note: img.note,
+    description: img.description,
     active: img.active,
     sortOrder: img.sort_order,
     version: img.version,

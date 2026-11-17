@@ -431,7 +431,7 @@ export interface ApiImage {
   copyright: string | null
   description?: string | null
   /** @deprecated Renamed to `description` (#1782); removed once all readers move. */
-  note: string | null
+  note?: string | null
   active: boolean
   sort_order: number
   metadata_extra: Record<string, unknown> | null
@@ -1672,7 +1672,7 @@ export interface ApiSourceImage {
   copyright: string | null
   description?: string | null
   /** @deprecated Renamed to `description` (#1782); removed once all readers move. */
-  note: string | null
+  note?: string | null
   active: boolean
   image_id: number | null
   file_size: number | null
