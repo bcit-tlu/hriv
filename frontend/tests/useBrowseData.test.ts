@@ -89,7 +89,7 @@ function makeApiImage(id: number, overrides: Partial<api.ApiImage> = {}): api.Ap
     tile_sources: `/tiles/${id}`,
     category_id: null,
     copyright: null,
-    note: null,
+    description: null,
     active: true,
     sort_order: 0,
     metadata_extra: null,
