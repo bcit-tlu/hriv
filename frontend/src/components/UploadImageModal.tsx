@@ -272,6 +272,7 @@ export default function UploadImageModal({
           categoryId,
           metadata.copyright || undefined,
           metadata.note || undefined,
+          undefined, // instructor note: not collected by this form yet
           metadata.active,
           (fraction: number) => {
             setUploadProgress(fraction)
@@ -323,6 +324,7 @@ export default function UploadImageModal({
           categoryId ?? undefined,
           metadata.copyright || undefined,
           metadata.note || undefined,
+          undefined, // instructor note: not collected by this form yet
           metadata.active,
           (fraction: number) => {
             setUploadProgress(fraction)

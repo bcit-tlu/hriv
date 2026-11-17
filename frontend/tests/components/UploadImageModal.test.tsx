@@ -148,6 +148,7 @@ describe('UploadImageModal', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       true,
       expect.any(Function),
       expect.any(AbortSignal),
@@ -325,7 +326,7 @@ describe('UploadImageModal', () => {
 
   it('closes quietly when a bulk upload is cancelled via Cancel', async () => {
     vi.mocked(bulkImportImages).mockImplementationOnce(
-      (_files, _cat, _c, _n, _a, _p, signal?: AbortSignal) =>
+      (_files, _cat, _c, _n, _i, _a, _p, signal?: AbortSignal) =>
         new Promise((_resolve, reject) => {
           signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
         }) as never,
@@ -364,7 +365,7 @@ describe('UploadImageModal', () => {
   it('reports upload progress with formatted byte counts', async () => {
     let emitProgress: (fraction: number) => void = () => {}
     vi.mocked(uploadSourceImage).mockImplementationOnce(
-      (_file, _name, _cat, _c, _n, _a, onProgress?: (fraction: number) => void) => {
+      (_file, _name, _cat, _c, _n, _i, _a, onProgress?: (fraction: number) => void) => {
         emitProgress = onProgress ?? emitProgress
         return new Promise(() => {}) as never
       },

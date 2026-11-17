@@ -6,6 +6,8 @@ export interface ImageItem {
   categoryId?: number | null
   copyright?: string | null
   description?: string | null
+  /** Staff-only; the API sends null to students. */
+  instructorNote?: string | null
   active: boolean
   sortOrder: number
   version: number

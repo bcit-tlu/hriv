@@ -1910,6 +1910,7 @@ describe('XHR upload abort support', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       ac.signal,
     )
     ac.abort()
@@ -1927,6 +1928,7 @@ describe('XHR upload abort support', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       ac.signal,
     )
     ac.abort()
@@ -1936,20 +1938,23 @@ describe('XHR upload abort support', () => {
 
   it('uploadSourceImage and bulkImportImages send the description form field', () => {
     const file = new File(['test'], 'test.png', { type: 'image/png' })
-    void uploadSourceImage(file, undefined, undefined, undefined, 'Upload text')
-    void bulkImportImages([file], null, undefined, 'Bulk text')
+    void uploadSourceImage(file, undefined, undefined, undefined, 'Upload text', 'Upload staff')
+    void bulkImportImages([file], null, undefined, 'Bulk text', 'Bulk staff')
     const [upload, bulk] = xhrInstances.map((xhr) => xhr.send.mock.calls[0][0] as FormData)
     expect(upload.get('description')).toBe('Upload text')
     expect(bulk.get('description')).toBe('Bulk text')
+    expect(upload.get('instructor_note')).toBe('Upload staff')
+    expect(bulk.get('instructor_note')).toBe('Bulk staff')
     expect(upload.has('note') || bulk.has('note')).toBe(false)
   })
 
   it('replaceImage sends metadata.description as the description form field', () => {
     const file = new File(['test'], 'test.png', { type: 'image/png' })
-    void replaceImage(1, file, undefined, undefined, { description: '' })
+    void replaceImage(1, file, undefined, undefined, { description: '', instructor_note: '' })
     const form = xhrInstances[0].send.mock.calls[0][0] as FormData
     // An explicit empty value is sent so the backend clears the stored text.
     expect(form.get('description')).toBe('')
+    expect(form.get('instructor_note')).toBe('')
     expect(form.has('note')).toBe(false)
   })
 
@@ -1967,6 +1972,7 @@ describe('XHR upload abort support', () => {
     const file = new File(['test'], 'test.png', { type: 'image/png' })
     const promise = uploadSourceImage(
       file,
+      undefined,
       undefined,
       undefined,
       undefined,
@@ -1994,6 +2000,7 @@ describe('XHR upload abort support', () => {
     const file = new File(['test'], 'test.png', { type: 'image/png' })
     const promise = uploadSourceImage(
       file,
+      undefined,
       undefined,
       undefined,
       undefined,
