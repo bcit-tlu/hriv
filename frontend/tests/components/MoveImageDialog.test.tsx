@@ -35,7 +35,7 @@ const image: ApiImage = {
   tile_sources: '/tiles/1',
   category_id: 5,
   copyright: null,
-  note: null,
+  description: null,
   active: true,
   sort_order: 0,
   metadata_extra: null,

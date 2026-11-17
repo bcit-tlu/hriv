@@ -63,7 +63,7 @@ function makeImage(overrides: Partial<ApiImage> = {}): ApiImage {
     tile_sources: '/api/tiles/11/image.dzi',
     category_id: 3,
     copyright: null,
-    note: null,
+    description: null,
     active: true,
     sort_order: 0,
     metadata_extra: null,
