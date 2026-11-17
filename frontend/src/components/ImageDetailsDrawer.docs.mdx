@@ -22,10 +22,11 @@ import * as ImageDetailsDrawerStories from './ImageDetailsDrawer.stories'
 `App` renders the drawer through `ImageViewer`'s `viewportOverlay` portal and its
 `ImageDetailsTrigger` through `viewportControl` — an OSD control — so the "i" button looks like
 the toolbar icons and fades with them when idle, staying usable in OSD full-page mode. It opens a right-anchored panel listing
-copyright, programs, groups, dates, dimensions, file size, measurement, and source-file details;
+the instructor note (staff only — a wrapping block at the top with a lock icon whose accessible
+title is "Visible to instructors, staff and admins"; absent for students), then copyright, programs, groups, dates, dimensions, file size, measurement, and source-file details;
 each field is one non-wrapping line with the full value in `title` — except Created and Modified,
 whose exact timestamp shows in a tooltip on hover, tap or focus. The viewer instructions sit
-in a footer pinned to the bottom of the drawer. Notes and collections live in
+in a footer pinned to the bottom of the drawer. The description and collections live in
 `ImageViewerInfoBar` below the viewer instead.
 
 ## Interactive example
@@ -45,6 +46,12 @@ in a footer pinned to the bottom of the drawer. Notes and collections live in
 Long lines truncate with an ellipsis; the `title` attribute carries the full value.
 
 <Canvas of={ImageDetailsDrawerStories.LongValues} />
+
+### With an instructor note
+
+The staff-only note wraps at the top instead of truncating like the other fields.
+
+<Canvas of={ImageDetailsDrawerStories.WithInstructorNote} />
 
 ## Stories
 

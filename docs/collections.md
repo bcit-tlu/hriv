@@ -1420,7 +1420,7 @@ categories/uncategorized, while the viewer's `onImageRenewed` →
 annotations live on the image record, so edits appear everywhere the image
 shows up (this collection, other collections, the image view). Entering
 canvas edit mode disables the details trigger and closes the drawer and
-note dialog; an overlay lock auto-engages when the member stores
+description dialog; an overlay lock auto-engages when the member stores
 `locked_overlays` and disengages when the saved member no longer does.
 Unsaved edits are guarded like the image viewer's: the viewer registers a
 `CanvasDraftHandle` (`{dirty, saving, discard}`) on App's shared
@@ -1454,10 +1454,13 @@ absent from the caller's tree get no entry and those rows are omitted.
 
 **Caption.** A caption row under the viewport — the same `ImageCaptionRow`
 the synchronized panes and the image-view info bar use — holds the member
-name as an `h2` (left), then, when the image has a note, a visible
-**Notes:** label plus the note clamped to one line (`ClampedContent`) with
-an "…more" link that opens a `ViewportDialog` over the viewer with the full
-note (the title is capped at min(468px, 40%) when a note is present) and, at the
+name as an `h2` (left), then, when the image has a description, a visible
+**Description:** label plus the text clamped to one line (`ClampedContent`)
+and, when the API sends one (never to students), a lock-marked **Instructor
+note:** cell treated the same way. Either "…more" opens a `ViewportDialog`
+over the viewer whose body is `ImageNotesContent` (title **Description**,
+**Description & instructor note**, or **Instructor note**). The title is
+capped at min(468px, 40%) when either text is present. At the
 right, the `n of N` live region plus the **Open image** action. Member
 management moved into the detail header's **Manage Images** dialog
 (#1566/#1567).
@@ -1577,8 +1580,10 @@ render as panes — a side-by-side row for two, a 2×2 grid for three or four
 sequence viewer (`canEditContent={false}`; stored annotations, locked
 overlays and measurement metadata pass through from `metadataExtra`). A
 caption under each pane shows the member name (plus an _inactive_ marker),
-then — when the image has a note — a **Notes:** label plus the note clamped
-to one line, "…more" opening a `ViewportDialog` centered over that pane
+then — when the image has a description — a **Description:** label plus the
+text clamped to one line, followed for staff by a lock-marked **Instructor
+note:** cell when set, either "…more" opening the description/instructor-note
+`ViewportDialog` centered over that pane
 (title capped at min(468px, 40%)), and an
 **Open image** action → `?image={id}`. A member count above the pane
 cap produces a "Showing _N_ of _M_" note. Fewer than two visible (or

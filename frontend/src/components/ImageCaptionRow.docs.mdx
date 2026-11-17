@@ -14,16 +14,22 @@ import * as ImageCaptionRowStories from './ImageCaptionRow.stories'
 <Title />
 
 <Subtitle>
-  The caption row shared by the image view and the collection viewers: title, note, and actions.
+  The caption row shared by the image view and the collection viewers: title, description,
+  instructor note, and actions.
 </Subtitle>
 
 ## When to use
 
-`ImageCaptionRow` renders `[h2 image title] [Notes: note …more] {end}` — the note clamps to one
-line with an "…more" affordance (`onShowNote` opens the caller's `ViewportDialog`), and `end`
-carries the right-hand actions (position readout, **Open image**, or the fitted collections cell).
-When a note is present the title is capped at min(468px, 40%) so the note gets the room; without one the title
+`ImageCaptionRow` renders `[h2 image title] [Description: … …more] [🔒 Instructor note: … …more] {end}`.
+Each text cell clamps to one line with an "…more" affordance; both open the caller's
+`ViewportDialog` (`onShowNote`), whose body is `ImageNotesContent`. `end` carries the right-hand
+actions (position readout, **Open image**, or the fitted collections cell). When either text is
+present the title is capped at min(468px, 40%) so the text gets the room; without one the title
 takes the full width.
+
+The instructor note cell renders only when `instructorNote` has text. The API sends `null` to
+students, so the component needs no role check; on narrow screens the row wraps instead of
+squeezing both cells.
 
 Used by `ImageViewerInfoBar`, `SequenceCollectionViewer`, and `SynchronizedCollectionViewer`.
 
@@ -40,6 +46,12 @@ Used by `ImageViewerInfoBar`, `SequenceCollectionViewer`, and `SynchronizedColle
 A note longer than one line clamps behind an "…more" link.
 
 <Canvas of={ImageCaptionRowStories.LongNote} />
+
+### With an instructor note
+
+Staff-only text gets its own lock-marked cell after the description.
+
+<Canvas of={ImageCaptionRowStories.WithInstructorNote} />
 
 ## Stories
 
