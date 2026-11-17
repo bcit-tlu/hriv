@@ -29,6 +29,7 @@ const images: ImageItem[] = [
     categoryId: 1,
     copyright: 'Kidney Foundation 2026',
     description: 'Cross-section of kidney cortex',
+    instructorNote: 'Quiz: identify the glomeruli',
     active: true,
     sortOrder: 1,
     version: 1,
@@ -200,5 +201,21 @@ export const MultiSelect: Story = {
       expect.objectContaining({ id: 10 }),
       expect.objectContaining({ id: 11 }),
     ])
+  },
+}
+
+/** Staff-only instructor notes are searchable; the lock chip scopes matches
+    to that field. Students never see the chip (or the notes). */
+export const InstructorNoteFilter: Story = {
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await userEvent.type(await body.findByPlaceholderText(/Search categories, images/), 'glomeruli')
+    const chip = (await body.findAllByTestId('field-filter-chip')).find(
+      (el) => el.textContent === 'Instructor note',
+    )
+    await expect(chip).toBeDefined()
+    await userEvent.click(chip!)
+    await expect(await body.findByText('Kidney Cross')).toBeVisible()
+    await expect(body.getByText(/Instructor note:/)).toBeVisible()
   },
 }
