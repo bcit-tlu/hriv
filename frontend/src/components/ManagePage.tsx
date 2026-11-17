@@ -936,6 +936,7 @@ export default function ManagePage({
     category_id?: number | null
     copyright?: string
     description?: string
+    instructor_note?: string
     active?: boolean
   }) => {
     try {

@@ -78,7 +78,7 @@ describe('BulkEditImagesModal – delete error toast', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ category_id: 10 }))
   })
 
-  it('omits a blank note so bulk edits preserve existing notes', async () => {
+  it('omits blank description and instructor note so bulk edits preserve existing values', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn().mockResolvedValue(undefined)
     renderModal({ onSave })
@@ -90,15 +90,21 @@ describe('BulkEditImagesModal – delete error toast', () => {
     })
   })
 
-  it('sends a typed note as the description field', async () => {
+  it('sends trimmed description and instructor note to every selected image', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn().mockResolvedValue(undefined)
     renderModal({ onSave })
 
-    await user.type(screen.getByLabelText('Note'), '  Shared text  ')
+    await user.type(screen.getByRole('textbox', { name: 'Description' }), '  Shared text  ')
+    await user.type(screen.getByRole('textbox', { name: 'Instructor note' }), '  Staff text  ')
     await user.click(screen.getByRole('button', { name: /save changes/i }))
 
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ description: 'Shared text' }))
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        description: 'Shared text',
+        instructor_note: 'Staff text',
+      }),
+    )
   })
 
   it('does not show an error toast when bulk delete succeeds', async () => {
