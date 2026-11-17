@@ -861,8 +861,18 @@ export default function BoardsPage({
             <TableRow
               key={item.id}
               hover
+              tabIndex={0}
               sx={{ cursor: 'pointer' }}
               onClick={() => onOpenInuksuk(item)}
+              onKeyDown={(event) => {
+                if (
+                  event.target === event.currentTarget &&
+                  (event.key === 'Enter' || event.key === ' ')
+                ) {
+                  event.preventDefault()
+                  onOpenInuksuk(item)
+                }
+              }}
             >
               {selecting && (
                 <TableCell onClick={(event) => event.stopPropagation()}>

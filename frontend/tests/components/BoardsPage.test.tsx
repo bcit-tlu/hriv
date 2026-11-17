@@ -152,6 +152,23 @@ describe('BoardsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
     expect(screen.getAllByTestId('inuksuk-card')).toHaveLength(BOARD_ITEMS.length)
   })
+  it('opens focused table rows with Enter or Space but ignores nested controls', async () => {
+    const view = await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+    const row = within(screen.getByRole('table')).getByText('Rose window').closest('tr')!
+    expect(row).toHaveAttribute('tabindex', '0')
+    row.focus()
+    expect(row).toHaveFocus()
+    await view.user.keyboard('{Enter} ')
+    expect(view.onOpenInuksuk).toHaveBeenCalledTimes(2)
+    expect(view.onOpenInuksuk).toHaveBeenLastCalledWith(BOARD_ITEMS[0])
+    view.onOpenInuksuk.mockClear()
+    await view.user.keyboard('{Escape}')
+    for (const key of ['Enter', ' ']) {
+      fireEvent.keyDown(within(row).getByRole('button', { name: 'Favourite Rose window' }), { key })
+    }
+    expect(view.onOpenInuksuk).not.toHaveBeenCalled()
+  })
   it('keeps move, edit and delete reachable without an Inuksuk overflow menu', async () => {
     await setup()
     fireEvent.click(screen.getByRole('button', { name: 'Move/Save Rose window to Board' }))
