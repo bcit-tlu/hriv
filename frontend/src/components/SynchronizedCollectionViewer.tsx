@@ -694,7 +694,7 @@ export default function SynchronizedCollectionViewer({
                                 overflowWrap: 'anywhere',
                               }}
                             >
-                              {image.note}
+                              {image.description}
                             </Box>
                           </ViewportDialog>
                         </>
@@ -738,7 +738,7 @@ export default function SynchronizedCollectionViewer({
                   key={`caption-${memberKey(image)}`}
                   name={inuksuksEnabled ? image.slot?.label || image.name : image.name}
                   active={image.active}
-                  note={image.note}
+                  note={image.description}
                   noteDialogOpen={noteDialogImageId === memberKey(image)}
                   onShowNote={() => setNoteDialogImageId(memberKey(image))}
                   end={

@@ -1009,7 +1009,7 @@ describe('caption note', () => {
   const noted = () =>
     syncCollection({
       images: [
-        makeImage({ id: 1, name: 'Skull — frontal', note }),
+        makeImage({ id: 1, name: 'Skull — frontal', description: note }),
         makeImage({ id: 2, name: 'Skull — lateral' }),
       ],
     })
@@ -1082,7 +1082,7 @@ describe('caption note', () => {
     renderViewer({
       collection: syncCollection({
         images: [
-          makeImage({ id: 1, name: 'Skull — frontal', note: '  \n  ' }),
+          makeImage({ id: 1, name: 'Skull — frontal', description: '  \n  ' }),
           makeImage({ id: 2, name: 'Skull — lateral' }),
         ],
       }),

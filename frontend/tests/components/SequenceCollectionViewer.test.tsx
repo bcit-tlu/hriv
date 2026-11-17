@@ -520,7 +520,8 @@ describe('SequenceCollectionViewer', () => {
 
 describe('caption note', () => {
   const note = 'Fracture line visible.\nCallus forming medially.'
-  const noted = () => seqCollection({ images: [makeImage({ id: 1, name: 'Slice A', note })] })
+  const noted = () =>
+    seqCollection({ images: [makeImage({ id: 1, name: 'Slice A', description: note })] })
 
   const originalScrollHeight = Object.getOwnPropertyDescriptor(
     HTMLElement.prototype,
@@ -580,7 +581,7 @@ describe('caption note', () => {
   it('treats a whitespace-only note as absent', () => {
     renderViewer({
       collection: seqCollection({
-        images: [makeImage({ id: 1, name: 'Slice A', note: '  \n  ' })],
+        images: [makeImage({ id: 1, name: 'Slice A', description: '  \n  ' })],
       }),
     })
     expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
@@ -722,7 +723,7 @@ describe('annotation and overlay editing (#1863)', () => {
       tile_sources: '/s',
       category_id: null,
       copyright: null,
-      note: null,
+      description: null,
       active: true,
       sort_order: 0,
       version: 2,
@@ -1016,7 +1017,7 @@ describe('annotation and overlay editing (#1863)', () => {
     try {
       renderViewer({
         collection: seqCollection({
-          images: [makeImage({ id: 100, name: 'Slice 1', note: 'Long note\nwith lines' })],
+          images: [makeImage({ id: 100, name: 'Slice 1', description: 'Long note\nwith lines' })],
         }),
         canEditContent: true,
       })

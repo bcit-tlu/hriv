@@ -619,7 +619,7 @@ export default function SequenceCollectionViewer({
                       overflowWrap: 'anywhere',
                     }}
                   >
-                    {current.note}
+                    {current.description}
                   </Box>
                 </ViewportDialog>
               </>
@@ -666,7 +666,7 @@ export default function SequenceCollectionViewer({
         key={`caption-${memberKey(current)}`}
         name={inuksuksEnabled ? current.slot?.label || current.name : current.name}
         active={current.active}
-        note={current.note}
+        note={current.description}
         noteDialogOpen={noteDialogOpen}
         onShowNote={() => setNoteDialogOpen(true)}
         end={
