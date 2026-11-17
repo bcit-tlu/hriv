@@ -850,21 +850,21 @@ export default function BoardsPage({
         </TableHead>
         <TableBody>
           {items.map((item) => (
-            <TableRow key={item.id} hover>
-              {selecting && <TableCell>{selectionAction(item)}</TableCell>}
-              <TableCell>
-                <Button
-                  onClick={() => onOpenInuksuk(item)}
-                  aria-label={`Open Inuksuk: ${item.title}`}
-                  sx={{ textTransform: 'none' }}
-                  startIcon={<CompassCalibration />}
-                >
-                  {item.title}
-                </Button>
-              </TableCell>
+            <TableRow
+              key={item.id}
+              hover
+              sx={{ cursor: 'pointer' }}
+              onClick={() => onOpenInuksuk(item)}
+            >
+              {selecting && (
+                <TableCell onClick={(event) => event.stopPropagation()}>
+                  {selectionAction(item)}
+                </TableCell>
+              )}
+              <TableCell>{item.title}</TableCell>
               <TableCell>{item.category_name ?? 'Uncategorized'}</TableCell>
               <TableCell>{scopePills(item)}</TableCell>
-              <TableCell>
+              <TableCell onClick={(event) => event.stopPropagation()}>
                 {itemBoards(item).map((row) => (
                   <Button
                     key={row.id}
@@ -876,8 +876,10 @@ export default function BoardsPage({
                   </Button>
                 ))}
               </TableCell>
-              <TableCell>{favouriteAction(item)}</TableCell>
-              <TableCell sx={{ whiteSpace: 'nowrap' }}>
+              <TableCell onClick={(event) => event.stopPropagation()}>
+                {favouriteAction(item)}
+              </TableCell>
+              <TableCell sx={{ whiteSpace: 'nowrap' }} onClick={(event) => event.stopPropagation()}>
                 {moveAction(item)}
                 {editAction(item)}
               </TableCell>

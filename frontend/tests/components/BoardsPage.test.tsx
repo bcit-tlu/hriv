@@ -120,19 +120,27 @@ describe('BoardsPage', () => {
       'Favourite',
       'Actions',
     ])
-    const row = within(
-      table.getByRole('button', { name: 'Open Inuksuk: Rose window' }).closest('tr')!,
-    )
+    const row = within(table.getByText('Rose window').closest('tr')!)
+    expect(row.queryByRole('button', { name: 'Rose window' })).not.toBeInTheDocument()
     expect(row.getByText('Architectural details')).toBeVisible()
     expect(row.getByText('Private')).toBeVisible()
     fireEvent.click(row.getByRole('button', { name: 'Architecture inspiration' }))
     expect(view.onSelectBoard).toHaveBeenCalledWith(1)
-    fireEvent.click(row.getByRole('button', { name: 'Open Inuksuk: Rose window' }))
+    expect(view.onOpenInuksuk).not.toHaveBeenCalled()
+    fireEvent.click(row.getByText('Architectural details'))
     expect(view.onOpenInuksuk).toHaveBeenCalledWith(BOARD_ITEMS[0])
+    view.onOpenInuksuk.mockClear()
     fireEvent.click(row.getByRole('button', { name: 'Favourite Rose window' }))
     await waitFor(() =>
       expect(api.updateInuksuk).toHaveBeenCalledWith(7, { version: 3, favourite: false }),
     )
+    expect(view.onOpenInuksuk).not.toHaveBeenCalled()
+    fireEvent.click(row.getByRole('button', { name: 'Move/Save Rose window to Board' }))
+    expect(view.onOpenInuksuk).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(row.getByRole('button', { name: 'Edit Inuksuk: Rose window' }))
+    expect(view.onOpenInuksuk).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(table.getByText('Uncategorized')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Title' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Filter Boards and Inuksuks by title' }), {
@@ -161,7 +169,7 @@ describe('BoardsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
     fireEvent.click(screen.getByRole('button', { name: 'Favourite Rose window' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Unable to update favourite')
-    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBeVisible()
+    expect(within(screen.getByRole('table')).getByText('Rose window')).toBeVisible()
   })
   it.each(['Boards', 'Inuksuks'])(
     'shows an initial %s load error instead of the empty state and allows retry',
