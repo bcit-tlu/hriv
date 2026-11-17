@@ -79,7 +79,6 @@ export interface ViewerSidePanelProps {
   onTabChange: (tab: ViewerPanelTab) => void
   onClose: () => void
   panelId: string
-  count: number
   inuksuks: ReactNode
   details?: ReactNode
   onShareView?: () => void
@@ -91,7 +90,6 @@ export default function ViewerSidePanel({
   onTabChange,
   onClose,
   panelId,
-  count,
   inuksuks,
   details,
   onShareView,
@@ -191,17 +189,15 @@ export default function ViewerSidePanel({
             </ToggleButtonGroup>
             <ViewerPanelToggle open onToggle={onClose} panelId={panelId} />
           </Box>
-          <Typography
-            component="h2"
-            variant="body2"
-            sx={{ px: 1.5, py: 0.75, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
-          >
-            {tab === 'inuksuks'
-              ? `Inuksuks (${count})`
-              : tab === 'share'
-                ? 'Shared View'
-                : 'Image details'}
-          </Typography>
+          {tab !== 'inuksuks' && (
+            <Typography
+              component="h2"
+              variant="body2"
+              sx={{ px: 1.5, py: 0.75, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
+            >
+              {tab === 'share' ? 'Shared View' : 'Image details'}
+            </Typography>
+          )}
           <Box
             tabIndex={0}
             role="region"

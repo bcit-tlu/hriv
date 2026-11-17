@@ -70,16 +70,15 @@ export const BoardsMenu: Story = {
     const page = within(canvasElement.ownerDocument.body)
     await waitFor(() => expect(page.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
     await userEvent.click(page.getByRole('combobox', { name: 'Boards' }))
-    await expect(page.getAllByRole('option')[0]).toHaveTextContent('+ New Board…')
-    await expect(page.queryByRole('button', { name: '+ Create new board' })).not.toBeInTheDocument()
+    await expect(page.getAllByRole('option')[0]).toHaveTextContent(BOARD_FIXTURE.name)
+    await expect(page.getByRole('button', { name: '+ Create new board' })).toBeVisible()
   },
 }
 export const CreatePrivateBoard: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
     await waitFor(() => expect(page.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
-    await userEvent.click(page.getByRole('combobox', { name: 'Boards' }))
-    await userEvent.click(page.getByRole('option', { name: '+ New Board…' }))
+    await userEvent.click(page.getByRole('button', { name: '+ Create new board' }))
     await userEvent.type(page.getByLabelText('New private Board name'), 'Architecture favourites')
   },
 }

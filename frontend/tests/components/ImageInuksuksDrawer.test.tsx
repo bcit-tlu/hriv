@@ -216,6 +216,13 @@ describe('ImageInuksuksDrawer', () => {
     const edit = vi.fn()
     render(<Example onSelect={select} onEdit={edit} />)
     fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (4)' }))
+    expect(screen.queryByRole('heading', { name: /^Inuksuks \(/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'My Inuksuks (2)' })).toHaveClass(
+      'MuiTypography-body2',
+    )
+    expect(screen.getByRole('heading', { name: 'Instructor Inuksuks (1)' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Public Inuksuks (1)' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'My Inuksuks' })).toHaveAccessibleDescription('(2)')
     expect(screen.getByRole('button', { name: 'My Inuksuks' })).toHaveAttribute(
       'aria-expanded',
       'true',

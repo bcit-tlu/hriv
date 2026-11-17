@@ -16,7 +16,6 @@ function Example({ error = false, onShareView }: { error?: boolean; onShareView?
         tab={tab}
         onTabChange={setTab}
         onClose={() => setOpen(false)}
-        count={0}
         onShareView={onShareView}
         inuksuks={
           error ? (
@@ -37,7 +36,7 @@ it('toggles with accessible controls, retains a selected tab, and never closes o
   expect(toggle).toHaveAttribute('aria-controls', 'panel')
   expect(screen.queryByRole('complementary')).toBeNull()
   fireEvent.click(toggle)
-  expect(screen.getByRole('heading', { name: 'Inuksuks (0)' })).toBeVisible()
+  expect(screen.queryByRole('heading', { name: /^Inuksuks/ })).not.toBeInTheDocument()
   expect(screen.getByText('No Inuksuks on this image.')).toBeVisible()
   expect(screen.getByRole('region', { name: 'About Inuksuks' })).toHaveAttribute('tabindex', '0')
   expect(screen.getByRole('region', { name: 'About Inuksuks' })).toHaveTextContent(

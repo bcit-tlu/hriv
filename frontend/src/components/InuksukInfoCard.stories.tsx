@@ -36,11 +36,18 @@ const meta = {
   parameters: { layout: 'fullscreen' },
   beforeEach: () => {
     const original = globalThis.fetch
+    let item = { ...INUKSUK_FIXTURE }
     globalThis.fetch = async (input, init) => {
       const path = String(input)
       if (path.includes('/api/boards/')) return Response.json(BOARD_FIXTURE)
       if (path.includes('/api/boards')) return Response.json([BOARD_FIXTURE])
-      if (path.includes('/api/inuksuks/')) return Response.json(INUKSUK_FIXTURE)
+      if (path.includes('/api/inuksuks/')) {
+        if (init?.method === 'PATCH') {
+          const body = JSON.parse(String(init.body)) as { favourite: boolean }
+          item = { ...item, favourite: body.favourite, version: item.version + 1 }
+        }
+        return Response.json(item)
+      }
       return original(input, init)
     }
     return () => {
@@ -53,7 +60,13 @@ type Story = StoryObj<typeof meta>
 export const Basic: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByRole('img', { name: 'Favourite' })).toBeVisible()
+    await expect(canvas.getByRole('button', { name: 'Favourite' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await expect(
+      canvas.getByRole('heading', { name: 'Rose window' }).previousElementSibling,
+    ).toHaveAttribute('data-testid', 'CompassCalibrationIcon')
     await expect(
       canvas.queryByRole('button', { name: 'Close Inuksuk information' }),
     ).not.toBeInTheDocument()
@@ -77,12 +90,30 @@ export const InlineEdit: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: 'Edit Rose window' }))
-    await waitFor(() => expect(canvas.getByRole('button', { name: 'Save changes' })).toBeEnabled())
+    await waitFor(() => expect(canvas.getByRole('button', { name: 'Save' })).toBeEnabled())
+    await expect(canvas.queryByRole('textbox', { name: 'Description' })).not.toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'More options' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
     await expect(canvas.getByRole('form', { name: 'Edit Inuksuk' })).toBeVisible()
     await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
     await expect(canvas.getByRole('button', { name: 'Favourite' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
+  },
+}
+export const DeleteConfirmation: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Edit Rose window' }))
+    await waitFor(() => expect(canvas.getByRole('button', { name: 'Save' })).toBeEnabled())
+    await userEvent.click(canvas.getByRole('button', { name: 'Delete' }))
+    const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
+      name: 'Delete Inuksuk?',
+    })
+    await waitFor(() => expect(dialog).toBeVisible())
+    await expect(within(dialog).getByText(/permanently deleted from all its Boards/)).toBeVisible()
   },
 }

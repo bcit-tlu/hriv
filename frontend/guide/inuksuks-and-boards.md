@@ -10,25 +10,31 @@ Open an image and toggle **Add Inuksuk**. You can still drag, scroll or pinch to
 pan and zoom. A quick click or tap places a blue marker and opens a small panel at
 the top-right. Type a title and choose a Board; your last-used Board is selected
 when available. The **Add Inuksuk** panel's Boards dropdown has checkboxes, alphabetic
-options and no chips. Selected names show as text (`A, B +1`). Its first item is
-always **+ New Board…**; type a new name for **+ Create Board "text"**, creating and
-selecting a private Board. Without a name, it prompts inline. Expand **More options**
+options and no chips. Selected names show as text (`A, B +1`). The separate
+**+ Create new board** link below the menu opens a name field and Create Board
+action, creating and selecting a private, name-only Board. Expand **More options**
 for a description; toggle the outlined/filled star in the title row for Favourite.
 **Save** keeps the tool on for
 another placement. **Cancel** or Escape removes the unsaved marker; Escape again,
 or the toolbar compass, turns placement off. An unsaved view also appears in the drawer.
 
 Click a saved marker to restore its view and open its information card. The card
-shows its title, description, visible Boards and favourite state. Use the pencil
+shows its Inuksuk icon, title, description, visible Boards and favourite state. The
+pencil sits immediately beside its title, and authorized users can toggle the
+star directly in view mode. Use the pencil
 to edit in place if permitted. The card has no X: press outside to deselect and
 close it, or Escape. Another marker selects that Inuksuk. Drawer **⋮ → Edit** selects,
 focuses and pans to the same Inuksuk and opens the same inline editor, with Boards,
-description, star, Save changes/Cancel and permitted Delete (with confirmation).
+star, Save/Cancel and permitted Delete. Description is collapsed under More options
+even when filled; opening it reveals the saved text. Delete opens a separate
+confirmation dialog; cancelling that dialog leaves your draft untouched.
 While editing, outside presses—including other markers/rows—keep your editor open;
 finish with Save/Cancel, or explicitly Escape to cancel and close. The Boards menu
 does not dismiss it. Version conflicts retain your fields and offer Reload current.
 This works in image, Sequence and Synchronized viewers; BoardsPage keeps its modal edit form.
 Saving an Inuksuk does not modify the source image.
+The drawer/panel omits the redundant Inuksuks total heading. Each slightly larger
+group heading shows its saved-view count beside its name, excluding unsaved drafts.
 Markers have white circular backgrounds with blue icons, staying upright and
 the same size as you zoom or rotate; label styling is unchanged.
 

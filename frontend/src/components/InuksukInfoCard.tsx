@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Alert, Box, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material'
-import { Edit, Star, StarBorder } from '@mui/icons-material'
-import { fetchBoards, userMessage } from '../api'
+import { Alert, Box, Button, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material'
+import { CompassCalibration, Edit, Star, StarBorder } from '@mui/icons-material'
+import { ApiError, fetchBoards, fetchInuksuk, updateInuksuk, userMessage } from '../api'
 import type { ApiBoardSummary, ApiInuksuk } from '../types'
 
 import { inuksukPanelSx } from './inuksukPanelStyles'
@@ -22,7 +22,7 @@ export default function InuksukInfoCard({
   item: ApiInuksuk
   container: HTMLElement
   onClose: () => void
-  onEdit: () => void
+  onEdit: (item: ApiInuksuk) => void
   editing?: boolean
   initialDelete?: boolean
   userId?: number
@@ -33,6 +33,36 @@ export default function InuksukInfoCard({
   const [boards, setBoards] = useState<ApiBoardSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const [savedItem, setSavedItem] = useState<ApiInuksuk | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [favouriteError, setFavouriteError] = useState<string | null>(null)
+  const [favouriteConflict, setFavouriteConflict] = useState(false)
+  const current = savedItem?.id === item.id && savedItem.version > item.version ? savedItem : item
+  const changeFavourite = async (reload = false) => {
+    setBusy(true)
+    setFavouriteError(null)
+    try {
+      const updated = reload
+        ? await fetchInuksuk(current.id)
+        : await updateInuksuk(current.id, {
+            version: current.version,
+            favourite: !current.favourite,
+          })
+      setSavedItem(updated)
+      setFavouriteConflict(false)
+      await onChanged?.()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setFavouriteConflict(true)
+        setFavouriteError('This Inuksuk changed. Reload current values before trying again.')
+      } else
+        setFavouriteError(
+          userMessage(err, reload ? 'Unable to reload Inuksuk.' : 'Unable to change favourite.'),
+        )
+    } finally {
+      setBusy(false)
+    }
+  }
   useEffect(() => {
     const document = container.ownerDocument
     const outside = (event: PointerEvent) => {
@@ -80,12 +110,12 @@ export default function InuksukInfoCard({
       elevation={8}
       sx={{ ...inuksukPanelSx, p: 1.5 }}
     >
-      {editing && item.permissions.can_edit ? (
+      {editing && current.permissions.can_edit ? (
         <InuksukFormDialog
           key={item.id}
           inline
           imageId={item.image_id}
-          item={item}
+          item={current}
           view={item}
           userId={userId}
           container={container}
@@ -97,36 +127,86 @@ export default function InuksukInfoCard({
       ) : (
         <>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Typography
-              component="h2"
-              variant="subtitle2"
-              sx={{ flex: 1, overflowWrap: 'anywhere' }}
-            >
-              {item.title}
-            </Typography>
-            <Tooltip title={item.favourite ? 'Favourite' : 'Not favourited'}>
-              <Box
-                component="span"
-                role="img"
-                aria-label={item.favourite ? 'Favourite' : 'Not favourited'}
-                sx={{ display: 'inline-flex', flexShrink: 0 }}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1, minWidth: 0 }}>
+              <CompassCalibration color="primary" fontSize="small" />
+              <Typography
+                component="h2"
+                variant="subtitle2"
+                sx={{ minWidth: 0, overflowWrap: 'anywhere' }}
               >
-                {item.favourite ? (
-                  <Star color="warning" fontSize="small" />
-                ) : (
-                  <StarBorder fontSize="small" />
-                )}
-              </Box>
-            </Tooltip>
+                {current.title}
+              </Typography>
+              {current.permissions.can_edit && (
+                <Tooltip title="Edit Inuksuk">
+                  <IconButton
+                    size="small"
+                    aria-label={`Edit ${current.title}`}
+                    disabled={busy || favouriteConflict}
+                    onClick={() => onEdit(current)}
+                    sx={{ flexShrink: 0 }}
+                  >
+                    <Edit fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
+            {current.permissions.can_edit ? (
+              <Tooltip title={current.favourite ? 'Remove favourite' : 'Add favourite'}>
+                <IconButton
+                  size="small"
+                  aria-label="Favourite"
+                  aria-pressed={current.favourite}
+                  disabled={busy || favouriteConflict}
+                  onClick={() => void changeFavourite()}
+                  color={current.favourite ? 'primary' : 'default'}
+                >
+                  {current.favourite ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}
+                </IconButton>
+              </Tooltip>
+            ) : (
+              <Tooltip title={current.favourite ? 'Favourite' : 'Not favourited'}>
+                <Box
+                  component="span"
+                  role="img"
+                  aria-label={current.favourite ? 'Favourite' : 'Not favourited'}
+                  sx={{ display: 'inline-flex', flexShrink: 0 }}
+                >
+                  {current.favourite ? (
+                    <Star color="warning" fontSize="small" />
+                  ) : (
+                    <StarBorder fontSize="small" />
+                  )}
+                </Box>
+              </Tooltip>
+            )}
           </Box>
           <Stack spacing={1} sx={{ mt: 0.5 }}>
-            {item.description && (
+            {favouriteError && (
+              <Alert
+                severity="error"
+                action={
+                  favouriteConflict ? (
+                    <Button
+                      size="small"
+                      color="inherit"
+                      disabled={busy}
+                      onClick={() => void changeFavourite(true)}
+                    >
+                      Reload current
+                    </Button>
+                  ) : undefined
+                }
+              >
+                {favouriteError}
+              </Alert>
+            )}
+            {current.description && (
               <Typography
                 variant="caption"
                 component="p"
                 sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
               >
-                {item.description}
+                {current.description}
               </Typography>
             )}
             {error ? (
@@ -134,17 +214,10 @@ export default function InuksukInfoCard({
             ) : (
               <Typography variant="caption" component="p" color="text.secondary">
                 {boards
-                  .filter((board) => item.board_ids.includes(board.id))
+                  .filter((board) => current.board_ids.includes(board.id))
                   .map((board) => board.name)
                   .join(' · ') || (loaded ? 'No visible Boards' : 'Loading Boards…')}
               </Typography>
-            )}
-            {item.permissions.can_edit && (
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <IconButton size="small" aria-label={`Edit ${item.title}`} onClick={onEdit}>
-                  <Edit fontSize="small" />
-                </IconButton>
-              </Box>
             )}
           </Stack>
         </>

@@ -51,7 +51,6 @@ function Example({
         onTabChange={setTab}
         onClose={() => setOpen(false)}
         panelId="example-panel"
-        count={items.length}
         onShareView={copyView}
         inuksuks={
           <ImageInuksuksList

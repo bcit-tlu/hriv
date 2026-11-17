@@ -2046,7 +2046,6 @@ export default function ImageViewer({
                     requestAnimationFrame(() => inuksuksTriggerRef.current?.focus())
                   }}
                   panelId={drawerId}
-                  count={inuksuks.items.length}
                   details={sidePanelDetails}
                   onShareView={
                     onShareView ??
@@ -2172,8 +2171,8 @@ export default function ImageViewer({
                     setFocusInuksukId(null)
                     setEditingInuksuk(null)
                   }}
-                  onEdit={() => {
-                    beginInuksukEdit(item)
+                  onEdit={(current) => {
+                    beginInuksukEdit(current)
                   }}
                 />
               ))}

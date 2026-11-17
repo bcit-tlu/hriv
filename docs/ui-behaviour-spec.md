@@ -1509,16 +1509,23 @@ selection MouseTracker ignores their presses.
   deselect/close it; another marker selects instead. Escape also closes it. The authorized-only
   pencil replaces its contents with the shared inline edit form, not a central dialog;
   drawer Edit selects/focuses/pans to the same Inuksuk and opens this editor.
-  It includes title, description, Boards, star, Save changes/Cancel and permitted confirmed Delete.
+  Both modes keep the Inuksuk icon left of the title, with the view-mode pencil
+  immediately beside the title. Authorized users can toggle the view-mode star
+  through the versioned API; conflicts require Reload current before retrying.
+  The inline form includes title, Boards, star, Save/Cancel and permitted Delete.
+  Description starts collapsed under More options even when filled. Delete opens
+  a secondary confirmation dialog whose Cancel/Escape preserves the editor draft.
   Outside presses keep the editor open, including presses on other markers/rows;
   Save/Cancel finish, and explicit Escape cancels/closes. Portalled Board menus remain usable.
   OCC/error/reload behavior is shared with the existing form; BoardsPage retains its modal editor.
 - The Boards menu has checkbox options sorted case-insensitively by name with ID ties,
   and no selection chips. Closed text shows the first two names then +N, including the
-  remembered last-used Board before opening it. A pinned + New Board… option always appears
-  first; unmatched search offers + Create Board "text". Creation makes/selects a private
-  name-only Board, prompting inline for an empty name. The separate create link is removed.
-- The title-only drawer leaves the bottom toolbar visible. Row/group context menus
+  remembered last-used Board before opening it. The separate + Create new board link
+  below the menu opens an inline name field and Create Board action. Creation makes
+  and selects a private, name-only Board; empty names disable creation.
+- The title-only drawer leaves the bottom toolbar visible. Drawer and panel lists
+  omit the redundant Inuksuks total heading; slightly larger body2 group headings
+  show saved-view counts in parentheses beside their names, excluding drafts. Menus
   put Show/Hide marker(s) first, then the independent label action. Row menus
   expose Edit/Delete only when permitted. Hide/Show label(s) use LabelOff/Label icons
   for rows and groups. Default/override/Mixed and localStorage

@@ -332,11 +332,15 @@ markers are hidden. The drawer's shared visibility preferences drive the
 viewer layer directly, without separate viewer-level overrides. Clicking a marker smoothly restores its
 saved pan/zoom/rotation, highlights it and opens a non-modal information card.
 The card shows title, optional description, visible Board names and favourite
-state. It has no close X: outside pointer presses deselect and dismiss it; Escape
+state, with the Inuksuk icon left of the title and pencil immediately to its right.
+Authorized users can toggle the view-mode star through the versioned API; conflicts
+require Reload current. It has no close X: outside pointer presses deselect and dismiss it; Escape
 also closes it. Other marker presses select that marker instead. Only authorized
 editors see the pencil, which turns the card itself into the OCC-protected edit
-form (title, description, Boards, favourite star, Save changes/Cancel and permitted
-confirmed Delete). Drawer row Edit selects/pans to the Inuksuk, focuses its row and
+form (title, Boards, favourite star, Save/Cancel and permitted Delete). Description
+starts collapsed under More options, including existing text, without auto-expansion.
+Delete opens a secondary confirmation dialog; cancelling it retains the editor draft.
+Drawer row Edit selects/pans to the Inuksuk, focuses its row and
 opens that same in-place editor, not a central dialog. Cancel restores view mode.
 Outside presses keep the editor open, whether changed or not; other markers/rows
 do not replace an open editor. Use Save/Cancel or explicit Escape (cancel and close)
@@ -361,12 +365,14 @@ other mutations send body versions.
 The multi-picker only lists `permissions.can_edit` Boards. Selected Boards retain their existing membership when editing. Other Boards' links are preserved by the backend assignment
 contract. The searchable checkbox menu sorts names case-insensitively, with stable
 ID ties. There are no selected chips: its closed field shows names as text (first
-two, then `+N`). **+ New Board…** is always pinned first, without typing; an unmatched
-query offers **+ Create Board "text"**. Choosing it creates and selects a private,
-name-only Board; an empty query prompts inline for a name. The former separate
-create link is removed. The last successfully used Board is remembered under the user-scoped
+two, then `+N`). The separate **+ Create new board** link below the menu opens an
+inline name field and Create Board action, creating and selecting a private,
+name-only Board. Empty names disable creation; failures preserve the entered name.
+The last successfully used Board is remembered under the user-scoped
 `hrivpref:inuksuk:lastBoard:<userId>` localStorage key, validated against the
 editable list on the next create; blocked storage is optional, not an error.
+Drawer and viewer-panel lists omit the redundant Inuksuks total heading. Each
+body2 group heading shows its saved-view count in parentheses, excluding drafts.
 
 Title, description, favourite and Board assignments are editable according
 to API permissions; other viewers get read-only details. Delete requires

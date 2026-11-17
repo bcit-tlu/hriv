@@ -181,6 +181,11 @@ export const Basic: Story = {
     await expect(canvas.queryByRole('button', { name: 'Public Inuksuks' })).not.toBeInTheDocument()
     await expect(canvasElement.querySelector('[data-inuksuk-id="10"]')).toBeNull()
     const drawer = within(canvas.getByRole('complementary'))
+    await expect(drawer.queryByRole('heading', { name: /^Inuksuks \(/ })).not.toBeInTheDocument()
+    await expect(drawer.getByRole('heading', { name: /^My Inuksuks \(/ })).toHaveClass(
+      'MuiTypography-body2',
+    )
+    await expect(drawer.getByRole('heading', { name: /^Instructor Inuksuks \(/ })).toBeVisible()
     await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
     await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks markers' }))
     await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks options' }))

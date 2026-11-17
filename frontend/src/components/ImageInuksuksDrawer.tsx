@@ -196,7 +196,7 @@ export default function ImageInuksuksDrawer({
       ref={drawerRef}
       component={embedded ? 'div' : 'aside'}
       id={drawerId}
-      aria-labelledby={embedded ? undefined : `${drawerId}-title`}
+      aria-label={embedded ? undefined : 'Inuksuks'}
       elevation={embedded ? 0 : 8}
       square
       data-hriv-canvas-ui
@@ -237,16 +237,13 @@ export default function ImageInuksuksDrawer({
           sx={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            justifyContent: 'flex-end',
             px: 2,
             py: 1,
             borderBottom: 1,
             borderColor: 'divider',
           }}
         >
-          <Typography component="h2" variant="body2" id={`${drawerId}-title`}>
-            Inuksuks ({items.length})
-          </Typography>
           <Box sx={{ display: 'flex' }}>
             <IconButton
               aria-label={pinned ? 'Unpin Inuksuks' : 'Pin Inuksuks'}
@@ -297,6 +294,7 @@ export default function ImageInuksuksDrawer({
                   aria-expanded={groupExpanded}
                   aria-controls={`${drawerId}-${source}`}
                   aria-label={title}
+                  aria-describedby={`${drawerId}-${source}-count`}
                   dense
                   sx={{ px: 0.5, py: 0.5, flex: 1, minWidth: 120 }}
                 >
@@ -305,8 +303,15 @@ export default function ImageInuksuksDrawer({
                   ) : (
                     <ExpandMore fontSize="small" />
                   )}
-                  <Typography component="h3" variant="caption">
-                    {title}
+                  <Typography component="h3" variant="body2">
+                    {title}{' '}
+                    <Box
+                      component="span"
+                      id={`${drawerId}-${source}-count`}
+                      sx={{ color: 'text.secondary' }}
+                    >
+                      ({rows.length})
+                    </Box>
                   </Typography>
                 </ListItemButton>
                 <Tooltip title="Inuksuk options">

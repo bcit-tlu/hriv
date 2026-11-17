@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import InuksukFormDialog from '../../src/components/InuksukFormDialog'
@@ -51,11 +51,42 @@ async function setup(props: Partial<React.ComponentProps<typeof InuksukFormDialo
   return { api, onChanged, onClose, user: userEvent.setup() }
 }
 async function openCreate(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('combobox', { name: 'Boards' }))
-  await user.click(screen.getByRole('option', { name: '+ New Board…' }))
+  await user.click(screen.getByRole('button', { name: '+ Create new board' }))
 }
 describe('InuksukFormDialog', () => {
-  it('pins creation above alphabetic checkbox options, with chip-free selected text and keyboard creation', async () => {
+  it.each([null, INUKSUK_FIXTURE.description])(
+    'keeps inline description collapsed and preserves its value, description=%s',
+    async (description) => {
+      const { user, api } = await setup({ inline: true, item: { ...INUKSUK_FIXTURE, description } })
+      expect(screen.queryByRole('textbox', { name: 'Description' })).not.toBeInTheDocument()
+      expect(
+        screen.getByRole('heading', { name: INUKSUK_FIXTURE.title }).previousElementSibling,
+      ).toHaveAttribute('data-testid', 'CompassCalibrationIcon')
+      await user.click(screen.getByRole('button', { name: 'More options' }))
+      expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue(description ?? '')
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+      expect(api.updateInuksuk).toHaveBeenCalledWith(7, expect.objectContaining({ description }))
+    },
+  )
+  it('cancels secondary delete confirmation without losing the inline draft, and retains deletion errors there', async () => {
+    const { user, api, onClose } = await setup({ inline: true, item: INUKSUK_FIXTURE })
+    await user.clear(screen.getByRole('textbox', { name: /^Title/ }))
+    await user.type(screen.getByRole('textbox', { name: /^Title/ }), 'Unsaved title')
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await user.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Delete Inuksuk?' })).not.toBeInTheDocument(),
+    )
+    expect(screen.getByRole('textbox', { name: /^Title/ })).toHaveValue('Unsaved title')
+    expect(onClose).not.toHaveBeenCalled()
+    api.deleteInuksuk.mockRejectedValueOnce(new ApiError(403, 'Delete denied'))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    const dialog = screen.getByRole('dialog', { name: 'Delete Inuksuk?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Delete denied')
+    expect(onClose).not.toHaveBeenCalled()
+  })
+  it('sorts checkbox options alphabetically, keeps chip-free selected text and creates Boards outside the menu', async () => {
     const api = services()
     api.fetchBoards.mockResolvedValue(
       ['zeta', 'beta', 'Alpha'].map((name, index) => ({ ...BOARD_FIXTURE, id: index + 1, name })),
@@ -65,7 +96,6 @@ describe('InuksukFormDialog', () => {
     const field = screen.getByRole('combobox', { name: 'Boards' })
     await user.click(field)
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
-      '+ New Board…',
       'Alpha',
       'beta',
       'zeta',
@@ -79,8 +109,11 @@ describe('InuksukFormDialog', () => {
     expect(document.querySelector('.MuiAutocomplete-tag')).toBeNull()
     await user.click(field)
     await user.type(field, 'My new Board')
-    expect(screen.getByRole('option', { name: '+ Create Board "My new Board"' })).toBeVisible()
-    await user.keyboard('{ArrowDown}{Enter}')
+    expect(screen.queryByRole('option')).toBeNull()
+    await user.keyboard('{Escape}')
+    await openCreate(user)
+    await user.type(screen.getByLabelText('New private Board name'), 'My new Board')
+    await user.click(screen.getByRole('button', { name: 'Create Board' }))
     await waitFor(() =>
       expect(api.createBoard).toHaveBeenCalledWith({ name: 'My new Board', visibility: 'private' }),
     )
@@ -239,16 +272,18 @@ describe('InuksukFormDialog', () => {
       )
       await user.clear(screen.getByLabelText('Title *'))
       await user.type(screen.getByLabelText('Title *'), 'Local edit')
-      await user.click(screen.getByRole('button', { name: 'Save changes' }))
+      await user.click(screen.getByRole('button', { name: inline ? 'Save' : 'Save changes' }))
       expect(await screen.findByRole('alert')).toHaveTextContent('changed since you opened it')
       expect(screen.getByLabelText('Title *')).toHaveValue('Local edit')
       expect(onChanged).not.toHaveBeenCalled()
       await user.click(screen.getByRole('button', { name: 'Reload current' }))
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled(),
+        expect(
+          screen.getByRole('button', { name: inline ? 'Save' : 'Save changes' }),
+        ).toBeEnabled(),
       )
       expect(screen.getByLabelText('Title *')).toHaveValue('Server title')
-      await user.click(screen.getByRole('button', { name: 'Save changes' }))
+      await user.click(screen.getByRole('button', { name: inline ? 'Save' : 'Save changes' }))
       await waitFor(() =>
         expect(api.updateInuksuk).toHaveBeenLastCalledWith(
           7,
@@ -263,7 +298,11 @@ describe('InuksukFormDialog', () => {
       const { api, user, onChanged } = await setup({ item: INUKSUK_FIXTURE, inline })
       await user.click(screen.getByRole('button', { name: 'Delete' }))
       expect(api.deleteInuksuk).not.toHaveBeenCalled()
-      await user.click(screen.getByRole('button', { name: 'Confirm delete' }))
+      const confirmation = screen.getByRole('dialog', { name: 'Delete Inuksuk?' })
+      expect(
+        within(confirmation).getByText(/permanently deleted from all its Boards/),
+      ).toBeVisible()
+      await user.click(within(confirmation).getByRole('button', { name: 'Delete' }))
       await waitFor(() => expect(api.deleteInuksuk).toHaveBeenCalledWith(7, 3))
       expect(onChanged).toHaveBeenCalledOnce()
     },

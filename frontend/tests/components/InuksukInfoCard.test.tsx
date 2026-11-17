@@ -8,6 +8,7 @@ vi.mock('../../src/api', async (importOriginal) => ({
   ...(await importOriginal<typeof api>()),
   fetchBoards: vi.fn(),
   fetchBoard: vi.fn(),
+  fetchInuksuk: vi.fn(),
   updateInuksuk: vi.fn(),
 }))
 afterEach(() => vi.clearAllMocks())
@@ -33,7 +34,7 @@ describe('InuksukInfoCard', () => {
     const card = screen.getByRole('region', { name: 'Inuksuk information' })
     expect(within(card).getByRole('form', { name: 'Edit Inuksuk' })).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).toBeNull()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
     fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
       target: { value: 'My edit' },
     })
@@ -45,7 +46,7 @@ describe('InuksukInfoCard', () => {
     fireEvent.pointerDown(option)
     expect(close).not.toHaveBeenCalled()
     fireEvent.keyDown(screen.getByRole('combobox', { name: 'Boards' }), { key: 'Escape' })
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(update).toHaveBeenCalledWith(
         7,
@@ -73,8 +74,13 @@ describe('InuksukInfoCard', () => {
     expect(await screen.findByText(BOARD_FIXTURE.name)).toBeInTheDocument()
     expect(screen.queryByText('Other Board')).not.toBeInTheDocument()
     expect(screen.getByText(INUKSUK_FIXTURE.description!)).toBeInTheDocument()
-    const star = screen.getByRole('img', { name: 'Favourite' })
+    const star = screen.getByRole('button', { name: 'Favourite' })
     expect(star).toBeInTheDocument()
+    const heading = screen.getByRole('heading', { name: INUKSUK_FIXTURE.title })
+    expect(heading.previousElementSibling).toHaveAttribute('data-testid', 'CompassCalibrationIcon')
+    expect(heading.nextElementSibling).toContainElement(
+      screen.getByRole('button', { name: 'Edit Rose window' }),
+    )
     expect(screen.queryByRole('button', { name: 'Close Inuksuk information' })).toBeNull()
     expect(screen.queryByText('Favourite', { exact: true })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Edit Rose window' }))
@@ -104,8 +110,69 @@ describe('InuksukInfoCard', () => {
     expect(await screen.findByText('No visible Boards')).toBeInTheDocument()
     expect(screen.queryByText('Not a favourite')).not.toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Not favourited' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Favourite' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Edit/ })).not.toBeInTheDocument()
   })
+  it('persists view-mode favourite toggles and edits with the latest returned version', async () => {
+    vi.mocked(api.fetchBoards).mockResolvedValue([])
+    vi.mocked(api.updateInuksuk)
+      .mockResolvedValueOnce({ ...INUKSUK_FIXTURE, version: 4, favourite: false })
+      .mockResolvedValueOnce({ ...INUKSUK_FIXTURE, version: 5, favourite: true })
+    const changed = vi.fn(),
+      edit = vi.fn()
+    render(
+      <InuksukInfoCard
+        item={INUKSUK_FIXTURE}
+        container={document.body}
+        onClose={vi.fn()}
+        onEdit={edit}
+        onChanged={changed}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Favourite' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      ),
+    )
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Favourite' })).toBeEnabled())
+    expect(api.updateInuksuk).toHaveBeenLastCalledWith(7, { version: 3, favourite: false })
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Favourite' })).toBeEnabled())
+    expect(api.updateInuksuk).toHaveBeenLastCalledWith(7, { version: 4, favourite: true })
+    expect(changed).toHaveBeenCalledTimes(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Rose window' }))
+    expect(edit).toHaveBeenCalledWith(expect.objectContaining({ version: 5, favourite: true }))
+  })
+  it.each([403, 409])(
+    'retains favourite state after an API %s and requires reload for conflicts',
+    async (status) => {
+      vi.mocked(api.fetchBoards).mockResolvedValue([])
+      vi.mocked(api.updateInuksuk).mockRejectedValueOnce(new api.ApiError(status, 'Denied'))
+      vi.mocked(api.fetchInuksuk).mockResolvedValue({ ...INUKSUK_FIXTURE, version: 6 })
+      render(
+        <InuksukInfoCard
+          item={INUKSUK_FIXTURE}
+          container={document.body}
+          onClose={vi.fn()}
+          onEdit={vi.fn()}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Favourite' }))
+      expect(await screen.findByRole('alert')).toBeVisible()
+      expect(screen.getByRole('button', { name: 'Favourite' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      if (status === 409) {
+        expect(screen.getByRole('button', { name: 'Favourite' })).toBeDisabled()
+        fireEvent.click(screen.getByRole('button', { name: 'Reload current' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Favourite' })).toBeEnabled())
+        expect(api.fetchInuksuk).toHaveBeenCalledWith(7)
+      }
+    },
+  )
   it('keeps the card usable when Board names cannot be loaded', async () => {
     vi.mocked(api.fetchBoards).mockRejectedValue(new Error('offline'))
     render(
