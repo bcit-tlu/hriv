@@ -61,7 +61,7 @@ export const LongNote: Story = {
     await userEvent.click(more)
     await expect(args.onShowNote).toHaveBeenCalled()
 
-    // The …more→end gap matches the title→Notes gap (within 2px).
+    // The …more→end gap matches the title→Description gap (within 2px).
     const titleRect = canvas.getByRole('heading', { level: 2 }).getBoundingClientRect()
     const notesLabel = canvas.getByText('Description:').getBoundingClientRect()
     const endFirst = canvas.getByText('2 of 6').getBoundingClientRect()
@@ -106,4 +106,30 @@ export const NoNote: Story = {
   args: {
     note: null,
   },
+}
+
+export const WithInstructorNote: Story = {
+  args: {
+    note: 'Hairline fracture, week two.',
+    instructorNote: 'Ask students to locate the fracture line before revealing it.',
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Instructor note:')).toBeVisible()
+  },
+}
+
+export const WithInstructorNoteNarrow: Story = {
+  args: {
+    note: 'Hairline fracture, week two.',
+    instructorNote: 'Ask students to locate the fracture line before revealing it.',
+  },
+  decorators: [
+    // Phone-width pane: the row wraps instead of squeezing both cells.
+    (Story) => (
+      <Box sx={{ width: 360, bgcolor: 'background.default', p: 1 }}>
+        <Story />
+      </Box>
+    ),
+  ],
 }
