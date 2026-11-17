@@ -57,7 +57,7 @@ const mockImage = {
   tileSources: '/tiles.dzi',
   categoryId: 1,
   copyright: null,
-  note: null,
+  description: null,
   active: true,
   sortOrder: 0,
   version: 1,
@@ -194,10 +194,10 @@ function resetFixtures() {
   browseDataFns.refreshUncategorizedImages.mockResolvedValue([])
   mockImage.active = true
   mockImage.categoryId = 1
-  mockImage.note = null
+  mockImage.description = null
   mockSecondImage.active = true
   mockSecondImage.categoryId = 1
-  mockSecondImage.note = null
+  mockSecondImage.description = null
   currentImagesMock = [mockImage]
   authState = {
     currentUser: mockCurrentUser,
@@ -1162,7 +1162,7 @@ describe('App breadcrumbs', () => {
       tile_sources: '/renewed-tiles.dzi',
       category_id: 1,
       copyright: null,
-      note: null,
+      description: null,
       active: true,
       sort_order: 0,
       version: 2,
@@ -1852,8 +1852,8 @@ describe('App breadcrumbs', () => {
   })
 
   it('resets the notes dialog state when selecting another image', async () => {
-    mockImage.note = 'A'.repeat(350)
-    mockSecondImage.note = 'B'.repeat(350)
+    mockImage.description = 'A'.repeat(350)
+    mockSecondImage.description = 'B'.repeat(350)
     currentImagesMock = [mockImage, mockSecondImage]
     // jsdom can't measure line clamping, so force the 1-line clamp's
     // horizontal overflow detection on.
@@ -2906,7 +2906,7 @@ describe('App collections deep links (#1414)', () => {
         tile_sources: '/t.dzi',
         category_id: 1,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 0,
         metadata_extra: null,
@@ -3645,7 +3645,7 @@ describe('Boards navigation', () => {
       tile_sources: '/tiles.dzi',
       category_id: 1,
       copyright: null,
-      note: null,
+      description: null,
       active: true,
       sort_order: 0,
       metadata_extra: null,
@@ -3732,7 +3732,7 @@ describe('Boards navigation', () => {
         tile_sources: '/tiles.dzi',
         category_id: 1,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 0,
         metadata_extra: null,

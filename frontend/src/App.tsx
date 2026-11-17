@@ -2793,7 +2793,7 @@ export default function App() {
                     tileSources: img.tile_sources,
                     categoryId: img.category_id,
                     copyright: img.copyright,
-                    note: img.note,
+                    description: img.description,
                     active: img.active,
                     sortOrder: img.sort_order,
                     version: img.version,
@@ -3153,7 +3153,7 @@ export default function App() {
                             overflowWrap: 'anywhere',
                           }}
                         >
-                          {selectedImage.note}
+                          {selectedImage.description}
                         </Box>
                       </ViewportDialog>
                       <ViewportDialog
@@ -3190,7 +3190,7 @@ export default function App() {
                 imageId={selectedImage.id}
                 name={selectedImage.name}
                 active={selectedImage.active}
-                note={selectedImage.note}
+                note={selectedImage.description}
                 collections={selectedImageCollections}
                 onOpenCollection={handleOpenCollection}
                 hrefForCollection={(id) => `${window.location.pathname}?collection=${id}`}
