@@ -420,7 +420,7 @@ describe('SearchModal', () => {
 
     const card = cards[0].closest('[data-testid="search-result-action-area"]')!
     expect(card.textContent).toContain('Link:')
-    expect(card.textContent).not.toContain('Note:')
+    expect(card.textContent).not.toContain('Description:')
   })
 
   it('ignores text payloads attached to non-text annotations', async () => {
@@ -599,7 +599,7 @@ describe('SearchModal', () => {
     expect(cards).toHaveLength(1)
 
     const card = cards[0].closest('[data-testid="search-result-action-area"]')!
-    expect(card.textContent).toContain('Note:')
+    expect(card.textContent).toContain('Description:')
     expect(card.textContent).toContain('Link:')
   })
 
@@ -849,7 +849,7 @@ describe('SearchModal', () => {
       .getAllByTestId('search-result-action-area')
       .filter((el) => el.textContent?.includes('Kidney Cross'))
     expect(cards).toHaveLength(1)
-    expect(cards[0].textContent).toContain('Note:')
+    expect(cards[0].textContent).toContain('Description:')
   })
 
   it('narrows a quoted multi-word query to exact-phrase matches', async () => {
@@ -868,7 +868,7 @@ describe('SearchModal', () => {
       .filter((el) => el.textContent?.includes('Kidney Cross'))
     expect(cards).toHaveLength(1)
     expect(cards[0].textContent).toContain('Name:')
-    expect(cards[0].textContent).not.toContain('Note:')
+    expect(cards[0].textContent).not.toContain('Description:')
     expect(cards[0].textContent).not.toContain('Copyright:')
   })
 
@@ -914,7 +914,7 @@ describe('SearchModal', () => {
       .filter((el) => el.textContent?.includes('Kidney Cross'))
     expect(cards).toHaveLength(1)
     expect(cards[0].textContent).toContain('Name:')
-    expect(cards[0].textContent).not.toContain('Note:')
+    expect(cards[0].textContent).not.toContain('Description:')
   })
 
   it('treats smart double quotes like straight quotes', async () => {
@@ -931,7 +931,7 @@ describe('SearchModal', () => {
       .filter((el) => el.textContent?.includes('Kidney Cross'))
     expect(cards).toHaveLength(1)
     expect(cards[0].textContent).toContain('Name:')
-    expect(cards[0].textContent).not.toContain('Note:')
+    expect(cards[0].textContent).not.toContain('Description:')
   })
 
   it('matches phrases inside annotation fields', async () => {
@@ -1044,13 +1044,17 @@ describe('SearchModal', () => {
     await user.click(
       screen.getAllByTestId('type-filter-chip').find((chip) => chip.textContent === 'Images')!,
     )
-    await user.click(screen.getByText('Note'))
+    await user.click(
+      screen
+        .getAllByTestId('field-filter-chip')
+        .find((chip) => chip.textContent === 'Description')!,
+    )
 
     const cards = screen
       .getAllByTestId('search-result-action-area')
       .filter((el) => el.textContent?.includes('Liver Section'))
     expect(cards).toHaveLength(1)
-    expect(cards[0].textContent).toContain('Note:')
+    expect(cards[0].textContent).toContain('Description:')
     expect(cards[0].textContent).not.toContain('Name:')
   })
 

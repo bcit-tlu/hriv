@@ -136,7 +136,7 @@ interface CollectionPayload {
 // ── Filter definitions ─────────────────────────────────
 
 export type TypeFilter = ResultKind
-type FieldFilter = 'Annotation' | 'Link' | 'Link URL' | 'Copyright' | 'Note' | 'Role'
+type FieldFilter = 'Annotation' | 'Link' | 'Link URL' | 'Copyright' | 'Description' | 'Role'
 
 interface FilterDef<T extends string> {
   key: T
@@ -230,7 +230,12 @@ const FIELD_FILTERS: FilterDef<FieldFilter>[] = [
     icon: <CopyrightIcon fontSize="small" />,
     tooltip: 'Copyright field only',
   },
-  { key: 'Note', label: 'Note', icon: <NoteIcon fontSize="small" />, tooltip: 'Note field only' },
+  {
+    key: 'Description',
+    label: 'Description',
+    icon: <NoteIcon fontSize="small" />,
+    tooltip: 'Description field only',
+  },
   { key: 'Role', label: 'Role', icon: <BadgeIcon fontSize="small" />, tooltip: 'Role field only' },
 ]
 
@@ -458,7 +463,7 @@ function addImageMatches(
   const fields: { field: string; value: string | null | undefined }[] = [
     { field: 'Name', value: img.name },
     { field: 'Copyright', value: img.copyright },
-    { field: 'Note', value: img.description },
+    { field: 'Description', value: img.description },
     ...getAnnotationSearchFields(img.metadataExtra),
   ]
   if (parentCat) {
