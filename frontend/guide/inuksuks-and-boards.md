@@ -34,26 +34,60 @@ the new marker. Escape closes an unpinned drawer; pinned drawers stay open.
 
 ## Organize a Board
 
-Open **Boards** to see your owned Board tabs across the top and your personally owned
-saved views in a compact tile grid below. **New Board** is the first tab. Use Title, Scope
+Open **Boards** to see your owned Board chips across the top and your personally owned
+saved views under **My Inuksuks** below. **New Board** is the first chip. Use Title, Scope
 (Private / Restricted / Public), Owner/Mine or Favourite to narrow both lists;
 remove filter chips or use Clear filters to reset. Each saved view shows its
 image's parent category under the title.
-The page heading matches Collections, with shorter Board tiles and similarly narrow
-Inuksuk tiles. Program-owned Boards remain in your row when you belong to that program.
-Use **Public & shared Boards** to list other people's Boards you can view in a dialog.
-Choose a Board to open its usual dialog and see its authorized saved views.
+The page heading is **My Boards**, aligned like Collections without extra page padding.
+Boards are rounded chips with a square cover
+and one-line name. Your row includes only owned Boards you can edit, including program-owned Boards when permitted.
+Read-only Boards are in Public & shared Boards instead, even for instructors and admins.
+Drag an editable Board chip by its surface to reorder it; there is no grip icon.
+Clicking still opens the Board. Active filters disable Board reordering.
+Use the outlined **Public & shared Boards** button at the right of the title row for
+public, program/group-restricted or co-owned/program-member Boards outside your chip
+row. Other people's private Boards are excluded for every role.
+Admins, instructors and staff also see **All Boards**, listing every Board returned
+by the API, including others' private Boards and Boards already in their chip row.
+Students never see All Boards. Both dialogs show tiles with title, scope pill and
+**Managed by {name}** (or program name / No owner). Choose a tile to open its usual
+dialog and see its authorized saved views. These are UX lists; backend visibility
+remains authoritative and unchanged.
 The discovery list is independent of the overview filters.
 
-Drag a saved view by its handle onto an editable Board tab to save it there too;
+Choose **Cards** or **Table** beside My Inuksuks; the filter bar sits underneath.
+The outlined **Select** button sits at the right of the Filter by row in both views.
+Both overview views are alphabetical by title, ignoring case. Favouriting or moving
+a view does not move its position; renaming places it at the new alphabetical position.
+Favourite stars are filled white in Cards and Table, with a contrasting background
+so the selected state stays visible on light surfaces too.
+Cards are 234px wide with 96px thumbnails and content-fit height, and use Collections-style compass/title/category/scope metadata.
+Table shows title, category, scope, Boards, favourite and actions. Click a Board name
+in the table to open it. Views on multiple Board scopes show each scope pill.
+The top-right star toggles Favourite; the move icon opens **Move/Save to…**.
+The pencil beside the title opens Edit, with Delete and Remove from this Board
+when permitted. Clicking a view still opens its saved image location.
+
+Drag a saved-view card onto an editable Board chip to save it there too;
 the other Board memberships stay intact. A highlighted target and confirmation
-message show the result. Read-only Boards do not accept drops. **Move/Save to…**
-in a card's menu is the explicit alternative, including moving between Boards.
+message show the result. Read-only Boards do not accept saves.
+Rejected drops show why: **Already in {Board name}** or **You can't add Inuksuks
+to {Board name}**. Ineligible targets do not highlight and no save is sent.
+Messages use the standard bottom-centre filled alert: green for a successful save,
+info for an existing link and warning for other refusals.
+**Move/Save to…** via the move icon is the explicit alternative, including moving between Boards.
 
 Click a Board tab to open its large dialog (full-screen on a phone). The heading
 keeps its title, scope, count and controls visible while the saved views scroll.
-The pencil edits the Board when permitted; **⋮** contains Owners, Delete and
-Create Sequence Collection as allowed. Reorder cards by their handles to arrange
+The title is larger than its smaller secondary Inuksuk count, matching Collections.
+The Collections-style scope pill sits beside **Managed by {owner names}**; its
+transfer icon opens owner management when permitted. The pencil opens Edit Board,
+where **Delete Board** sits below the fields. It requires confirmation and warns
+that Inuksuks left without a Board will be permanently deleted. Conflicts require
+Reload latest before saving or deleting. **Create Collection** is an
+outlined button just left of Close (disabled for an empty Board). There is no Board
+**⋮** menu. Reorder cards by dragging them to arrange
 the study. **Select**, at the right of the collage toolbar, enables Collection
 actions. Click a saved view to open its image; Back returns to the Board dialog,
 and Back again returns to the overview. Board owners can edit their Boards;
@@ -69,7 +103,7 @@ Boards and Inuksuks you can view.
 
 ## Turn saved views into a Collection
 
-Use a Board's **Create Sequence Collection** action to make an ordered
+Use a Board's **Create Collection** action to make an ordered
 walkthrough. In **Select** mode, select any number of cards for a Sequence, or 2–4
 cards for a Synchronized comparison. You can also add selected views to an existing
 Collection, subject to that Collection's limits and your editing permissions.

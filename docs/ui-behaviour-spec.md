@@ -1433,27 +1433,58 @@ selection MouseTracker ignores their presses.
 
 ### Boards & Inuksuks overview and Board dialog
 
-- The page title uses Collections' h5 variant and h1 element exactly.
-- One short horizontally scrolling owned-Board row begins with New Board. Compact
-  thumbnails and names replace ownership-tab-separated card grids. Read-only
-  Boards stay visible, without drag handles or drop targets.
-- Public & shared Boards opens a dialog listing other authorized Boards independent
-  of overview filters; choosing one closes the list and opens the existing Board dialog.
-- A compact grid shows only personally owned Inuksuks, fetched in pages of 200. Cards
+- The My Boards page title uses Collections' h5/h1 and unpadded flex header exactly.
+  The Boards & Inuksuks navigation/tab label is unchanged.
+- One short horizontally scrolling owned-Board row begins with New Board. Rounded,
+  outlined chips have a flush-left square cover/placeholder and single-line name.
+  Editable chips reorder by surface drag without grip icons; clicking still opens a Board. Read-only
+  owned/program Boards are available in Public & shared Boards, not the chip row, for every role.
+  The chip row requires edit permission as well as ownership, with no instructor/admin exemption.
+- Public & shared Boards is an outlined, right-aligned button in the title row. For every
+  role its dialog lists API-returned public, program/group-restricted or co-owned/program-member
+  Boards outside the chip row; other users' private Boards are excluded.
+  Admins, instructors and staff have a second outlined All Boards button listing every
+  API-returned Board, including others' private and already-chipped Boards. Students never see it.
+  Both dialogs use tiles with title, shared scope pill and Collections-style Managed by
+  owner/program names (No owner for orphans). Lists are independent of overview filters;
+  choosing a tile closes discovery and opens the existing Board dialog. UX filtering
+  does not change backend visibility or establish a security boundary.
+- My Inuksuks has Collections-style Cards/Table controls (no Graph), then the filter bar.
+  Outlined Select is right-aligned on that Filter by row in both overview views.
+  The fully paginated overview is case-insensitive title ascending, then numeric ID;
+  favourite/membership updates do not affect order. Filled stars use the primary accent.
+  Both views show only personally owned Inuksuks, fetched in pages of 200. Cards
   show the image's parent category below the title, or Uncategorized when absent.
-  Inuksuk tiles share the Board tiles' 156px width; Board tiles are about 20% shorter.
+  Cards are 234px wide with proportionally scaled 96px covers, including in Board dialogs.
+  Compass, title-row edit pencil and reused Collections scope pills follow Collection cards.
+  Top-right Star/StarBorder favourite takes Collections' cover-picker position, beside Move/Save.
+  The pencil opens the existing editor; Delete and Remove from this Board remain there.
+  Card click opens the saved view; no card overflow or drag-handle icon remains.
+  Table columns are Title, Category, Scope, Boards, Favourite and Actions. Board names
+  navigate; actions and filters work in both views. Multiple Board scopes render distinct pills.
   Program-owned Boards retain program-membership ownership semantics in the main row.
 - The Collections filter bar components provide title/description search,
   Private/Restricted/Public scope, owner/Mine and Favourite facets on both the
   Board row and overview collage. Scope uses any visible Board membership;
   Favourite Boards are those holding a favourite Inuksuk. Active chips can be
   removed, and Clear filters resets all facets.
-- Separate drag handles save editable overview Inuksuks onto editable Board tabs,
-  preserving existing memberships. Targets highlight and success shows a snackbar;
-  failures retain data and show the error. Browse collision logic is unchanged.
+- Dragging editable overview Inuksuk cards saves onto editable Board chips,
+  preserving existing memberships. Targets highlight and success shows a snackbar.
+  Rejected drops stay unhighlighted but show a snackbar: Already in {Board name},
+  or You can't add Inuksuks to {Board name}; no mutation is sent.
+  The bottom-centre Snackbar contains the app's filled Alert, using success for
+  saves, info for duplicates and warning for other refusals.
+  Filled favourite stars are white in Cards and Table, with contrasting backgrounds
+  for editable toggles and read-only indicators alike.
+  Failures retain data and show the error. Browse collision logic is unchanged.
 - A Board opens in a large dialog, full-screen below the small breakpoint. Its
-  fixed heading holds title, authorized edit pencil, scope, count, Select and an
-  overflow for Owners/Delete/Create Sequence Collection. Its ordered collage
+  fixed heading holds title, authorized edit pencil, count and Select. The exact
+  Collections scope pill sits beside Managed by and the permitted owner-management
+  transfer icon. The title uses Collections-style h6 typography; its count uses
+  smaller secondary body2 text. Create Collection is a right-aligned outlined button
+  immediately left of Close, disabled for empty Boards. There is no Board overflow.
+  Delete is in Edit Board, with a second confirmation and orphan-Inuksuk warning;
+  version conflicts block mutations until an explicit reload. Its ordered collage
   scrolls independently and does not inherit overview filters. Editable Boards
   retain member reorder. Select sits at the right of each collage toolbar.
 - Board URL/history state is retained: Back closes the Board dialog; opening an

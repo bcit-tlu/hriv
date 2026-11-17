@@ -8,12 +8,13 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   MenuItem,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
-import { ApiError, createBoard, fetchBoard, updateBoard, userMessage } from '../api'
+import { ApiError, createBoard, deleteBoard, fetchBoard, updateBoard, userMessage } from '../api'
 import { AuthContext } from '../authContextValue'
 import { getAttachableProgramIds } from '../programAttach'
 import type { ApiBoardSummary, BoardVisibility, Group, Program } from '../types'
@@ -24,6 +25,7 @@ export interface BoardEditDialogProps {
   groups?: Group[]
   onClose: () => void
   onSaved: (board: ApiBoardSummary) => void
+  onDeleted?: () => void
 }
 
 export default function BoardEditDialog({
@@ -32,6 +34,7 @@ export default function BoardEditDialog({
   groups = [],
   onClose,
   onSaved,
+  onDeleted,
 }: BoardEditDialogProps) {
   const user = useContext(AuthContext)?.currentUser ?? null
   const [baseline, setBaseline] = useState(board)
@@ -43,6 +46,7 @@ export default function BoardEditDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const canChangeScope = baseline == null || baseline.permissions.can_change_scope
   const canRestrict = user?.role === 'instructor' || user?.role === 'admin'
   const attachable = getAttachableProgramIds(user)
@@ -60,6 +64,7 @@ export default function BoardEditDialog({
       setProgramIds(fresh.program_ids)
       setGroupIds(fresh.group_ids)
       setConflict(false)
+      setConfirmDelete(false)
       setError(null)
     } catch (err) {
       setError(userMessage(err, 'Unable to reload Board.'))
@@ -95,10 +100,41 @@ export default function BoardEditDialog({
       setBusy(false)
     }
   }
+  const remove = async () => {
+    if (!baseline || !onDeleted) return
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      await deleteBoard(baseline.id, baseline.version)
+      onDeleted()
+      onClose()
+    } catch (err) {
+      setConflict(err instanceof ApiError && err.status === 409)
+      setError(
+        err instanceof ApiError && err.status === 409
+          ? 'This Board changed. Reload the latest version before deleting.'
+          : userMessage(err, 'Unable to delete Board.'),
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
   const editable = !baseline || baseline.permissions.can_edit
   return (
-    <Dialog open onClose={busy ? undefined : onClose} fullWidth maxWidth="sm">
-      <DialogTitle>{baseline ? 'Edit Board' : 'New Board'}</DialogTitle>
+    <Dialog
+      open
+      onClose={busy ? undefined : onClose}
+      fullWidth
+      maxWidth="sm"
+      aria-labelledby="board-edit-dialog-title"
+    >
+      <DialogTitle id="board-edit-dialog-title">
+        {baseline ? 'Edit Board' : 'New Board'}
+      </DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           {error && (
@@ -200,6 +236,32 @@ export default function BoardEditDialog({
                 At least one Program or Group is required. Instructors may add only their own
                 Programs and managed Groups; existing attachments may be removed.
               </Typography>
+            </>
+          )}
+          {baseline?.permissions.can_delete && onDeleted && (
+            <>
+              <Divider sx={{ my: 2 }} />
+              <Box>
+                <Button
+                  color="error"
+                  variant={confirmDelete ? 'contained' : 'outlined'}
+                  fullWidth
+                  disabled={busy || conflict}
+                  onClick={() => void remove()}
+                >
+                  {confirmDelete ? 'Confirm Delete Board' : 'Delete Board'}
+                </Button>
+                {confirmDelete && (
+                  <Typography
+                    variant="caption"
+                    color="error"
+                    sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
+                  >
+                    Delete “{baseline.name}”? Its links will be removed. Inuksuks only on this Board
+                    will be permanently deleted. This action cannot be undone.
+                  </Typography>
+                )}
+              </Box>
             </>
           )}
         </Stack>

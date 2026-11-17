@@ -44,6 +44,7 @@ export interface InuksukFormDialogProps {
   placement?: boolean
   onTitleChange?: (title: string) => void
   initialDelete?: boolean
+  onRemoveFromBoard?: () => void
 }
 function storageKey(userId: number) {
   return `hrivpref:inuksuk:lastBoard:${userId}`
@@ -59,6 +60,7 @@ function lastBoard(userId: number | undefined): number | null {
 }
 
 export default function InuksukFormDialog({
+  onRemoveFromBoard,
   imageId,
   view,
   item = null,
@@ -369,6 +371,16 @@ export default function InuksukFormDialog({
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 2, py: 1 }}>
+        {onRemoveFromBoard && (
+          <Button
+            size="small"
+            color="error"
+            disabled={busy || loading || !!conflict}
+            onClick={onRemoveFromBoard}
+          >
+            Remove from this Board
+          </Button>
+        )}
         {baseline?.permissions.can_delete && (
           <Button
             size="small"

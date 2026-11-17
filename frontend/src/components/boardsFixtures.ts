@@ -59,7 +59,7 @@ export const BOARD_ITEMS: ApiInuksuk[] = [
   ...INUKSUK_FIXTURE,
   id: index + 7,
   title,
-  category_name: 'Architectural details',
+  category_name: index === 5 ? null : 'Architectural details',
   thumb: '/hriv-splash2.jpg',
   description:
     index % 2
@@ -110,6 +110,26 @@ export const BOARDS_FIXTURES: ApiBoard[] = [
       },
     ],
     inuksuk_count: 1,
+  },
+]
+
+export const BOARD_DISCOVERY_FIXTURES: ApiBoard[] = [
+  ...BOARDS_FIXTURES,
+  {
+    ...BOARDS_FIXTURES[2],
+    id: 5,
+    name: 'Morgan’s private studies',
+    visibility: 'private',
+  },
+  {
+    ...BOARDS_FIXTURES[2],
+    id: 6,
+    name: 'Studio reference library',
+    visibility: 'restricted',
+    program_ids: [1],
+    group_ids: [],
+    owner_program_id: 2,
+    owners: [{ user_id: null, program_id: 2, name: 'Engineering', role: null }],
   },
 ]
 

@@ -7,7 +7,11 @@ import {
   createCollectionFromSources,
   useEditableCollections,
 } from '../useAddToCollection'
-import { studentTypesAtCap } from '../collectionUtils'
+import {
+  apiCollectionOwnerToOwner,
+  describeCollectionOwners,
+  studentTypesAtCap,
+} from '../collectionUtils'
 import type { Category, CollectionType } from '../types'
 import type { CollectionSources } from '../api'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -27,7 +31,6 @@ import {
   DialogTitle,
   FormControlLabel,
   IconButton,
-  Menu,
   MenuItem,
   Stack,
   Switch,
@@ -35,19 +38,35 @@ import {
   useMediaQuery,
   TextField,
   Typography,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
 } from '@mui/material'
 import SpaceDashboardOutlined from '@mui/icons-material/SpaceDashboardOutlined'
 import CompassCalibration from '@mui/icons-material/CompassCalibration'
 import DragIndicator from '@mui/icons-material/DragIndicator'
-import Favorite from '@mui/icons-material/Favorite'
-import FavoriteBorder from '@mui/icons-material/FavoriteBorder'
-import MoreVert from '@mui/icons-material/MoreVert'
+import Star from '@mui/icons-material/Star'
+import StarBorder from '@mui/icons-material/StarBorder'
+import DriveFileMove from '@mui/icons-material/DriveFileMove'
+import ViewModule from '@mui/icons-material/ViewModule'
+import TableRows from '@mui/icons-material/TableRows'
+import { CollectionVisibilityChip } from './CollectionCard'
+import { graphToggleSx } from '../collectionsGraph/toggleStyles'
 import Add from '@mui/icons-material/Add'
 import Edit from '@mui/icons-material/Edit'
 import Close from '@mui/icons-material/Close'
-import { useTheme } from '@mui/material/styles'
+import SwapHoriz from '@mui/icons-material/SwapHoriz'
+import ViewCarousel from '@mui/icons-material/ViewCarousel'
+import { alpha, getContrastRatio, useTheme } from '@mui/material/styles'
 import FilterBar from './FilterBar'
-import FilterPopoverButton from './FilterPopoverButton'
+import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
 import FilterTextPanel from './FilterTextPanel'
 import FilterOptionPanel from './FilterOptionPanel'
 import {
@@ -63,7 +82,6 @@ import { PointerActivationConstraints } from '@dnd-kit/dom'
 import { CollisionPriority } from '@dnd-kit/abstract'
 import {
   ApiError,
-  deleteBoard,
   fetchBoard,
   fetchInuksuk,
   fetchInuksuks,
@@ -103,6 +121,19 @@ interface BoardsPageProps {
   onOpenInuksuk: (item: ApiInuksuk) => void
 }
 
+function boardManagerText(board: ApiBoardSummary) {
+  const owners = board.owners.flatMap((owner) => {
+    const mapped = apiCollectionOwnerToOwner(owner)
+    return mapped ? [mapped] : []
+  })
+  const programOwner = owners.find((owner) => owner.kind === 'program')
+  return programOwner
+    ? `Managed by program ${programOwner.name}`
+    : owners.length
+      ? `Managed by ${describeCollectionOwners(owners)}`
+      : 'No owner'
+}
+
 type SortableFrameProps = {
   id: string
   index: number
@@ -112,6 +143,7 @@ type SortableFrameProps = {
   label: string
   children: ReactNode
   sortable?: boolean
+  hideHandle?: boolean
 }
 
 function SortableFrame(props: SortableFrameProps) {
@@ -122,28 +154,18 @@ function SortableFrame(props: SortableFrameProps) {
   )
 }
 
-function DraggableFrame({ id, label, children, disabled }: SortableFrameProps) {
+function DraggableFrame({ id, children, disabled, label }: SortableFrameProps) {
   const { ref, handleRef, isDragSource } = useDraggable({ id, type: 'board-member', disabled })
   return (
-    <Box ref={ref} sx={{ position: 'relative', minWidth: 0, opacity: isDragSource ? 0.5 : 1 }}>
-      <IconButton
-        ref={handleRef}
-        aria-label={`Drag ${label}`}
-        size="small"
-        disabled={disabled}
-        sx={{
-          position: 'absolute',
-          top: 5,
-          left: 5,
-          zIndex: 2,
-          touchAction: 'none',
-          cursor: 'grab',
-          display: disabled ? 'none' : undefined,
-          bgcolor: 'background.paper',
-        }}
-      >
-        <DragIndicator fontSize="small" />
-      </IconButton>
+    <Box
+      role="group"
+      aria-label={label}
+      ref={(node: HTMLDivElement | null) => {
+        ref(node)
+        handleRef(node)
+      }}
+      sx={{ position: 'relative', minWidth: 0, opacity: isDragSource ? 0.5 : 1 }}
+    >
       {children}
     </Box>
   )
@@ -157,6 +179,7 @@ function ActiveSortableFrame({
   disabled,
   label,
   children,
+  hideHandle,
 }: SortableFrameProps) {
   const { ref, handleRef, isDragSource } = useSortable({
     id,
@@ -168,31 +191,39 @@ function ActiveSortableFrame({
   })
   return (
     <Box
-      ref={ref}
+      role={hideHandle ? 'group' : undefined}
+      aria-label={hideHandle ? label : undefined}
+      ref={(node: HTMLDivElement | null) => {
+        ref(node)
+        if (hideHandle) handleRef(node)
+      }}
       sx={{
         position: 'relative',
         outline: isDragSource ? '2px dashed' : undefined,
         outlineColor: 'primary.main',
         minWidth: 0,
+        ...(type === 'board-card' && { flex: '0 0 auto', maxWidth: 280 }),
       }}
     >
-      <IconButton
-        ref={handleRef}
-        aria-label={`Reorder ${label}`}
-        size="small"
-        disabled={disabled}
-        sx={{
-          position: 'absolute',
-          top: 5,
-          left: 5,
-          zIndex: 2,
-          touchAction: 'none',
-          cursor: 'grab',
-          display: disabled ? 'none' : undefined,
-        }}
-      >
-        <DragIndicator fontSize="small" />
-      </IconButton>
+      {!hideHandle && (
+        <IconButton
+          ref={handleRef}
+          aria-label={`Reorder ${label}`}
+          size="small"
+          disabled={disabled}
+          sx={{
+            position: 'absolute',
+            top: 5,
+            right: 5,
+            zIndex: 2,
+            touchAction: 'none',
+            cursor: 'grab',
+            display: disabled ? 'none' : undefined,
+          }}
+        >
+          <DragIndicator fontSize="small" />
+        </IconButton>
+      )}
       {children}
     </Box>
   )
@@ -213,7 +244,6 @@ function DropArea({
     id,
     type: 'board-member-bin',
     accept: 'board-member',
-    disabled: !enabled,
     collisionPriority: CollisionPriority.Low,
   })
   return (
@@ -223,9 +253,9 @@ function DropArea({
       aria-label={label}
       sx={{
         borderRadius: 2,
-        outline: isDropTarget ? '3px solid' : undefined,
+        outline: enabled && isDropTarget ? '3px solid' : undefined,
         outlineColor: 'primary.main',
-        minHeight: 60,
+        minHeight: 0,
       }}
     >
       {children}
@@ -253,30 +283,20 @@ function BoardCover({ board }: { board: ApiBoardSummary }) {
       active = false
     }
   }, [board.id, key])
-  const items =
-    state?.id === board.id ? state.items.filter((item) => item.thumb != null).slice(0, 4) : []
+  const item = state?.id === board.id ? state.items.find((item) => item.thumb != null) : undefined
   return (
     <Box
       sx={{
+        width: 48,
         height: 48,
+        flexShrink: 0,
         bgcolor: 'action.hover',
         display: 'grid',
-        gridTemplateColumns: items.length > 1 ? '1fr 1fr' : '1fr',
-        gap: '2px',
+        placeItems: 'center',
         overflow: 'hidden',
       }}
     >
-      {items.length ? (
-        items.map((item) => (
-          <RenewingThumbnail
-            key={item.id}
-            image={{ id: item.id, thumb: item.thumb ?? '' }}
-            renewThumb={fetchInuksuk}
-            alt=""
-            sx={{ width: '100%', height: '100%', minHeight: 0, objectFit: 'cover' }}
-          />
-        ))
-      ) : board.cover_thumb ? (
+      {board.cover_thumb ? (
         <RenewingThumbnail
           image={{ id: board.id, thumb: board.cover_thumb }}
           renewThumb={async (id) => {
@@ -286,8 +306,15 @@ function BoardCover({ board }: { board: ApiBoardSummary }) {
           alt=""
           sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
+      ) : item ? (
+        <RenewingThumbnail
+          image={{ id: item.id, thumb: item.thumb ?? '' }}
+          renewThumb={fetchInuksuk}
+          alt=""
+          sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
       ) : (
-        <SpaceDashboardOutlined sx={{ m: 'auto', fontSize: 48, color: 'text.secondary' }} />
+        <SpaceDashboardOutlined sx={{ fontSize: 32, color: 'text.secondary' }} />
       )}
     </Box>
   )
@@ -440,6 +467,7 @@ export default function BoardsPage({
   onSelectBoard,
   onOpenInuksuk,
 }: BoardsPageProps) {
+  const [view, setView] = useState<'cards' | 'table'>('cards')
   const [selecting, setSelecting] = useState(false)
   const [selection, setSelection] = useState<{ boardId: number | null; ids: number[] }>({
     boardId,
@@ -480,16 +508,18 @@ export default function BoardsPage({
   const [query, setQuery] = useState('')
   const [scopes, setScopes] = useState<string[]>([])
   const [owner, setOwner] = useState('any')
-  const [publicBoardsOpen, setPublicBoardsOpen] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
-  const [boardMenu, setBoardMenu] = useState<HTMLElement | null>(null)
+  const [discovery, setDiscovery] = useState<'shared' | 'all' | null>(null)
+  const [notice, setNotice] = useState<{
+    message: string
+    severity: 'success' | 'info' | 'warning'
+  } | null>(null)
+  const notify = (message: string, severity: 'success' | 'info' | 'warning' = 'warning') =>
+    setNotice({ message, severity })
   const [favourites, setFavourites] = useState(false)
   const data = useBoardsData(boardId, favourites, enabled)
   const board = data.board
   const [edit, setEdit] = useState<'new' | 'edit' | null>(null)
   const [owners, setOwners] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [menu, setMenu] = useState<{ anchor: HTMLElement; item: ApiInuksuk } | null>(null)
   const [savingItem, setSavingItem] = useState<ApiInuksuk | null>(null)
   const [removingItem, setRemovingItem] = useState<ApiInuksuk | null>(null)
   const [editingItem, setEditingItem] = useState<ApiInuksuk | null>(null)
@@ -506,18 +536,22 @@ export default function BoardsPage({
     setAppliedBoardId(boardId)
     setEdit(null)
     setOwners(false)
-    setDeleting(false)
-    setMenu(null)
     setSavingItem(null)
     setRemovingItem(null)
     setEditingItem(null)
-    setBoardMenu(null)
     setBusy(false)
     setError(null)
     setConflict(false)
   }
   const own = data.boards.filter((row) => ownsBoard(row, currentUser))
-  const publicBoards = data.boards.filter((row) => !ownsBoard(row, currentUser))
+  const publicBoards = data.boards.filter(
+    (row) =>
+      (!ownsBoard(row, currentUser) || !row.permissions.can_edit) &&
+      (row.visibility !== 'private' || ownsBoard(row, currentUser)),
+  )
+  const canBrowseAllBoards =
+    currentUser != null && ['admin', 'instructor', 'staff'].includes(currentUser.role)
+  const discoveryBoards = discovery === 'all' && canBrowseAllBoards ? data.boards : publicBoards
   const reorderableBoards = own.filter((row) => row.permissions.can_edit)
   const needle = query.trim().toLocaleLowerCase()
   const ownerMatches = (item: ApiBoardSummary | ApiInuksuk) =>
@@ -534,18 +568,21 @@ export default function BoardsPage({
       .filter((row) => !scopes.length || scopes.includes(row.visibility))
       .map((row) => row.id),
   )
-  const filteredItems = data.recent.filter(
-    (item) =>
-      item.owners.some((o) => o.user_id === currentUser?.id) &&
-      (!needle || `${item.title} ${item.description ?? ''}`.toLocaleLowerCase().includes(needle)) &&
-      (!scopes.length || item.board_ids.some((id) => scopeIds.has(id))) &&
-      ownerMatches(item) &&
-      (!favourites || item.favourite),
-  )
-  const rows = [
-    ...reorderableBoards,
-    ...own.filter((row) => !reorderableBoards.some((owned) => owned.id === row.id)),
-  ].filter(
+  const filteredItems = data.recent
+    .filter(
+      (item) =>
+        item.owners.some((o) => o.user_id === currentUser?.id) &&
+        (!needle ||
+          `${item.title} ${item.description ?? ''}`.toLocaleLowerCase().includes(needle)) &&
+        (!scopes.length || item.board_ids.some((id) => scopeIds.has(id))) &&
+        ownerMatches(item) &&
+        (!favourites || item.favourite),
+    )
+    .sort(
+      (a, b) =>
+        a.title.toLocaleLowerCase().localeCompare(b.title.toLocaleLowerCase()) || a.id - b.id,
+    )
+  const rows = reorderableBoards.filter(
     (row) =>
       (!needle || `${row.name} ${row.description ?? ''}`.toLocaleLowerCase().includes(needle)) &&
       scopeIds.has(row.id) &&
@@ -612,7 +649,16 @@ export default function BoardsPage({
   const dragEnd = (event: DragEndEvent) => {
     const { source, target } = event.operation
     setActiveItem(null)
-    if (event.canceled || !source || busy || conflict) return
+    if (event.canceled || !source) return
+    if (busy || conflict) {
+      if (source.type === 'board-member' && target)
+        notify(
+          conflict
+            ? 'Reload latest changes before dropping Inuksuks.'
+            : 'Wait for the current change to finish.',
+        )
+      return
+    }
     if (source.type === 'board-card' && !filtered) {
       const ids = resolveReorderedKeys(
         reorderableBoards.map((row) => `board:${row.id}`),
@@ -629,17 +675,38 @@ export default function BoardsPage({
         )
     } else if (source.type === 'board-member' && target) {
       const item = (board?.inuksuks ?? data.recent).find((row) => `item:${row.id}` === source.id)
-      if (!item) return
+      if (!item) {
+        notify('This Inuksuk is no longer available. Reload before saving.')
+        return
+      }
       const key = String(target.id)
-      if (key.startsWith('save:') && item.permissions.can_edit) {
+      if (key.startsWith('save:')) {
         const destination = data.boards.find((row) => row.id === Number(key.split(':')[1]))
-        if (!destination?.permissions.can_edit || item.board_ids.includes(destination.id)) return
+        if (!destination) {
+          notify('This Board is no longer available. Reload before saving.')
+          return
+        }
+        if (!destination.permissions.can_edit) {
+          notify(`You can't add Inuksuks to ${destination.name}`)
+          return
+        }
+        if (item.board_ids.includes(destination.id)) {
+          notify(`Already in ${destination.name}`, 'info')
+          return
+        }
+        if (!item.permissions.can_edit) {
+          notify(`You can't add this Inuksuk to ${destination.name}`)
+          return
+        }
         void run(() => saveToBoard(item, destination.id, null)).then((ok) => {
-          if (ok) setNotice(`Saved to ${destination.name}`)
+          if (ok) notify(`Saved to ${destination.name}`, 'success')
         })
       } else if (board && canEdit) {
         const targetItem = board.inuksuks.find((row) => `item:${row.id}` === target.id)
-        if (!targetItem) return
+        if (!targetItem) {
+          notify('This drop target is no longer available. Reload before reordering.')
+          return
+        }
         const index = isSortable(source) ? source.index : board.inuksuks.indexOf(targetItem)
         void run(() =>
           reorderBoardInuksuks(board.id, {
@@ -647,9 +714,100 @@ export default function BoardsPage({
             items: moveBoardMember(board, item.id, index),
           }),
         )
+      } else if (board) {
+        notify(`You can't reorder Inuksuks in ${board.name}`)
       }
     }
   }
+  const itemBoards = (item: ApiInuksuk) =>
+    data.boards.filter((row) => item.board_ids.includes(row.id))
+  const scopePills = (item: ApiInuksuk) => (
+    <Stack direction="row" gap={0.5} flexWrap="wrap">
+      {[...new Set(itemBoards(item).map((row) => row.visibility))].map((visibility) => (
+        <CollectionVisibilityChip key={visibility} visibility={visibility} />
+      ))}
+    </Stack>
+  )
+  const favouriteAction = (item: ApiInuksuk) => {
+    if (!item.permissions.can_edit)
+      return item.favourite ? (
+        <Box
+          component="span"
+          role="img"
+          aria-label={`Favourite ${item.title}`}
+          sx={{ display: 'inline-flex', p: 0.5, borderRadius: '50%', bgcolor: 'primary.main' }}
+        >
+          <Star sx={{ color: 'common.white' }} fontSize="small" />
+        </Box>
+      ) : null
+    return (
+      <Tooltip title="Favourite">
+        <IconButton
+          size="small"
+          aria-label={`Favourite ${item.title}`}
+          aria-pressed={item.favourite}
+          sx={
+            item.favourite
+              ? { bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }
+              : undefined
+          }
+          disabled={busy || conflict}
+          onClick={() =>
+            void run(() =>
+              updateInuksuk(item.id, { version: item.version, favourite: !item.favourite }),
+            )
+          }
+        >
+          {item.favourite ? (
+            <Star sx={{ color: 'common.white' }} fontSize="small" />
+          ) : (
+            <StarBorder fontSize="small" />
+          )}
+        </IconButton>
+      </Tooltip>
+    )
+  }
+  const editAction = (item: ApiInuksuk) =>
+    (item.permissions.can_edit || board?.permissions.can_edit) && (
+      <Tooltip title="Edit Inuksuk">
+        <IconButton
+          size="small"
+          aria-label={`Edit Inuksuk: ${item.title}`}
+          disabled={busy || conflict}
+          onClick={() => {
+            setError(null)
+            setEditingItem(item)
+          }}
+        >
+          <Edit sx={{ fontSize: 16 }} />
+        </IconButton>
+      </Tooltip>
+    )
+  const moveAction = (item: ApiInuksuk) =>
+    item.permissions.can_edit && (
+      <Tooltip title="Move/Save to Board">
+        <IconButton
+          size="small"
+          aria-label={`Move/Save ${item.title} to Board`}
+          disabled={busy || conflict}
+          onClick={() => {
+            setError(null)
+            setSavingItem(item)
+          }}
+        >
+          <DriveFileMove fontSize="small" />
+        </IconButton>
+      </Tooltip>
+    )
+  const selectionAction = (item: ApiInuksuk) =>
+    selecting && (
+      <Checkbox
+        size="small"
+        checked={selectedIds.includes(item.id)}
+        onChange={() => toggleSelected(item.id)}
+        inputProps={{ 'aria-label': `Select ${item.title}` }}
+      />
+    )
   const memberCard = (item: ApiInuksuk, index: number, inBoard = false) => (
     <SortableFrame
       key={item.id}
@@ -657,126 +815,220 @@ export default function BoardsPage({
       index={index}
       type="board-member"
       group="members"
+      hideHandle
       disabled={selecting || busy || conflict || (inBoard ? !canEdit : !item.permissions.can_edit)}
       sortable={inBoard}
       label={item.title}
     >
-      <Card sx={{ mb: 2, breakInside: 'avoid', borderRadius: 3 }}>
-        <CardActionArea
-          onClick={() => (selecting ? toggleSelected(item.id) : onOpenInuksuk(item))}
-          aria-label={`Open Inuksuk: ${item.title}`}
-        >
-          {item.thumb ? (
-            <RenewingThumbnail
-              image={{ id: item.id, thumb: item.thumb }}
-              renewThumb={fetchInuksuk}
-              alt=""
+      <Card elevation={2} data-testid="inuksuk-card" sx={{ position: 'relative', height: '100%' }}>
+        <Box sx={{ position: 'relative' }}>
+          <CardActionArea
+            onClick={() => (selecting ? toggleSelected(item.id) : onOpenInuksuk(item))}
+            aria-label={`Open Inuksuk: ${item.title}`}
+          >
+            {item.thumb ? (
+              <RenewingThumbnail
+                image={{ id: item.id, thumb: item.thumb }}
+                renewThumb={fetchInuksuk}
+                alt=""
+                sx={{ width: '100%', height: 96, display: 'block', objectFit: 'cover' }}
+              />
+            ) : (
+              <Box
+                sx={{
+                  height: 96,
+                  display: 'grid',
+                  placeItems: 'center',
+                  bgcolor: 'primary.main',
+                  color: 'primary.contrastText',
+                }}
+              >
+                <CompassCalibration sx={{ fontSize: 48 }} />
+              </Box>
+            )}
+          </CardActionArea>
+          <Box
+            sx={(theme) => ({
+              position: 'absolute',
+              top: 4,
+              right: 4,
+              display: 'flex',
+              gap: 0.5,
+              '& .MuiIconButton-root': {
+                color: theme.palette.common.white,
+                bgcolor: alpha(theme.palette.common.black, 0.25),
+                '&:hover': { bgcolor: alpha(theme.palette.common.black, 0.45) },
+              },
+            })}
+          >
+            {favouriteAction(item)}
+            {moveAction(item)}
+          </Box>
+        </Box>
+        <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+          <Stack direction="row" alignItems="flex-start" gap={0.5}>
+            <CompassCalibration color="primary" sx={{ fontSize: 24, flexShrink: 0 }} />
+            <Button
+              onClick={() => (selecting ? toggleSelected(item.id) : onOpenInuksuk(item))}
+              title={item.title}
               sx={{
-                width: '100%',
-                height: 64,
-                objectFit: 'cover',
-                display: 'block',
-              }}
-            />
-          ) : (
-            <Box
-              sx={{
-                height: 64,
-                display: 'grid',
-                placeItems: 'center',
-                bgcolor: 'action.hover',
+                p: 0,
+                minWidth: 0,
+                flex: 1,
+                textTransform: 'none',
+                justifyContent: 'flex-start',
+                textAlign: 'left',
               }}
             >
-              <CompassCalibration sx={{ fontSize: 48, color: 'text.secondary' }} />
-            </Box>
-          )}
-          <CardContent sx={{ pb: 1 }}>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <CompassCalibration fontSize="small" color="primary" />
-              <Typography variant="body2" component="p" fontWeight={600} noWrap title={item.title}>
+              <Typography
+                component="h3"
+                variant="body2"
+                sx={{
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  overflowWrap: 'anywhere',
+                }}
+              >
                 {item.title}
               </Typography>
-            </Stack>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              noWrap
-              title={item.category_name ?? 'Uncategorized'}
-              sx={{ mt: 0.5 }}
-            >
-              {item.category_name ?? 'Uncategorized'}
-            </Typography>
-            {item.description && (
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                noWrap
-                title={item.description}
-                sx={{ mt: 0.5 }}
-              >
-                {item.description}
-              </Typography>
-            )}
-          </CardContent>
-        </CardActionArea>
-        <Stack direction="row" justifyContent="flex-end" sx={{ px: 1, pb: 0.5 }}>
-          {selecting && (
-            <Checkbox
-              checked={selectedIds.includes(item.id)}
-              onChange={() => toggleSelected(item.id)}
-              inputProps={{ 'aria-label': `Select ${item.title}` }}
-            />
-          )}
-          {item.permissions.can_edit ? (
-            <IconButton
-              aria-label={`Favourite ${item.title}`}
-              aria-pressed={item.favourite}
-              disabled={busy || conflict}
-              onClick={() =>
-                void run(() =>
-                  updateInuksuk(item.id, { version: item.version, favourite: !item.favourite }),
-                )
-              }
-            >
-              {item.favourite ? <Favorite color="error" /> : <FavoriteBorder />}
-            </IconButton>
-          ) : (
-            item.favourite && <Favorite color="error" sx={{ m: 1 }} />
-          )}
-          {(item.permissions.can_edit || board?.permissions.can_edit) && (
-            <IconButton
-              aria-label={`Actions for ${item.title}`}
-              disabled={busy || conflict}
-              onClick={(e) => {
-                setError(null)
-                setMenu({ anchor: e.currentTarget, item })
-              }}
-            >
-              <MoreVert />
-            </IconButton>
-          )}
-        </Stack>
+            </Button>
+            {editAction(item)}
+          </Stack>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            noWrap
+            title={item.category_name ?? 'Uncategorized'}
+          >
+            {item.category_name ?? 'Uncategorized'}
+          </Typography>
+          <Box sx={{ mt: 0.5 }}>{scopePills(item)}</Box>
+          {selectionAction(item)}
+        </CardContent>
       </Card>
     </SortableFrame>
   )
+  const memberTable = (items: ApiInuksuk[]) => (
+    <TableContainer component={Paper} variant="outlined">
+      <Table size="small" aria-label="Inuksuks">
+        <TableHead
+          sx={{
+            '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme), fontWeight: 600 },
+          }}
+        >
+          <TableRow>
+            {selecting && <TableCell>Select</TableCell>}
+            {['Title', 'Category', 'Scope', 'Boards', 'Favourite', 'Actions'].map((label) => (
+              <TableCell key={label}>{label}</TableCell>
+            ))}
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {items.map((item) => (
+            <TableRow
+              key={item.id}
+              hover
+              tabIndex={0}
+              sx={{ cursor: 'pointer' }}
+              onClick={() => onOpenInuksuk(item)}
+              onKeyDown={(event) => {
+                if (
+                  event.target === event.currentTarget &&
+                  (event.key === 'Enter' || event.key === ' ')
+                ) {
+                  event.preventDefault()
+                  onOpenInuksuk(item)
+                }
+              }}
+            >
+              {selecting && (
+                <TableCell onClick={(event) => event.stopPropagation()}>
+                  {selectionAction(item)}
+                </TableCell>
+              )}
+              <TableCell>{item.title}</TableCell>
+              <TableCell>{item.category_name ?? 'Uncategorized'}</TableCell>
+              <TableCell>{scopePills(item)}</TableCell>
+              <TableCell onClick={(event) => event.stopPropagation()}>
+                {itemBoards(item).map((row) => (
+                  <Button
+                    key={row.id}
+                    size="small"
+                    onClick={() => onSelectBoard(row.id)}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    {row.name}
+                  </Button>
+                ))}
+              </TableCell>
+              <TableCell onClick={(event) => event.stopPropagation()}>
+                {favouriteAction(item)}
+              </TableCell>
+              <TableCell sx={{ whiteSpace: 'nowrap' }} onClick={(event) => event.stopPropagation()}>
+                {moveAction(item)}
+                {editAction(item)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  )
 
+  const selectAction = collectionsEnabled && (
+    <Button
+      variant="outlined"
+      aria-pressed={selecting}
+      sx={{ whiteSpace: 'nowrap' }}
+      onClick={() => {
+        setSelecting(!selecting)
+        setSelection({ boardId, ids: [] })
+      }}
+    >
+      {selecting ? 'Cancel selection' : 'Select'}
+    </Button>
+  )
   const collageToolbar = (title: string) => (
     <Box sx={{ mb: 2 }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
         <Typography variant="h5" component="h2">
           {title}
         </Typography>
-        {collectionsEnabled && (
-          <Button
-            aria-pressed={selecting}
-            onClick={() => {
-              setSelecting(!selecting)
-              setSelection({ boardId, ids: [] })
-            }}
-          >
-            {selecting ? 'Cancel selection' : 'Select'}
-          </Button>
-        )}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+          {title === 'My Inuksuks' && (
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={view}
+              aria-label="Inuksuks view"
+              sx={[
+                ...(Array.isArray(graphToggleSx) ? graphToggleSx : [graphToggleSx]),
+                {
+                  '& .MuiToggleButton-root': { gap: 0.75, px: 1.25, textTransform: 'none' },
+                  '& .MuiToggleButton-root.Mui-selected': {
+                    color: (theme) =>
+                      theme.palette.mode === 'light'
+                        ? theme.palette.primary.dark
+                        : theme.palette.primary.light,
+                  },
+                },
+              ]}
+              onChange={(_, value: 'cards' | 'table' | null) => {
+                if (value) setView(value)
+              }}
+            >
+              <ToggleButton value="cards" aria-label="Cards view">
+                <ViewModule fontSize="small" /> Cards
+              </ToggleButton>
+              <ToggleButton value="table" aria-label="Table view">
+                <TableRows fontSize="small" /> Table
+              </ToggleButton>
+            </ToggleButtonGroup>
+          )}
+          {boardId != null && selectAction}
+        </Box>
       </Stack>
       {collectionsEnabled && selecting && (
         <Stack
@@ -820,10 +1072,32 @@ export default function BoardsPage({
   )
   if (!enabled) return null
   return (
-    <Box sx={{ p: { xs: 1, sm: 3 }, maxWidth: 1500, mx: 'auto' }}>
-      <Typography variant="h5" component="h1" sx={{ mb: 2 }}>
-        Boards &amp; Inuksuks
-      </Typography>
+    <Box>
+      <Box
+        sx={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 1,
+          mb: 3,
+          flexShrink: 0,
+        }}
+      >
+        <Typography variant="h5" component="h1">
+          My Boards
+        </Typography>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 1 }}>
+          <Button variant="outlined" onClick={() => setDiscovery('shared')}>
+            Public &amp; shared Boards
+          </Button>
+          {canBrowseAllBoards && (
+            <Button variant="outlined" onClick={() => setDiscovery('all')}>
+              All Boards
+            </Button>
+          )}
+        </Box>
+      </Box>
       {boardId != null && !board && (
         <Button onClick={() => onSelectBoard(null)}>All Inuksuks</Button>
       )}
@@ -892,8 +1166,173 @@ export default function BoardsPage({
         }}
         onDragEnd={dragEnd}
       >
+        <Box
+          role="region"
+          aria-label="Boards"
+          sx={{ display: 'flex', gap: 1.5, overflowX: 'auto', py: 2, mb: 2 }}
+        >
+          <Card variant="outlined" sx={{ flexShrink: 0, borderRadius: 2 }}>
+            <CardActionArea
+              onClick={() => {
+                setError(null)
+                setEdit('new')
+              }}
+              sx={{
+                height: '100%',
+                minHeight: 48,
+                display: 'flex',
+                flexDirection: 'row',
+                gap: 1,
+                pr: 2,
+                justifyContent: 'center',
+              }}
+            >
+              <Box
+                sx={{
+                  width: 48,
+                  height: 48,
+                  display: 'grid',
+                  placeItems: 'center',
+                  bgcolor: 'action.hover',
+                }}
+              >
+                <Add />
+              </Box>
+              <Typography variant="body2">New Board</Typography>
+            </CardActionArea>
+          </Card>
+          {rows.map((row) => (
+            <SortableFrame
+              key={row.id}
+              id={`board:${row.id}`}
+              index={reorderableBoards.findIndex((b) => b.id === row.id)}
+              type="board-card"
+              group="boards"
+              disabled={filtered || !reorderableBoards.some((b) => b.id === row.id)}
+              label={row.name}
+              hideHandle
+            >
+              <DropArea
+                id={`save:${row.id}`}
+                label={`Save to ${row.name}`}
+                enabled={
+                  !!activeItem?.permissions.can_edit &&
+                  row.permissions.can_edit &&
+                  !activeItem.board_ids.includes(row.id)
+                }
+              >
+                <Card
+                  variant="outlined"
+                  sx={{
+                    borderRadius: 2,
+                    borderColor: row.id === boardId ? 'primary.main' : 'divider',
+                  }}
+                >
+                  <CardActionArea
+                    onClick={() => onSelectBoard(row.id)}
+                    aria-label={`Open Board: ${row.name}`}
+                    sx={{ display: 'flex', justifyContent: 'flex-start', gap: 1 }}
+                  >
+                    <BoardCover board={row} />
+                    <Typography
+                      variant="body2"
+                      component="p"
+                      noWrap
+                      fontWeight={600}
+                      sx={{
+                        px: 1,
+                        py: 0.75,
+                      }}
+                      title={row.name}
+                    >
+                      {row.name}
+                    </Typography>
+                  </CardActionArea>
+                </Card>
+              </DropArea>
+            </SortableFrame>
+          ))}
+        </Box>
+
+        <Dialog
+          open={discovery === 'shared' || (discovery === 'all' && canBrowseAllBoards)}
+          onClose={() => setDiscovery(null)}
+          fullWidth
+          maxWidth="sm"
+          aria-labelledby="public-boards-title"
+        >
+          <DialogTitle id="public-boards-title">
+            {discovery === 'all' ? 'All Boards' : 'Public & shared Boards'}
+          </DialogTitle>
+          <DialogContent>
+            {data.loading ? (
+              <CircularProgress
+                aria-label={
+                  discovery === 'all' ? 'Loading all Boards' : 'Loading public and shared Boards'
+                }
+                size={24}
+              />
+            ) : data.error ? (
+              <Alert severity="error">{data.error}</Alert>
+            ) : discoveryBoards.length ? (
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+                  gap: 2,
+                }}
+              >
+                {discoveryBoards.map((row) => {
+                  return (
+                    <Card key={row.id} variant="outlined">
+                      <CardActionArea
+                        onClick={() => {
+                          setDiscovery(null)
+                          onSelectBoard(row.id)
+                        }}
+                        aria-label={`Open Board: ${row.name}`}
+                        sx={{ height: '100%' }}
+                      >
+                        <CardContent>
+                          <Typography
+                            component="h3"
+                            variant="body2"
+                            fontWeight={600}
+                            sx={{ overflowWrap: 'anywhere' }}
+                          >
+                            {row.name}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            component="p"
+                            sx={{ mb: 1, overflowWrap: 'anywhere' }}
+                          >
+                            {boardManagerText(row)}
+                          </Typography>
+                          <CollectionVisibilityChip visibility={row.visibility} />
+                        </CardContent>
+                      </CardActionArea>
+                    </Card>
+                  )
+                })}
+              </Box>
+            ) : (
+              <Typography color="text.secondary">
+                {discovery === 'all'
+                  ? 'No Boards available.'
+                  : 'No public or shared Boards available.'}
+              </Typography>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDiscovery(null)}>Close</Button>
+          </DialogActions>
+        </Dialog>
+        {!boardId && collageToolbar('My Inuksuks')}
         <FilterBar
           ariaLabel="Filter Boards and Inuksuks"
+          actions={boardId == null ? selectAction : undefined}
           clearAction={
             !mobile && filtered ? (
               <Button
@@ -1008,131 +1447,18 @@ export default function BoardsPage({
             />
           </FilterPopoverButton>
         </FilterBar>
-        <Box
-          role="region"
-          aria-label="Boards"
-          sx={{ display: 'flex', gap: 1.5, overflowX: 'auto', py: 2, mb: 2 }}
-        >
-          <Card
-            variant="outlined"
-            sx={{ flex: '0 0 120px', borderStyle: 'dashed', borderRadius: 2 }}
-          >
-            <CardActionArea
-              onClick={() => {
-                setError(null)
-                setEdit('new')
-              }}
-              sx={{
-                height: '100%',
-                minHeight: 84,
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-              }}
-            >
-              <Add />
-              <Typography variant="body2">New Board</Typography>
-            </CardActionArea>
-          </Card>
-          {rows.map((row) => (
-            <Box key={row.id} sx={{ flex: '0 0 156px', minWidth: 0 }}>
-              <SortableFrame
-                id={`board:${row.id}`}
-                index={reorderableBoards.findIndex((b) => b.id === row.id)}
-                type="board-card"
-                group="boards"
-                disabled={filtered || !reorderableBoards.some((b) => b.id === row.id)}
-                label={row.name}
-              >
-                <DropArea
-                  id={`save:${row.id}`}
-                  label={`Save to ${row.name}`}
-                  enabled={
-                    !!activeItem?.permissions.can_edit &&
-                    row.permissions.can_edit &&
-                    !activeItem.board_ids.includes(row.id)
-                  }
-                >
-                  <Card
-                    variant="outlined"
-                    sx={{
-                      borderRadius: 2,
-                      borderColor: row.id === boardId ? 'primary.main' : 'divider',
-                    }}
-                  >
-                    <CardActionArea
-                      onClick={() => onSelectBoard(row.id)}
-                      aria-label={`Open Board: ${row.name}`}
-                    >
-                      <Typography
-                        variant="body2"
-                        component="p"
-                        noWrap
-                        fontWeight={600}
-                        sx={{
-                          px: 1,
-                          py: 0.75,
-                          pl: reorderableBoards.some((b) => b.id === row.id) && !filtered ? 4 : 1,
-                        }}
-                        title={row.name}
-                      >
-                        {row.name}
-                      </Typography>
-                      <BoardCover board={row} />
-                    </CardActionArea>
-                  </Card>
-                </DropArea>
-              </SortableFrame>
-            </Box>
-          ))}
-        </Box>
-        <Button onClick={() => setPublicBoardsOpen(true)} sx={{ mb: 2 }}>
-          Public &amp; shared Boards
-        </Button>
-        <Dialog
-          open={publicBoardsOpen}
-          onClose={() => setPublicBoardsOpen(false)}
-          fullWidth
-          maxWidth="sm"
-          aria-labelledby="public-boards-title"
-        >
-          <DialogTitle id="public-boards-title">Public &amp; shared Boards</DialogTitle>
-          <DialogContent>
-            {data.loading ? (
-              <CircularProgress aria-label="Loading public and shared Boards" size={24} />
-            ) : data.error ? (
-              <Alert severity="error">{data.error}</Alert>
-            ) : publicBoards.length ? (
-              <Stack spacing={1}>
-                {publicBoards.map((row) => (
-                  <Button
-                    key={row.id}
-                    onClick={() => {
-                      setPublicBoardsOpen(false)
-                      onSelectBoard(row.id)
-                    }}
-                    aria-label={`Open Board: ${row.name}`}
-                    sx={{ justifyContent: 'flex-start' }}
-                  >
-                    {row.name}
-                  </Button>
-                ))}
-              </Stack>
-            ) : (
-              <Typography color="text.secondary">No public or shared Boards available.</Typography>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setPublicBoardsOpen(false)}>Close</Button>
-          </DialogActions>
-        </Dialog>
         {data.loading && <CircularProgress aria-label="Loading Boards" size={24} />}
         {!data.loading && (!data.error || data.boards.length > 0 || data.recent.length > 0) && (
           <>
-            {!boardId && collageToolbar('Inuksuks')}
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 156px)', gap: 2 }}>
-              {filteredItems.map((item, index) => memberCard(item, index))}
-            </Box>
+            {view === 'cards' ? (
+              <Box
+                sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 234px)', gap: 2 }}
+              >
+                {filteredItems.map((item, index) => memberCard(item, index))}
+              </Box>
+            ) : (
+              memberTable(filteredItems)
+            )}
             {!filteredItems.length && (
               <Typography color="text.secondary">
                 {filtered
@@ -1161,43 +1487,87 @@ export default function BoardsPage({
                 <Typography
                   id="board-dialog-title"
                   component="h2"
-                  variant="h5"
+                  variant="h6"
                   sx={{ minWidth: 0, overflowWrap: 'anywhere' }}
                 >
                   {board?.name ?? 'Board'}
                 </Typography>
+                {board && (
+                  <Typography
+                    component="span"
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ ml: 0.5 }}
+                  >
+                    ({board.inuksuk_count} Inuksuks)
+                  </Typography>
+                )}
                 {board?.permissions.can_edit && (
                   <IconButton
+                    size="small"
                     aria-label="Edit Board"
                     disabled={busy || conflict}
                     onClick={() => setEdit('edit')}
                   >
-                    <Edit />
+                    <Edit sx={{ fontSize: 16 }} />
                   </IconButton>
                 )}
               </Box>
-              <IconButton
-                aria-label="Board options"
-                onClick={(event) => setBoardMenu(event.currentTarget)}
-              >
-                <MoreVert />
-              </IconButton>
+              {collectionsEnabled && board && (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<ViewCarousel />}
+                  disabled={!board.inuksuks.length || busy || conflict}
+                  onClick={() =>
+                    beginCollection(board.inuksuks, 'sequence', false, {
+                      source_board_id: board.id,
+                    })
+                  }
+                >
+                  Create Collection
+                </Button>
+              )}
               <IconButton aria-label="Close Board" onClick={() => onSelectBoard(null)}>
                 <Close />
               </IconButton>
             </Stack>
             {board && (
               <>
-                <Stack direction="row" alignItems="center" gap={1} sx={{ my: 1 }}>
-                  <Chip
-                    label={board.visibility[0].toUpperCase() + board.visibility.slice(1)}
-                    size="small"
-                    variant="outlined"
-                  />
-                  <Typography variant="body2" color="text.secondary">
-                    {board.inuksuk_count} Inuksuks
-                  </Typography>
-                </Stack>
+                <Box
+                  role="group"
+                  aria-label="Board scope and owners"
+                  sx={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: 1,
+                    mb: 1,
+                    mt: 1,
+                  }}
+                >
+                  <CollectionVisibilityChip visibility={board.visibility} />
+                  <Box
+                    sx={{ flex: '1 1 240px', minWidth: 0, display: 'flex', alignItems: 'center' }}
+                  >
+                    <Typography variant="body2" color="text.secondary">
+                      {boardManagerText(board)}
+                    </Typography>
+                    {board.permissions.can_transfer && (
+                      <Tooltip title="Manage owners">
+                        <IconButton
+                          size="small"
+                          aria-label="Manage owners"
+                          disabled={busy || conflict}
+                          sx={{ ml: 0.25, p: 0.25 }}
+                          onClick={() => setOwners(true)}
+                        >
+                          <SwapHoriz fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                  </Box>
+                </Box>
                 {board.description && (
                   <Typography
                     variant="body2"
@@ -1224,7 +1594,7 @@ export default function BoardsPage({
             {board && (
               <>
                 <Box
-                  sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 156px)', gap: 2 }}
+                  sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 234px)', gap: 2 }}
                 >
                   {board.inuksuks.map((item, index) => memberCard(item, index, true))}
                 </Box>
@@ -1237,49 +1607,34 @@ export default function BoardsPage({
             )}
           </DialogContent>
         </Dialog>
-        <Menu anchorEl={boardMenu} open={!!boardMenu} onClose={() => setBoardMenu(null)}>
-          {board?.permissions.can_transfer && (
-            <MenuItem
-              disabled={busy || conflict}
-              onClick={() => {
-                setBoardMenu(null)
-                setOwners(true)
-              }}
-            >
-              Owners
-            </MenuItem>
-          )}
-          {collectionsEnabled && board && (
-            <MenuItem
-              disabled={!board.inuksuks.length}
-              onClick={() => {
-                setBoardMenu(null)
-                beginCollection(board.inuksuks, 'sequence', false, { source_board_id: board.id })
-              }}
-            >
-              Create Sequence Collection
-            </MenuItem>
-          )}
-          {board?.permissions.can_delete && (
-            <MenuItem
-              disabled={busy || conflict}
-              onClick={() => {
-                setBoardMenu(null)
-                setError(null)
-                setDeleting(true)
-              }}
-            >
-              Delete Board
-            </MenuItem>
-          )}
-        </Menu>
       </DragDropProvider>
       <Snackbar
         open={!!notice}
         autoHideDuration={5000}
-        onClose={() => setNotice(null)}
-        message={notice}
-      />
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ zIndex: 1500 }}
+        onClose={(_event, reason) => {
+          if (reason !== 'clickaway') setNotice(null)
+        }}
+      >
+        <Alert
+          variant="filled"
+          severity={notice?.severity ?? 'info'}
+          sx={(theme) => {
+            const colors = theme.palette[notice?.severity ?? 'info']
+            const background = theme.palette.mode === 'dark' ? colors.dark : colors.main
+            return {
+              color:
+                getContrastRatio(background, theme.palette.common.white) >= 4.5
+                  ? theme.palette.common.white
+                  : theme.palette.common.black,
+            }
+          }}
+          onClose={() => setNotice(null)}
+        >
+          {notice?.message}
+        </Alert>
+      </Snackbar>
       {edit && (edit === 'new' || board) && (
         <BoardEditDialog
           board={edit === 'edit' ? board : null}
@@ -1290,6 +1645,10 @@ export default function BoardsPage({
             data.upsertBoard(saved)
             if (edit === 'new') onSelectBoard(saved.id)
             else void data.reload()
+          }}
+          onDeleted={() => {
+            onSelectBoard(null)
+            void data.reload()
           }}
         />
       )}
@@ -1311,40 +1670,16 @@ export default function BoardsPage({
           userId={currentUser?.id}
           onClose={() => setEditingItem(null)}
           onChanged={data.reload}
+          onRemoveFromBoard={
+            board?.permissions.can_edit
+              ? () => {
+                  setRemovingItem(editingItem)
+                  setEditingItem(null)
+                }
+              : undefined
+          }
         />
       )}
-      <Menu anchorEl={menu?.anchor} open={!!menu} onClose={() => setMenu(null)}>
-        {menu?.item.permissions.can_edit && (
-          <MenuItem
-            onClick={() => {
-              setSavingItem(menu.item)
-              setMenu(null)
-            }}
-          >
-            Move/Save to…
-          </MenuItem>
-        )}
-        {menu?.item.permissions.can_edit && (
-          <MenuItem
-            onClick={() => {
-              setEditingItem(menu.item)
-              setMenu(null)
-            }}
-          >
-            Edit Inuksuk
-          </MenuItem>
-        )}
-        {menu && board?.permissions.can_edit && (
-          <MenuItem
-            onClick={() => {
-              setRemovingItem(menu.item)
-              setMenu(null)
-            }}
-          >
-            Remove from this Board
-          </MenuItem>
-        )}
-      </Menu>
       {savingItem && (
         <SaveToDialog
           item={savingItem}
@@ -1361,34 +1696,6 @@ export default function BoardsPage({
             })
           }}
         />
-      )}
-      {deleting && board && (
-        <Dialog open onClose={busy ? undefined : () => setDeleting(false)}>
-          <DialogTitle>Delete Board?</DialogTitle>
-          <DialogContent>
-            {error && <Alert severity="error">{error}</Alert>}Delete “{board.name}”? Its links will
-            be removed. Inuksuks only on this Board will be permanently deleted.
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setDeleting(false)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button
-              color="error"
-              disabled={busy || conflict}
-              onClick={() => {
-                void run(() => deleteBoard(board.id, board.version)).then((ok) => {
-                  if (ok) {
-                    setDeleting(false)
-                    onSelectBoard(null)
-                  }
-                })
-              }}
-            >
-              Delete Board
-            </Button>
-          </DialogActions>
-        </Dialog>
       )}
       {removingItem && board && (
         <Dialog open onClose={busy ? undefined : () => setRemovingItem(null)}>

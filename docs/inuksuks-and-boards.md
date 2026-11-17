@@ -454,19 +454,46 @@ Boards uses `Tabs value={false}`. Selecting a Board writes
 The same flag gates direct links and all page requests.
 Frontend telemetry preserves `boards` in both page and from-page dimensions.
 
-The overview has one short, horizontally scrolling row of compact Board tabs,
-starting with **New Board**. Owned Boards share that row, with
-up to four renewing coordinate thumbnails and a themed placeholder. Below it,
-only personally owned Inuksuks appear in a compact responsive tile grid; both lists are
-fetched in pages of 200 without the former recent-60 cap. Each card shows the
+The overview has one short, horizontally scrolling row of outlined, rounded Board chips,
+starting with **New Board**. Owned Boards share that row, with a flush-left square
+Board cover (or a renewing member thumbnail, then the themed placeholder) and a
+single-line name. The **My Boards** heading shares Collections' unpadded flex header.
+An outlined **Public & shared Boards** button sits at its right, above the Board row.
+Admins, instructors and staff also have an outlined **All Boards** button beside it;
+students never see All Boards.
+Only the page heading changes; the Boards & Inuksuks navigation label remains unchanged.
+Below it, **My Inuksuks** contains Collections-style Cards/Table controls and then
+the filter bar. There is no Graph view. Only personally owned Inuksuks appear; both lists are
+fetched in pages of 200 without the former recent-60 cap.
+The overview's outlined Select button is right-aligned on the Filter by row in both views.
+Each card shows the
 image's parent category below its title (`category_name`, null if unfiled).
-The heading uses the same h5/h1 typography as Collections. Board tiles are about
-20% shorter; Inuksuk tiles use the same 156px width, including inside Board dialogs.
+The heading uses the same h5/h1 typography as Collections. Inuksuk cards are 234px
+wide (20% wider than the previous 195px), with proportionally scaled 96px covers,
+including inside Board dialogs. They reuse Collections' scope-pill component.
+The compass replaces the collection icon; category replaces the image count, with
+Uncategorized as the fallback. Top-right actions are Favourite (Star/StarBorder,
+in Collections' Set cover position) and Move/Save. The title-row pencil opens the
+existing edit dialog, including Delete and, for Board editors, Remove from this Board.
+Card clicks still open the exact saved view. There is no per-card overflow or drag glyph.
+Table uses the same filters, permissions and actions, with Title, Category, Scope,
+Boards (navigable), Favourite and Actions columns. Scope shows each distinct visible
+Board visibility when a view belongs to Boards with different scopes. View choice
+is local to the page mount and starts on Cards.
 **Public & shared Boards** opens a separate dialog listing server-authorized
-Boards not owned by the user. Selecting one closes the list and opens the existing
+Boards outside the chip row that are public, restricted by program/group, or shared
+with the current user through co-ownership or program ownership/membership. Other
+users' private Boards are excluded for every role. **All Boards** lists every Board
+returned by the backend for admins, instructors and staff, including others' private Boards
+and editable owned Boards already in the chip row. Both dialogs render clickable
+tiles with title, the shared scope pill and the Collections-style **Managed by** owner
+line (program names, co-owner names, or No owner), using the existing API owner data.
+Selecting a tile closes the list and opens the existing
 Board dialog; overview filters do not narrow this discovery list. Program-owned
 Boards retain the existing program-membership ownership rules. Backend visibility
 remains authoritative; this overview separation is not an authorization boundary.
+The frontend neither expands nor changes backend Board visibility. Discovery is UX
+scoping, not a privacy/security boundary; All Boards adds no new API permissions.
 The field uses the existing image visibility gate and eagerly loaded category.
 Collections' filter components provide title/description search, Private /
 Restricted / Public scope, owner/Mine, and Favourite filters on both surfaces.
@@ -475,8 +502,13 @@ matches Favourite if it holds a favourite Inuksuk. Active filters have removable
 chips and a Clear filters action. Select sits at the right of the collage toolbar.
 Opening a Board shows all authorized members, independent of overview filters,
 in a large dialog, full-screen on mobile. Its fixed heading keeps the title,
-editable-only pencil, scope pill, count and Select visible while members scroll.
-The overflow holds permitted Owners/Delete actions and Create Sequence Collection.
+editable-only pencil, count and Select visible while members scroll. The exact
+Collections scope pill sits beside the Managed by owner line; its transfer icon
+opens owner management for users with `can_transfer`. An outlined Create Sequence
+Collection button sits immediately left of Close, disabled for an empty Board.
+There is no Board overflow menu. Delete Board is at the bottom of Edit Board, like
+Delete Collection, and requires a second confirmation before deleting orphaned
+Inuksuks. Delete uses the form's Board version and explicit 409 reload flow.
 The URL retains `?board=`; Back closes the dialog, and Back from a saved-view
 image returns to that Board dialog.
 
@@ -489,19 +521,32 @@ Owners/transfer reuse the Collections picker via a Board adapter, and require
 reload on 409; reload replaces the staged draft with current server values.
 
 The selected Board displays a flat, ordered collage of saved views.
-Handle-based DnD reorders members within the Board;
+The My Inuksuks overview instead sorts every fetched page together by case-insensitive
+title, with numeric Inuksuk ID breaking ties. Favourite and membership changes do not
+change that order; renames move only to their new alphabetical position.
+Filled favourite stars are white on both cards and table rows. A contrasting
+background keeps the white star legible, including read-only favourite indicators.
+Dragging a member card reorders members within the Board, without a separate handle icon;
 Board reorder applies only to editable owned Boards. Read-only program-owned
-Boards remain listed but have no drag handle and are omitted from reorder writes.
-They appear in the same compact row as other owned Boards. Board positions
+Boards remain available in Public & shared Boards rather than the chip row, for every role.
+The chip row contains only editable owned Boards, without instructor/admin exemptions.
+Non-editable Boards are omitted from reorder writes.
+Board positions
 are stored globally, not per user; only the complete editable-owned subset is
-submitted on reorder. Board handles are hidden while filters are active so a
+submitted on reorder. Board surface dragging is disabled while filters are active so a
 filtered subset can never replace that complete order.
+Editable Board chips drag by their surfaces with no grip icon; clicking still opens them.
 These are isolated from Browse's
 near/far-half collision rules; see [drag-and-drop.md](drag-and-drop.md#boards-page-1771).
-Dragging an editable overview Inuksuk by its handle onto another editable Board
-tab highlights the target and **saves a copy of the link**, with a success snackbar.
-Read-only Boards are not drop targets. **Move/Save to…** also offers an explicit atomic move that removes the
-source link in the same PATCH. Other editable Board links retain their positions; non-editable links remain server-preserved. If any membership or
+Dragging an editable overview Inuksuk card onto another editable Board chip
+highlights the target and **saves a copy of the link**, with a success snackbar.
+Read-only Boards cannot accept saves. Rejected drops stay unhighlighted and explain
+duplicate membership or missing edit permission in the page snackbar, without sending a mutation.
+Drop notices reuse the app's bottom-centre Snackbar and filled Alert: green success
+for a saved link, info for duplicate membership and warning for other refusals.
+**Move/Save to…** also offers an explicit atomic move that removes the source link
+in the same PATCH. Other editable Board links retain their positions; non-editable
+links remain server-preserved. If any membership or
 destination read fails, saving is blocked rather than sending a partial list.
 Board editors can remove other owners' Inuksuks from their Board, but only
 Inuksuk editors may save to another Board or edit/favourite the Inuksuk.
@@ -544,8 +589,10 @@ snapshots because the old coordinates no longer describe the new source.
 Boards now offer a Select toolbar: any selected Inuksuks can seed a Sequence,
 and 2–4 can seed a Synchronized Collection. Both reuse the existing collection
 form and Add to Collection destination dialog. Board headers create
-ordered Sequences directly, while the collection Manage dialog can stage a
+ordered Sequences directly through **Create Collection**, while the collection Manage dialog can stage a
 Board into its draft.
+The Board dialog title uses Collections-style h6 typography, with its Inuksuk count
+in smaller secondary body2 text; the action still creates a Sequence Collection.
 Selected views follow the displayed Board member order. Click order does not change
 the resulting Collection sequence.
 
