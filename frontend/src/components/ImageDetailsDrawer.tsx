@@ -8,10 +8,12 @@ import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import CloseIcon from '@mui/icons-material/Close'
+import LockIcon from '@mui/icons-material/Lock'
 import type { ImageItem, ImageSourceInfo } from '../types'
 import { formatFileSize } from '../formatUtils'
 import type { MeasurementConfig } from './imageViewerUtils'
 import { objectiveFromMetadata, objectiveLabel } from '../measurementUnits'
+import { INSTRUCTOR_NOTE_VISIBILITY } from './InstructorNoteField'
 
 export interface ImageDetailsTriggerProps {
   open: boolean
@@ -89,7 +91,14 @@ export function ImageDetailsTrigger({
 export interface ImageDetailsDrawerProps {
   image: Pick<
     ImageItem,
-    'copyright' | 'createdAt' | 'updatedAt' | 'width' | 'height' | 'fileSize' | 'metadataExtra'
+    | 'instructorNote'
+    | 'copyright'
+    | 'createdAt'
+    | 'updatedAt'
+    | 'width'
+    | 'height'
+    | 'fileSize'
+    | 'metadataExtra'
   >
   programNames: string[]
   groupNames: string[]
@@ -158,8 +167,10 @@ function DetailField({
  * relative). Both top-level children carry `data-hriv-canvas-ui` so
  * ImageViewer's selection tracker skips presses inside them.
  *
- * Holds only the metadata field list; notes, collections, and the viewer
- * instructions live in `ImageViewerInfoBar` below the viewer.
+ * Holds the metadata field list, topped by the staff-only instructor note
+ * when the API sends one (never for students). The description and
+ * collections live in `ImageViewerInfoBar` below the viewer; the viewer
+ * instructions sit in this drawer's footer.
  */
 export default function ImageDetailsDrawer({
   image,
@@ -179,6 +190,7 @@ export default function ImageDetailsDrawer({
   const asideLabel = drawerLabel ? `Image details — ${drawerLabel}` : undefined
   const controlsLabel = drawerLabel ? `Viewer controls — ${drawerLabel}` : undefined
 
+  const instructorNote = image.instructorNote?.trim() ?? ''
   const fields: { label: string; value: string; title?: string; tooltip?: string }[] = []
   if (image.copyright) fields.push({ label: 'Copyright:', value: image.copyright })
   if (programNames.length > 0)
@@ -294,7 +306,23 @@ export default function ImageDetailsDrawer({
         {/* tabIndex makes the scroll region keyboard-scrollable (a11y). */}
         <Box tabIndex={0} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 2, py: 1.5 }}>
           <Stack spacing={0.75}>
-            {fields.length === 0 ? (
+            {instructorNote !== '' && (
+              // Wraps (unlike the single-line fields): it can run to 500 characters.
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                data-testid="image-details-instructor-note"
+                sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+              >
+                <LockIcon
+                  fontSize="inherit"
+                  titleAccess={INSTRUCTOR_NOTE_VISIBILITY}
+                  sx={{ verticalAlign: 'text-bottom', mr: 0.5 }}
+                />
+                <strong>Instructor note:</strong> {instructorNote}
+              </Typography>
+            )}
+            {fields.length === 0 && instructorNote === '' ? (
               <Typography variant="body2" color="text.secondary">
                 No details available.
               </Typography>
