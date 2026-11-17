@@ -60,7 +60,8 @@ Choose **Cards** or **Table** beside My Inuksuks; the filter bar sits underneath
 The outlined **Select** button sits at the right of the Filter by row in both views.
 Both overview views are alphabetical by title, ignoring case. Favouriting or moving
 a view does not move its position; renaming places it at the new alphabetical position.
-Favourite stars are filled in the card's accent colour.
+Favourite stars are filled white in Cards and Table, with a contrasting background
+so the selected state stays visible on light surfaces too.
 Cards are 234px wide with 96px thumbnails and content-fit height, and use Collections-style compass/title/category/scope metadata.
 Table shows title, category, scope, Boards, favourite and actions. Click a Board name
 in the table to open it. Views on multiple Board scopes show each scope pill.

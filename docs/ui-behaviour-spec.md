@@ -1474,6 +1474,8 @@ selection MouseTracker ignores their presses.
   or You can't add Inuksuks to {Board name}; no mutation is sent.
   The bottom-centre Snackbar contains the app's filled Alert, using success for
   saves, info for duplicates and warning for other refusals.
+  Filled favourite stars are white in Cards and Table, with contrasting backgrounds
+  for editable toggles and read-only indicators alike.
   Failures retain data and show the error. Browse collision logic is unchanged.
 - A Board opens in a large dialog, full-screen below the small breakpoint. Its
   fixed heading holds title, authorized edit pencil, count and Select. The exact

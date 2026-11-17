@@ -165,7 +165,7 @@ describe('BoardsPage', () => {
       within(screen.getByRole('button', { name: 'Favourite Stone columns' })).getByTestId(
         'StarIcon',
       ),
-    ).toHaveClass('MuiSvgIcon-colorPrimary')
+    ).toHaveStyle({ color: 'rgb(255, 255, 255)' })
     dropOnBoard(3)
     await screen.findByText('Saved to Next studio project')
     expect(titles()).toEqual(initial)
@@ -320,11 +320,20 @@ describe('BoardsPage', () => {
         screen.queryByRole('button', { name: 'Favourite Rose window' }),
       ).not.toBeInTheDocument()
       const indicator = screen.queryByRole('img', { name: 'Favourite Rose window' })
-      if (favourite) expect(indicator).toBeVisible()
-      else expect(indicator).not.toBeInTheDocument()
+      if (favourite) {
+        expect(indicator).toBeVisible()
+        expect(indicator!.querySelector('svg')).toHaveStyle({ color: 'rgb(255, 255, 255)' })
+      } else expect(indicator).not.toBeInTheDocument()
       expect(api.updateInuksuk).not.toHaveBeenCalled()
     },
   )
+  it.each(['Cards', 'Table'])('uses a white filled favourite star in %s', async (view) => {
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: `${view} view` }))
+    const toggle = screen.getByRole('button', { name: 'Favourite Rose window' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(within(toggle).getByTestId('StarIcon')).toHaveStyle({ color: 'rgb(255, 255, 255)' })
+  })
   it('retains table rows and exposes errors when a favourite mutation fails', async () => {
     vi.mocked(api.updateInuksuk).mockRejectedValue(
       new api.ApiError(422, 'Unable to update favourite'),

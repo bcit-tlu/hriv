@@ -94,8 +94,11 @@ export const Basic: Story = {
     ).toBeVisible()
     const card = canvas
       .getByRole('button', { name: 'Open Inuksuk: Rose window' })
-      .closest('[data-testid="inuksuk-card"]')!
+      .closest<HTMLElement>('[data-testid="inuksuk-card"]')!
     await expect(card.getBoundingClientRect().width).toBe(234)
+    await expect(
+      within(card).getByRole('button', { name: 'Favourite Rose window' }).querySelector('svg'),
+    ).toHaveStyle({ color: 'rgb(255, 255, 255)' })
     await expect(card.querySelector('img')!.getBoundingClientRect().height).toBe(96)
     await expect(
       canvas
@@ -117,6 +120,9 @@ export const Table: Story = {
     await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' })
     await userEvent.click(canvas.getByRole('button', { name: 'Table view' }))
     await expect(canvas.getByRole('table', { name: 'Inuksuks' })).toBeVisible()
+    await expect(
+      canvas.getByRole('button', { name: 'Favourite Rose window' }).querySelector('svg'),
+    ).toHaveStyle({ color: 'rgb(255, 255, 255)' })
     await expect(canvas.getByRole('columnheader', { name: 'Boards' })).toBeVisible()
     await expect(
       within(canvas.getByRole('region', { name: 'Filter Boards and Inuksuks' })).getByRole(
@@ -139,6 +145,7 @@ export const SelectedBoard: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body)
     const dialog = await canvas.findByRole('dialog', { name: 'Architecture inspiration' })
+    await waitFor(() => expect(dialog).toBeVisible())
     const metadata = within(dialog).getByRole('group', { name: 'Board scope and owners' })
     await expect(within(metadata).getByTestId('collection-visibility-chip')).toHaveTextContent(
       'Private',
@@ -170,7 +177,9 @@ export const SelectedBoardEdit: Story = {
     const board = await canvas.findByRole('dialog', { name: 'Architecture inspiration' })
     await userEvent.click(within(board).getByRole('button', { name: 'Edit Board' }))
     const edit = await canvas.findByRole('dialog', { name: 'Edit Board' })
-    await expect(within(edit).getByRole('button', { name: 'Delete Board' })).toBeVisible()
+    await waitFor(() =>
+      expect(within(edit).getByRole('button', { name: 'Delete Board' })).toBeVisible(),
+    )
     await expect(within(edit).getByRole('button', { name: 'Save Board' })).toBeVisible()
   },
 }

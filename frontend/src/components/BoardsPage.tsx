@@ -64,7 +64,7 @@ import Edit from '@mui/icons-material/Edit'
 import Close from '@mui/icons-material/Close'
 import SwapHoriz from '@mui/icons-material/SwapHoriz'
 import ViewCarousel from '@mui/icons-material/ViewCarousel'
-import { alpha, useTheme } from '@mui/material/styles'
+import { alpha, getContrastRatio, useTheme } from '@mui/material/styles'
 import FilterBar from './FilterBar'
 import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
 import FilterTextPanel from './FilterTextPanel'
@@ -731,9 +731,14 @@ export default function BoardsPage({
   const favouriteAction = (item: ApiInuksuk) => {
     if (!item.permissions.can_edit)
       return item.favourite ? (
-        <span role="img" aria-label={`Favourite ${item.title}`}>
-          <Star color="primary" fontSize="small" />
-        </span>
+        <Box
+          component="span"
+          role="img"
+          aria-label={`Favourite ${item.title}`}
+          sx={{ display: 'inline-flex', p: 0.5, borderRadius: '50%', bgcolor: 'primary.main' }}
+        >
+          <Star sx={{ color: 'common.white' }} fontSize="small" />
+        </Box>
       ) : null
     return (
       <Tooltip title="Favourite">
@@ -741,6 +746,11 @@ export default function BoardsPage({
           size="small"
           aria-label={`Favourite ${item.title}`}
           aria-pressed={item.favourite}
+          sx={
+            item.favourite
+              ? { bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }
+              : undefined
+          }
           disabled={busy || conflict}
           onClick={() =>
             void run(() =>
@@ -749,7 +759,7 @@ export default function BoardsPage({
           }
         >
           {item.favourite ? (
-            <Star color="primary" fontSize="small" />
+            <Star sx={{ color: 'common.white' }} fontSize="small" />
           ) : (
             <StarBorder fontSize="small" />
           )}
@@ -1610,6 +1620,16 @@ export default function BoardsPage({
         <Alert
           variant="filled"
           severity={notice?.severity ?? 'info'}
+          sx={(theme) => {
+            const colors = theme.palette[notice?.severity ?? 'info']
+            const background = theme.palette.mode === 'dark' ? colors.dark : colors.main
+            return {
+              color:
+                getContrastRatio(background, theme.palette.common.white) >= 4.5
+                  ? theme.palette.common.white
+                  : theme.palette.common.black,
+            }
+          }}
           onClose={() => setNotice(null)}
         >
           {notice?.message}
