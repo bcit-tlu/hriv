@@ -1058,6 +1058,57 @@ describe('SearchModal', () => {
     expect(cards[0].textContent).not.toContain('Name:')
   })
 
+  it('matches images on their instructor note and scopes to it with its chip', async () => {
+    const user = userEvent.setup()
+    const withNote: Category = {
+      ...testCategory,
+      images: [{ ...testCategory.images[0], instructorNote: 'Quiz on hepatocytes' }],
+    }
+    render(<SearchModal {...defaultProps} categories={[withNote]} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'hepatocytes')
+    await user.click(
+      screen
+        .getAllByTestId('field-filter-chip')
+        .find((chip) => chip.textContent === 'Instructor note')!,
+    )
+
+    const cards = screen.getAllByTestId('search-result-action-area')
+    expect(cards).toHaveLength(1)
+    expect(cards[0].textContent).toContain('Liver Section')
+    expect(cards[0].textContent).toContain('Instructor note:')
+  })
+
+  it('hides the Instructor note chip from students only', async () => {
+    const chipLabels = () =>
+      screen.queryAllByTestId('field-filter-chip').map((chip) => chip.textContent)
+    const input = () =>
+      screen.getByPlaceholderText(/^Search categories, images/) as HTMLInputElement
+
+    const { rerender } = render(<SearchModal {...defaultProps} open={true} />)
+    await userEvent.setup().type(input(), 'liver')
+    expect(chipLabels()).toContain('Instructor note')
+
+    // Staff: extended results suppressed, but instructor notes still visible.
+    rerender(<SearchModal {...defaultProps} suppressExtendedResults={true} open={true} />)
+    expect(chipLabels()).toContain('Instructor note')
+
+    // Student
+    rerender(
+      <SearchModal
+        {...defaultProps}
+        excludeHidden={true}
+        suppressExtendedResults={true}
+        open={true}
+      />,
+    )
+    expect(chipLabels()).toContain('Description')
+    expect(chipLabels()).not.toContain('Instructor note')
+  })
+
   // ── Collection results (#1418) ────────────────────────────────────────
 
   it('shows collection results with owner and image count', async () => {

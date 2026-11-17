@@ -23,6 +23,7 @@ import CollectionsIcon from '@mui/icons-material/Collections'
 import CopyrightIcon from '@mui/icons-material/Copyright'
 import ImageIcon from '@mui/icons-material/Image'
 import LinkIcon from '@mui/icons-material/Link'
+import LockIcon from '@mui/icons-material/Lock'
 import NoteIcon from '@mui/icons-material/StickyNote2'
 import PersonIcon from '@mui/icons-material/Person'
 import MenuBookIcon from '@mui/icons-material/MenuBook'
@@ -136,7 +137,8 @@ interface CollectionPayload {
 // ── Filter definitions ─────────────────────────────────
 
 export type TypeFilter = ResultKind
-type FieldFilter = 'Annotation' | 'Link' | 'Link URL' | 'Copyright' | 'Description' | 'Role'
+type FieldFilter =
+  'Annotation' | 'Link' | 'Link URL' | 'Copyright' | 'Description' | 'Instructor note' | 'Role'
 
 interface FilterDef<T extends string> {
   key: T
@@ -235,6 +237,12 @@ const FIELD_FILTERS: FilterDef<FieldFilter>[] = [
     label: 'Description',
     icon: <NoteIcon fontSize="small" />,
     tooltip: 'Description field only',
+  },
+  {
+    key: 'Instructor note',
+    label: 'Instructor note',
+    icon: <LockIcon fontSize="small" />,
+    tooltip: 'Instructor note field only',
   },
   { key: 'Role', label: 'Role', icon: <BadgeIcon fontSize="small" />, tooltip: 'Role field only' },
 ]
@@ -464,6 +472,7 @@ function addImageMatches(
     { field: 'Name', value: img.name },
     { field: 'Copyright', value: img.copyright },
     { field: 'Description', value: img.description },
+    { field: 'Instructor note', value: img.instructorNote },
     ...getAnnotationSearchFields(img.metadataExtra),
   ]
   if (parentCat) {
@@ -1276,22 +1285,25 @@ export default function SearchModal({
                 >
                   Field:
                 </Typography>
-                {FIELD_FILTERS.filter((f) => !(suppressExtendedResults && f.key === 'Role')).map(
-                  (f) => (
-                    <Tooltip key={f.key} title={f.tooltip}>
-                      <Chip
-                        data-testid="field-filter-chip"
-                        icon={f.icon}
-                        label={f.label}
-                        size="small"
-                        sx={{ px: 0.5 }}
-                        variant={fieldFilters.has(f.key) ? 'filled' : 'outlined'}
-                        color={fieldFilters.has(f.key) ? 'primary' : 'default'}
-                        onClick={() => toggleFieldFilter(f.key)}
-                      />
-                    </Tooltip>
-                  ),
-                )}
+                {FIELD_FILTERS.filter(
+                  (f) =>
+                    !(suppressExtendedResults && f.key === 'Role') &&
+                    // Students never receive instructor notes; hide the chip too.
+                    !(excludeHidden && f.key === 'Instructor note'),
+                ).map((f) => (
+                  <Tooltip key={f.key} title={f.tooltip}>
+                    <Chip
+                      data-testid="field-filter-chip"
+                      icon={f.icon}
+                      label={f.label}
+                      size="small"
+                      sx={{ px: 0.5 }}
+                      variant={fieldFilters.has(f.key) ? 'filled' : 'outlined'}
+                      color={fieldFilters.has(f.key) ? 'primary' : 'default'}
+                      onClick={() => toggleFieldFilter(f.key)}
+                    />
+                  </Tooltip>
+                ))}
               </>
             )}
           </Box>
