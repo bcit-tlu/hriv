@@ -7,8 +7,12 @@ import * as BoardStories from './BoardsPage.stories'
 
 The feature-gated Boards utility opens `?page=boards`. A short, horizontally
 scrollable Board row starts with New Board; compact covers contain up to four
-authorized, renewing Inuksuk thumbnails. All visible Inuksuks appear below in a
-responsive column collage, with their image's parent category under the title.
+authorized, renewing Inuksuk thumbnails. Only personally owned Inuksuks appear below in a
+compact responsive tile grid, with their image's parent category under the title.
+The h5/h1 heading matches Collections. Owned Board tiles are about 20% shorter;
+Inuksuk tiles share their 156px width. Program ownership follows program membership.
+Public & shared Boards opens a dialog listing other authorized Boards, independent
+of overview filters. Choosing one opens the existing Board dialog.
 The hook fetches every page in batches of 200 rather than truncating at 60.
 Collections' filter components provide title/description, scope, owner/Mine and
 Favourite controls for both surfaces. A Board matches Favourite when it contains

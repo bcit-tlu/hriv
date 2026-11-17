@@ -99,8 +99,17 @@ export const BOARDS_FIXTURES: ApiBoard[] = [
       can_transfer: false,
     },
 
-    inuksuks: [],
-    inuksuk_count: 0,
+    inuksuks: [
+      {
+        ...BOARD_ITEMS[0],
+        id: 90,
+        title: 'Morgan’s shared view',
+        owners: [{ user_id: 77, program_id: null, name: 'Morgan', role: 'instructor' }],
+        board_ids: [2],
+        permissions: { can_edit: false, can_delete: false },
+      },
+    ],
+    inuksuk_count: 1,
   },
 ]
 
@@ -111,7 +120,12 @@ export function installBoardsFetch(
 ) {
   const original = globalThis.fetch
   let boards = structuredClone(initialBoards)
-  let items = structuredClone(BOARD_ITEMS)
+  let items = structuredClone([
+    ...BOARD_ITEMS,
+    ...initialBoards
+      .flatMap((board) => board.inuksuks)
+      .filter((item) => !BOARD_ITEMS.some((owned) => owned.id === item.id)),
+  ])
   globalThis.fetch = async (input, init) => {
     const url = new URL(
       typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
