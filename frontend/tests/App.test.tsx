@@ -3714,6 +3714,8 @@ describe('Boards navigation', () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
     await screen.findByText(/Image Viewer 101/)
+    expect(screen.queryByRole('button', { name: 'Share View' })).not.toBeInTheDocument()
+    expect(imageViewerProps.current?.onShareView).toEqual(expect.any(Function))
     expect(imageViewerProps.current?.initialViewport).toEqual({
       x: 0.46,
       y: 0.29,

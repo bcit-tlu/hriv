@@ -7,10 +7,10 @@ import * as StoriesModule from './ViewerSidePanel.stories'
 
 An Inuksuks-feature-only, permanent right-side panel for the image page and Sequence
 viewer. One square OSD-style control opens it; the header's left-aligned exclusive
-Inuksuks and Details buttons select content, and its right control closes it.
+Inuksuks, Shared View and Details buttons select content, and its right control closes it.
 Selected buttons use MUI rounded-square action states, not navigation-rail pills.
 
-At sm and above the panel reserves 320px and OSD resizes its actual image container:
+At sm and above the panel reserves 256px and OSD resizes its actual image container:
 the navigator, toolbar, floating cards and Sequence arrows remain in the image area.
 At xs it overlays the full frame. Outside presses and Escape never close the panel;
 Escape still belongs to placement, editing and menus.
@@ -20,6 +20,10 @@ New users start closed on Inuksuks. Anonymous previews and storage failures use 
 The list reuses the existing grouped visibility and row menus with a stable menu
 portal container; the Details fields and Viewer controls reuse the legacy drawer's
 content. Flag-off viewers and Synchronized panes retain their previous UI.
+My and Instructor items are the only groups returned to viewer lists and markers;
+other people's public views remain behind Public & shared Boards. The middle link
+tab reuses the image page's copy action. Sequence copies a standalone image view
+with live viewport and selection boxes. SharedView demonstrates the copy action.
 
 Basic shows the closed control; Inuksuks and Details exercise content and menus;
 The Inuksuks story uses Chromatic light, dark and mobile modes to cover the alternate

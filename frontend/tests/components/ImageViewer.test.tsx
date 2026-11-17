@@ -466,6 +466,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.unstubAllGlobals()
   if (hadFullscreenElementOwnProperty && originalFullscreenElementDescriptor) {
     Object.defineProperty(document, 'fullscreenElement', originalFullscreenElementDescriptor)
   } else {
@@ -479,6 +480,78 @@ afterEach(() => {
 })
 
 describe('Inuksuk viewer tool', () => {
+  it.each([true, false])(
+    'scopes list and markers to own and instructor views, permanent panel=%s',
+    async (viewerPanel) => {
+      apiMocks.fetchImageInuksuks.mockResolvedValue([
+        INUKSUK_FIXTURE,
+        { ...INUKSUK_FIXTURE, id: 8, title: 'Instructor view', source: 'instructor' },
+        { ...INUKSUK_FIXTURE, id: 9, title: 'Other student view', source: 'public' },
+      ])
+      const rendered = render(
+        <ImageViewer
+          tileSources="/test.dzi"
+          imageId={42}
+          inuksuksEnabled
+          viewerPanel={viewerPanel}
+        />,
+      )
+      rendered.container.appendChild(viewer().element)
+      await waitFor(() =>
+        expect(viewer().container.querySelector('[data-inuksuk-id="8"]')).not.toBeNull(),
+      )
+      expect(viewer().container.querySelector('[data-inuksuk-id="9"]')).toBeNull()
+      fireEvent.click(
+        await within(viewer().container).findByRole('button', {
+          name: viewerPanel ? 'Open viewer panel' : 'Inuksuks (2)',
+        }),
+      )
+      const list = within(await screen.findByRole('complementary'))
+      expect(list.getByRole('button', { name: 'View Inuksuk: Rose window' })).toBeVisible()
+      expect(list.getByRole('button', { name: 'View Inuksuk: Instructor view' })).toBeVisible()
+      expect(list.queryByText('Other student view')).not.toBeInTheDocument()
+    },
+  )
+  it('copies the live image view and rectangles from the Shared View tab', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+    render(
+      <ImageViewer
+        tileSources="/test.dzi"
+        imageId={42}
+        inuksuksEnabled
+        initialOverlays={[{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }]}
+      />,
+    )
+    fireEvent.click(
+      await within(viewer().container).findByRole('button', { name: 'Open viewer panel' }),
+    )
+    viewer().viewport.getCenter.mockReturnValue({ x: 0.46, y: 0.29 })
+    viewer().viewport.getZoom.mockReturnValue(2.5)
+    viewer().viewport.getRotation.mockReturnValue(35)
+    fireEvent.click(screen.getByRole('button', { name: 'Show Shared View' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy current view' }))
+    await screen.findByText('Link copied to clipboard')
+    const url = new URL(writeText.mock.calls[0][0])
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({
+      image: '42',
+      zoom: '2.5000',
+      x: '0.460000',
+      y: '0.290000',
+      rotation: '35.0',
+      ov0: '0.10000000,0.20000000,0.30000000,0.40000000',
+    })
+  })
+  it('reuses the page share handler when supplied', async () => {
+    const copy = vi.fn()
+    render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled onShareView={copy} />)
+    fireEvent.click(
+      await within(viewer().container).findByRole('button', { name: 'Open viewer panel' }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Show Shared View' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy current view' }))
+    expect(copy).toHaveBeenCalledTimes(1)
+  })
   it('persists the permanent right panel across images and remounts, without dismissing on canvas presses or Escape', async () => {
     const view = (imageId: number) => (
       <AuthContext.Provider value={BOARD_AUTH}>
@@ -496,7 +569,7 @@ describe('Inuksuk viewer tool', () => {
       await within(viewer().container).findByRole('button', { name: 'Open viewer panel' }),
     )
     fireEvent.click(screen.getByRole('button', { name: 'Show image details' }))
-    expect(viewer().container.style.width).toBe('calc(100% - 320px)')
+    expect(viewer().container.style.width).toBe('calc(100% - 256px)')
     const instance = viewer()
     fireEvent.pointerDown(instance.canvas)
     fireEvent.keyDown(document, { key: 'Escape' })
@@ -505,7 +578,7 @@ describe('Inuksuk viewer tool', () => {
     act(() => buttonByTooltip('Canvas annotations (add shapes, text, links)').options.onClick())
     expect(screen.getByText('canvas edit: true')).toBeInTheDocument()
     expect(screen.getByRole('complementary', { name: 'Viewer panel' })).toBeVisible()
-    expect(viewer().container.style.width).toBe('calc(100% - 320px)')
+    expect(viewer().container.style.width).toBe('calc(100% - 256px)')
     fireEvent.click(screen.getByRole('button', { name: 'Overlay done' }))
     first.rerender(view(43))
     expect(screen.getByText('Metadata')).toBeVisible()
@@ -736,7 +809,7 @@ describe('Inuksuk viewer tool', () => {
     expect(viewer().setControlsEnabled).toHaveBeenLastCalledWith(true)
     fireEvent.click(trigger)
     const drawer = await canvas.findByRole('complementary')
-    expect(onOpenChange).toHaveBeenLastCalledWith(320)
+    expect(onOpenChange).toHaveBeenLastCalledWith(256)
     expect(trigger).toHaveAttribute('aria-controls', drawer.id)
     fireEvent.click(within(drawer).getByRole('button', { name: 'View Inuksuk: Rose window' }))
     expect(viewer().viewport.panTo).toHaveBeenCalledWith(

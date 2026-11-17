@@ -178,11 +178,8 @@ export const Basic: Story = {
     const trigger = await canvas.findByRole('button', { name: 'Open viewer panel' })
     await userEvent.click(trigger)
     await expect(await canvas.findByRole('complementary')).toBeVisible()
-    await userEvent.click(canvas.getByRole('button', { name: 'Public Inuksuks' }))
-    await expect(canvas.getByRole('button', { name: 'Public Inuksuks' })).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    )
+    await expect(canvas.queryByRole('button', { name: 'Public Inuksuks' })).not.toBeInTheDocument()
+    await expect(canvasElement.querySelector('[data-inuksuk-id="10"]')).toBeNull()
     const drawer = within(canvas.getByRole('complementary'))
     await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
     await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks markers' }))
@@ -239,17 +236,20 @@ export const LabelOnly: Story = {
     await userEvent.keyboard('{Escape}')
   },
 }
-export const PublicCollapsed: Story = {
+export const OwnAndInstructorOnly: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
-    await expect(canvas.getByRole('button', { name: 'Public Inuksuks' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    )
+    await expect(canvas.queryByRole('button', { name: 'Public Inuksuks' })).not.toBeInTheDocument()
+    await expect(
+      within(canvas.getByRole('complementary')).getByRole('button', {
+        name: 'View Inuksuk: Instructor example',
+      }),
+    ).toBeVisible()
+    await expect(canvasElement.querySelector('[data-inuksuk-id="10"]')).toBeNull()
   },
 }
-export const Sequence: Story = { args: { kind: 'sequence' }, play: PublicCollapsed.play }
+export const Sequence: Story = { args: { kind: 'sequence' }, play: OwnAndInstructorOnly.play }
 export const Persistent: Story = {
   args: { kind: 'sequence' },
   play: async ({ canvasElement }) => {
@@ -311,7 +311,7 @@ export const Synchronized: Story = {
   args: { kind: 'synchronized' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const triggers = await canvas.findAllByRole('button', { name: 'Inuksuks (4)' })
+    const triggers = await canvas.findAllByRole('button', { name: 'Inuksuks (3)' })
     await userEvent.click(triggers[0])
     await expect(await canvas.findByRole('complementary', { name: /Inuksuks/ })).toBeVisible()
     const drawer = within(canvas.getByRole('complementary'))

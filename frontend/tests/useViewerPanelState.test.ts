@@ -37,6 +37,13 @@ it('isolates users without writing the previous users preference to the new key'
   rerender({ user: userId })
   expect(result.current).toMatchObject({ open: true, tab: 'details' })
 })
+it('restores the Shared View tab', () => {
+  localStorage.setItem(key, JSON.stringify({ open: true, tab: 'share' }))
+  expect(renderHook(() => useViewerPanelState(userId)).result.current).toMatchObject({
+    open: true,
+    tab: 'share',
+  })
+})
 
 it.each(['{bad json', 'null', '{"open":"yes","tab":"bad"}'])(
   'handles invalid storage %s',

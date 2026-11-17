@@ -4,6 +4,8 @@ import { createPortal } from 'react-dom'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
+import Snackbar from '@mui/material/Snackbar'
+import { copyViewLink } from '../useShareableImageState'
 import { AuthContext } from '../authContextValue'
 import type { ApiInuksuk, InuksukView } from '../types'
 import { useImageInuksuks } from '../useImageInuksuks'
@@ -145,6 +147,7 @@ interface ImageViewerProps {
   viewerPanel?: boolean
   /** Metadata rendered lazily when the feature-on panel selects Details. */
   sidePanelDetails?: ReactNode
+  onShareView?: () => void
   /** Reports the reserved desktop width; closed panels and xs overlays report zero. */
   onViewerPanelWidthChange?: (width: number) => void
   /**
@@ -191,9 +194,12 @@ export default function ImageViewer({
   viewportControl,
   viewerPanel = true,
   sidePanelDetails,
+  onShareView,
   onViewerPanelWidthChange,
 }: ImageViewerProps) {
   const auth = useContext(AuthContext)
+  const [shareCopied, setShareCopied] = useState(false)
+  const shareOverlaysRef = useRef<OverlayRect[]>(initialOverlays ?? [])
   const inuksuks = useImageInuksuks(imageId, inuksuksEnabled)
   const visibilityPrefs = useInuksukVisibilityPrefs(auth?.currentUser?.id, inuksuksEnabled)
   const drawerId = useId()
@@ -257,7 +263,7 @@ export default function ImageViewer({
   const [panelHost, setPanelHost] = useState<HTMLElement | null>(null)
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
   useEffect(() => {
-    const width = panelOpen && !mobilePanel ? 320 : 0
+    const width = panelOpen && !mobilePanel ? 256 : 0
     onViewerPanelWidthChange?.(width)
     return () => onViewerPanelWidthChange?.(0)
   }, [panelOpen, mobilePanel, onViewerPanelWidthChange])
@@ -266,7 +272,7 @@ export default function ImageViewer({
     if (!container || !panelEnabled) return
     const previousWidth = container.style.width
     const previousTransition = container.style.transition
-    container.style.width = panelOpen && !mobilePanel ? 'calc(100% - 320px)' : '100%'
+    container.style.width = panelOpen && !mobilePanel ? 'calc(100% - 256px)' : '100%'
     container.style.transition = theme.transitions.create('width', {
       easing: theme.transitions.easing.sharp,
       duration: panelOpen
@@ -771,6 +777,7 @@ export default function ImageViewer({
         w: p.rect.width,
         h: p.rect.height,
       }))
+      shareOverlaysRef.current = rects
       onOverlaysChangeRef.current?.(rects)
     }
 
@@ -1996,6 +2003,12 @@ export default function ImageViewer({
           registerCancelHandler={registerCanvasCancel}
         />
       )}
+      <Snackbar
+        open={shareCopied}
+        autoHideDuration={3000}
+        onClose={() => setShareCopied(false)}
+        message="Link copied to clipboard"
+      />
       {viewerInstance && imageId != null && inuksuksEnabled && (
         <>
           {leftControlWrapper &&
@@ -2024,6 +2037,28 @@ export default function ImageViewer({
                   panelId={drawerId}
                   count={inuksuks.items.length}
                   details={sidePanelDetails}
+                  onShareView={
+                    onShareView ??
+                    (() => {
+                      const viewport = viewerInstance.viewport
+                      const center = viewport.getCenter()
+                      const url = new URL(window.location.pathname, window.location.origin)
+                      url.searchParams.set('image', String(imageId))
+                      url.searchParams.set('zoom', viewport.getZoom().toFixed(4))
+                      url.searchParams.set('x', center.x.toFixed(6))
+                      url.searchParams.set('y', center.y.toFixed(6))
+                      url.searchParams.set('rotation', viewport.getRotation().toFixed(1))
+                      shareOverlaysRef.current
+                        .slice(0, MAX_SHARE_OVERLAYS)
+                        .forEach((rect, index) => {
+                          url.searchParams.set(
+                            `ov${index}`,
+                            [rect.x, rect.y, rect.w, rect.h].map((n) => n.toPrecision(8)).join(','),
+                          )
+                        })
+                      copyViewLink(url.href, () => setShareCopied(true), imageId, categoryId)
+                    })
+                  }
                   inuksuks={
                     <ImageInuksuksList
                       key={drawerIdentity}

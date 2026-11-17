@@ -575,9 +575,9 @@ compose default true. This close-out does not remove the flag or alter its defau
 
 With `features.inuksuks`, the image page and Sequence viewer use a single right-side
 panel instead of the earlier Details overlay and left Inuksuks drawer described
-above. Its sidebar toggle opens/closes it; the header selects Inuksuks or Details.
+above. Its sidebar toggle opens/closes it; the header selects Inuksuks, Shared View or Details.
 MUI rounded-square action states replace the prototype's navigation-rail pills.
-There is no pin or click-away in this panel. At sm and above it reserves 320px by
+There is no pin or click-away in this panel. At sm and above it reserves 256px by
 resizing OSD's actual container, so the minimap, toolbar and sequence arrows stay
 inside the image area. At xs it overlays the entire frame and closes via its toggle.
 
@@ -588,6 +588,19 @@ Starting placement with Details open selects Inuksuks; Escape still cancels draf
 disarms placement and dismisses menus, but does not close this permanent panel.
 Entering canvas annotation editing also leaves an already-open panel in place.
 The existing visibility preferences, grouped menus and stable portal container remain.
+All image-viewer consumers (single image, Sequence and Synchronized panes) display
+only the endpoint's My and Instructor groups, for both lists and image markers.
+Instructor grouping retains the existing instructor/admin or program-owned Board
+classification. Other users' public/shared views are discovered through
+Boards & Inuksuks → Public & shared Boards instead. This is frontend UX scoping;
+the backend continues to serve authorized public Boards and their contents.
+
+The link icon between Inuksuks and Details selects **Shared View**. **Copy current
+view** reuses the image page's clipboard, fallback and feedback logic, replacing
+the standalone Share View button only when this panel is enabled. Sequence's panel
+copies an image link with the current zoom, centre, rotation and selection rectangles,
+opening that specific view independently of the collection slot. Flag-off controls
+and Synchronized per-pane sharing behavior are unchanged.
 
 Flag-off viewers retain the original Details trigger/drawer unchanged. Synchronized
 panes retain their independent Details and legacy Inuksuks drawers (including their

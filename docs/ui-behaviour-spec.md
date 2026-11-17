@@ -1517,10 +1517,10 @@ selection MouseTracker ignores their presses.
 - The panel starts closed with Inuksuks selected; open state and selected content
   persist per signed-in user across images, Sequence steps and reloads. Corrupt or
   blocked storage falls back safely; anonymous previews never write user preferences.
-- The open header places exclusive Inuksuks/Details content buttons left and the
+- The open header places exclusive Inuksuks/Shared View/Details content buttons left and the
   close toggle right. Selection uses MUI rounded-square action states and exposes
   `aria-pressed`; toggle controls expose expanded state and their panel id.
-- At sm+ the 320px permanent panel narrows OSD's image container; navigator, toolbar
+- At sm+ the 256px permanent panel narrows OSD's image container; navigator, toolbar
   and Sequence edge arrows remain in that area. At xs it overlays the full frame.
 - Only the toggle closes the panel: outside presses, selecting the current tab and
   Escape leave it open. Menus, draft cancellation and placement keep their Escape
@@ -1531,6 +1531,14 @@ selection MouseTracker ignores their presses.
   behavior are reused without per-item metadata. Placement floats beside the image
   and switches an open Details panel to Inuksuks. Closed-panel floating cards leave
   room for the toggle. Details retains its metadata and Viewer controls help text.
+- Single-image, Sequence and Synchronized viewers show only My and Instructor
+  Inuksuks in lists and markers, using the endpoint's existing ownership grouping.
+  Other users' public/shared views remain discoverable through Public & shared Boards;
+  this display scope does not change backend visibility.
+- The link icon between compass and info selects Shared View. Copy current view
+  reuses the image page clipboard action; the old header Share View is hidden only
+  with the panel enabled. Sequence copies a standalone image view with live viewport
+  and selection rectangles. Flag-off and Synchronized sharing controls are unchanged.
 
 ### Viewer Inuksuk polish
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-export type ViewerPanelTab = 'inuksuks' | 'details'
+export type ViewerPanelTab = 'inuksuks' | 'share' | 'details'
 interface Preference {
   open: boolean
   tab: ViewerPanelTab
@@ -14,7 +14,10 @@ function load(key: string | null): Preference {
     const stored = localStorage.getItem(key)
     if (stored == null) return preferences.get(key) ?? defaults
     const value = JSON.parse(stored)
-    return { open: value?.open === true, tab: value?.tab === 'details' ? 'details' : 'inuksuks' }
+    return {
+      open: value?.open === true,
+      tab: value?.tab === 'details' || value?.tab === 'share' ? value.tab : 'inuksuks',
+    }
   } catch {
     return preferences.get(key) ?? defaults
   }

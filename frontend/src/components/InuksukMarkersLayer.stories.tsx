@@ -125,7 +125,7 @@ export const Placement: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Open viewer panel' }))
     const frame = surface.closest('[data-viewer-image-area]')!.parentElement!
     await waitFor(() =>
-      expect(surface.getBoundingClientRect().width).toBeCloseTo(frame.clientWidth - 320, 0),
+      expect(surface.getBoundingClientRect().width).toBeCloseTo(frame.clientWidth - 256, 0),
     )
     await waitFor(() =>
       expect(surface.querySelector('canvas')?.width).toBeCloseTo(
