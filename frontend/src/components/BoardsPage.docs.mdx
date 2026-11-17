@@ -6,12 +6,12 @@ import * as BoardStories from './BoardsPage.stories'
 <Title />
 
 The feature-gated Boards utility opens `?page=boards`. A short, horizontally
-scrollable Board row starts with New Board; compact covers contain up to four
-authorized, renewing Inuksuk thumbnails. Only personally owned Inuksuks appear below in a
-compact responsive tile grid, with their image's parent category under the title.
-The h5/h1 heading matches Collections. Owned Board tiles are about 20% shorter;
-Inuksuk tiles share their 156px width. Program ownership follows program membership.
-Public & shared Boards opens a dialog listing other authorized Boards, independent
+scrollable Board row starts with New Board; rounded outlined chips have a square
+cover/renewing thumbnail or placeholder flush left and a one-line name. Only personally
+owned Inuksuks appear below under My Inuksuks, with Cards/Table controls then filters.
+The h5/h1 heading matches Collections. Inuksuk cards are 195px wide with 80px covers,
+including in Board dialogs. Program ownership follows program membership.
+Public & shared Boards, above the row, opens a dialog listing other authorized Boards, independent
 of overview filters. Choosing one opens the existing Board dialog.
 The hook fetches every page in batches of 200 rather than truncating at 60.
 Collections' filter components provide title/description, scope, owner/Mine and
@@ -22,7 +22,7 @@ Selecting a Board opens a large dialog (full-screen on mobile). Its fixed headin
 retains the title, authorized edit pencil, scope, count, Select and an overflow
 menu for owners, deletion and Create Sequence Collection. The collage scrolls
 below it. Overview filters do not hide members inside the opened Board. The
-page has its own handle-only dnd-kit provider, separate from Browse: reorder
+page has its own dnd-kit provider, separate from Browse: reorder
 owned Boards or members, or drag an editable overview Inuksuk onto an editable
 Board tab to add a membership without removing the others. A highlighted target
 and success snackbar acknowledge the save; read-only Boards never accept drops.
@@ -37,6 +37,16 @@ Cards open the existing shareable image viewer with the exact saved viewport;
 browser Back restores the Board URL. Board deletion warns that
 otherwise orphaned Inuksuks will be deleted. Board removal instead preserves
 the backend's last-Board guard.
+
+The compass replaces the Collection icon. Category (Uncategorized fallback) replaces
+the item count, and the reused CollectionVisibilityChip renders each visible Board scope.
+Star/StarBorder Favourite and Move/Save sit top-right, in the Collections cover/move
+positions. The pencil beside the title opens the existing editor: Delete stays there
+and Remove from this Board moves there from the old menu. Card clicks open the view;
+there is no per-card overflow or drag glyph. Board chip reorder keeps its handle;
+Inuksuks drag by their card surface. Table follows Collections' outlined table/header
+pattern, with Title, Category, Scope, Boards, Favourite and Actions. View choice starts
+on Cards each mount; filters and selection survive switching. There is no Graph view.
 
 <Primary />
 

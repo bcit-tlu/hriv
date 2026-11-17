@@ -81,6 +81,15 @@ export const Basic: Story = {
     ).toBeVisible()
   },
 }
+export const Table: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' })
+    await userEvent.click(canvas.getByRole('button', { name: 'Table view' }))
+    await expect(canvas.getByRole('table', { name: 'Inuksuks' })).toBeVisible()
+    await expect(canvas.getByRole('columnheader', { name: 'Boards' })).toBeVisible()
+  },
+}
 export const SelectedBoard: Story = {
   args: { initialBoardId: 1 },
   play: async ({ canvasElement }) => {
@@ -217,7 +226,9 @@ export const SaveToBoard: Story = {
   play: async ({ canvasElement }) => {
     const user = userEvent.setup()
     const canvas = within(canvasElement)
-    const handle = await canvas.findByRole('button', { name: 'Drag Rose window' })
+    const handle = (
+      await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' })
+    ).closest('[data-testid="inuksuk-card"]')!.parentElement!
     const target = canvas.getByRole('region', { name: 'Save to Next studio project' })
     const sourceRect = handle.getBoundingClientRect()
     const targetRect = target.getBoundingClientRect()
@@ -234,7 +245,7 @@ export const SaveToBoard: Story = {
       target: handle,
       coords: { ...sourcePoint, clientX: sourcePoint.clientX + 12 },
     })
-    await waitFor(() => expect(handle.parentElement).toHaveStyle({ opacity: '0.5' }))
+    await waitFor(() => expect(handle).toHaveStyle({ opacity: '0.5' }))
     await user.pointer({ target, coords: targetPoint })
     await waitFor(() => expect(target).toHaveStyle({ outlineWidth: '3px' }))
     await user.pointer({ keys: '[/MouseLeft]', target, coords: targetPoint })
@@ -253,6 +264,6 @@ export const SaveToBoard: Story = {
         within(canvasElement.ownerDocument.body).getByText('Saved to Next studio project'),
       ).toBeVisible(),
     )
-    await waitFor(() => expect(handle.parentElement).toHaveStyle({ opacity: '1' }))
+    await waitFor(() => expect(handle).toHaveStyle({ opacity: '1' }))
   },
 }

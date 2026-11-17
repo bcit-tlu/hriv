@@ -76,7 +76,7 @@ async function setup(
   return { ...view, onSelectBoard, onOpenInuksuk, user: userEvent.setup() }
 }
 async function actions() {
-  fireEvent.click(await screen.findByRole('button', { name: 'Actions for Rose window' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit Inuksuk: Rose window' }))
 }
 function dropOnBoard(boardId: number) {
   drag.end?.({
@@ -88,6 +88,80 @@ function dropOnBoard(boardId: number) {
   } as unknown as DragEndEvent)
 }
 describe('BoardsPage', () => {
+  it('orders discovery, chip Boards, My Inuksuks and the filter bar like Collections', async () => {
+    await setup()
+    const link = screen.getByRole('button', { name: 'Public & shared Boards' })
+    const boards = screen.getByRole('region', { name: 'Boards' })
+    const heading = screen.getByRole('heading', { name: 'My Inuksuks' })
+    const filters = screen.getByRole('region', { name: 'Filter Boards and Inuksuks' })
+    expect(link.compareDocumentPosition(boards) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(boards.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(heading.compareDocumentPosition(filters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Graph view' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Drag Rose window' })).not.toBeInTheDocument()
+    const card = screen.getAllByTestId('inuksuk-card')[0]
+    expect(within(card).getByTestId('collection-visibility-chip')).toHaveTextContent('Private')
+    expect(within(card).getByTestId('StarIcon')).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Edit Inuksuk: Rose window' })).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Actions for Rose window' }),
+    ).not.toBeInTheDocument()
+  })
+  it('offers equivalent table columns and preserves actions and filters across view changes', async () => {
+    const view = await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+    const table = within(screen.getByRole('table', { name: 'Inuksuks' }))
+    expect(table.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
+      'Title',
+      'Category',
+      'Scope',
+      'Boards',
+      'Favourite',
+      'Actions',
+    ])
+    const row = within(
+      table.getByRole('button', { name: 'Open Inuksuk: Rose window' }).closest('tr')!,
+    )
+    expect(row.getByText('Architectural details')).toBeVisible()
+    expect(row.getByText('Private')).toBeVisible()
+    fireEvent.click(row.getByRole('button', { name: 'Architecture inspiration' }))
+    expect(view.onSelectBoard).toHaveBeenCalledWith(1)
+    fireEvent.click(row.getByRole('button', { name: 'Open Inuksuk: Rose window' }))
+    expect(view.onOpenInuksuk).toHaveBeenCalledWith(BOARD_ITEMS[0])
+    fireEvent.click(row.getByRole('button', { name: 'Favourite Rose window' }))
+    await waitFor(() =>
+      expect(api.updateInuksuk).toHaveBeenCalledWith(7, { version: 3, favourite: false }),
+    )
+    expect(table.getByText('Uncategorized')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Title' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Filter Boards and Inuksuks by title' }), {
+      target: { value: 'No such view' },
+    })
+    expect(screen.getByText('No matching Inuksuks.')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Cards view' }))
+    expect(screen.queryByTestId('inuksuk-card')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(screen.getAllByTestId('inuksuk-card')).toHaveLength(BOARD_ITEMS.length)
+  })
+  it('keeps move, edit and delete reachable without an Inuksuk overflow menu', async () => {
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Move/Save Rose window to Board' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Save “Rose window” to…')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Inuksuk: Rose window' }))
+    expect(await screen.findByRole('button', { name: 'Delete' })).toBeVisible()
+    expect(screen.getByRole('textbox', { name: 'Title' })).toBeVisible()
+  })
+  it('retains table rows and exposes errors when a favourite mutation fails', async () => {
+    vi.mocked(api.updateInuksuk).mockRejectedValue(
+      new api.ApiError(422, 'Unable to update favourite'),
+    )
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite Rose window' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to update favourite')
+    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBeVisible()
+  })
   it.each(['Boards', 'Inuksuks'])(
     'shows an initial %s load error instead of the empty state and allows retry',
     async (source) => {
@@ -142,7 +216,6 @@ describe('BoardsPage', () => {
     const card = screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })
     const cover = screen.getByRole('button', { name: 'Open Board: Architecture inspiration' })
     await actions()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit Inuksuk' }))
     await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument())
     expect(card.isConnected).toBe(true)
     expect(cover.isConnected).toBe(true)
@@ -247,7 +320,9 @@ describe('BoardsPage', () => {
   it('opens Board details in a dialog with fixed heading controls and a close action', async () => {
     const view = await setup(1)
     const dialog = screen.getByRole('dialog', { name: 'Architecture inspiration' })
-    expect(within(dialog).getByText('Private', { exact: true })).toBeVisible()
+    expect(
+      within(dialog.querySelector('#board-heading')!).getByText('Private', { exact: true }),
+    ).toBeVisible()
     expect(within(dialog).getByText('6 Inuksuks')).toBeVisible()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close Board' }))
     expect(view.onSelectBoard).toHaveBeenCalledWith(null)
@@ -454,8 +529,7 @@ describe('BoardsPage', () => {
       id === 4 ? extra : (BOARDS_FIXTURES.find((board) => board.id === id) ?? BOARDS_FIXTURES[0]),
     )
     await setup(1)
-    await actions()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Move/Save to…' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Move/Save Rose window to Board' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
@@ -471,8 +545,7 @@ describe('BoardsPage', () => {
   })
   it('moves across Boards atomically when explicitly requested', async () => {
     await setup(1)
-    await actions()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Move/Save to…' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Move/Save Rose window to Board' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
     fireEvent.click(screen.getByRole('switch', { name: 'Move: also remove from this Board' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -490,8 +563,7 @@ describe('BoardsPage', () => {
       return BOARDS_FIXTURES.find((board) => board.id === id) ?? BOARDS_FIXTURES[0]
     })
     await setup(1)
-    await actions()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Move/Save to…' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Move/Save Rose window to Board' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
@@ -505,7 +577,10 @@ describe('BoardsPage', () => {
     )
     await setup(1)
     await actions()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from this Board' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Remove from this Board' })).toBeEnabled(),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from this Board' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
     await waitFor(() =>
       expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent(

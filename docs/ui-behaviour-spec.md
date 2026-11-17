@@ -1434,21 +1434,28 @@ selection MouseTracker ignores their presses.
 ### Boards & Inuksuks overview and Board dialog
 
 - The page title uses Collections' h5 variant and h1 element exactly.
-- One short horizontally scrolling owned-Board row begins with New Board. Compact
-  thumbnails and names replace ownership-tab-separated card grids. Read-only
+- One short horizontally scrolling owned-Board row begins with New Board. Rounded,
+  outlined chips have a flush-left square cover/placeholder and single-line name. Read-only
   Boards stay visible, without drag handles or drop targets.
-- Public & shared Boards opens a dialog listing other authorized Boards independent
+- Public & shared Boards sits above that row and opens a dialog listing other authorized Boards independent
   of overview filters; choosing one closes the list and opens the existing Board dialog.
-- A compact grid shows only personally owned Inuksuks, fetched in pages of 200. Cards
+- My Inuksuks has Collections-style Cards/Table controls (no Graph), then the filter bar.
+  Both views show only personally owned Inuksuks, fetched in pages of 200. Cards
   show the image's parent category below the title, or Uncategorized when absent.
-  Inuksuk tiles share the Board tiles' 156px width; Board tiles are about 20% shorter.
+  Cards are 195px wide with proportionally scaled 80px covers, including in Board dialogs.
+  Compass, title-row edit pencil and reused Collections scope pills follow Collection cards.
+  Top-right Star/StarBorder favourite takes Collections' cover-picker position, beside Move/Save.
+  The pencil opens the existing editor; Delete and Remove from this Board remain there.
+  Card click opens the saved view; no card overflow or drag-handle icon remains.
+  Table columns are Title, Category, Scope, Boards, Favourite and Actions. Board names
+  navigate; actions and filters work in both views. Multiple Board scopes render distinct pills.
   Program-owned Boards retain program-membership ownership semantics in the main row.
 - The Collections filter bar components provide title/description search,
   Private/Restricted/Public scope, owner/Mine and Favourite facets on both the
   Board row and overview collage. Scope uses any visible Board membership;
   Favourite Boards are those holding a favourite Inuksuk. Active chips can be
   removed, and Clear filters resets all facets.
-- Separate drag handles save editable overview Inuksuks onto editable Board tabs,
+- Dragging editable overview Inuksuk cards saves onto editable Board chips,
   preserving existing memberships. Targets highlight and success shows a snackbar;
   failures retain data and show the error. Browse collision logic is unchanged.
 - A Board opens in a large dialog, full-screen below the small breakpoint. Its

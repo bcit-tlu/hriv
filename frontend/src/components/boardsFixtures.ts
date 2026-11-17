@@ -59,7 +59,7 @@ export const BOARD_ITEMS: ApiInuksuk[] = [
   ...INUKSUK_FIXTURE,
   id: index + 7,
   title,
-  category_name: 'Architectural details',
+  category_name: index === 5 ? null : 'Architectural details',
   thumb: '/hriv-splash2.jpg',
   description:
     index % 2

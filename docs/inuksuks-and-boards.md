@@ -454,14 +454,26 @@ Boards uses `Tabs value={false}`. Selecting a Board writes
 The same flag gates direct links and all page requests.
 Frontend telemetry preserves `boards` in both page and from-page dimensions.
 
-The overview has one short, horizontally scrolling row of compact Board tabs,
-starting with **New Board**. Owned Boards share that row, with
-up to four renewing coordinate thumbnails and a themed placeholder. Below it,
-only personally owned Inuksuks appear in a compact responsive tile grid; both lists are
+The overview has one short, horizontally scrolling row of outlined, rounded Board chips,
+starting with **New Board**. Owned Boards share that row, with a flush-left square
+Board cover (or a renewing member thumbnail, then the themed placeholder) and a
+single-line name. The **Public & shared Boards** link sits above the row.
+Below it, **My Inuksuks** contains Collections-style Cards/Table controls and then
+the filter bar. There is no Graph view. Only personally owned Inuksuks appear; both lists are
 fetched in pages of 200 without the former recent-60 cap. Each card shows the
 image's parent category below its title (`category_name`, null if unfiled).
-The heading uses the same h5/h1 typography as Collections. Board tiles are about
-20% shorter; Inuksuk tiles use the same 156px width, including inside Board dialogs.
+The heading uses the same h5/h1 typography as Collections. Inuksuk cards are 195px
+wide (25% wider than the previous 156px), with proportionally scaled 80px covers,
+including inside Board dialogs. They reuse Collections' scope-pill component.
+The compass replaces the collection icon; category replaces the image count, with
+Uncategorized as the fallback. Top-right actions are Favourite (Star/StarBorder,
+in Collections' Set cover position) and Move/Save. The title-row pencil opens the
+existing edit dialog, including Delete and, for Board editors, Remove from this Board.
+Card clicks still open the exact saved view. There is no per-card overflow or drag glyph.
+Table uses the same filters, permissions and actions, with Title, Category, Scope,
+Boards (navigable), Favourite and Actions columns. Scope shows each distinct visible
+Board visibility when a view belongs to Boards with different scopes. View choice
+is local to the page mount and starts on Cards.
 **Public & shared Boards** opens a separate dialog listing server-authorized
 Boards not owned by the user. Selecting one closes the list and opens the existing
 Board dialog; overview filters do not narrow this discovery list. Program-owned
@@ -489,7 +501,7 @@ Owners/transfer reuse the Collections picker via a Board adapter, and require
 reload on 409; reload replaces the staged draft with current server values.
 
 The selected Board displays a flat, ordered collage of saved views.
-Handle-based DnD reorders members within the Board;
+Dragging a member card reorders members within the Board, without a separate handle icon;
 Board reorder applies only to editable owned Boards. Read-only program-owned
 Boards remain listed but have no drag handle and are omitted from reorder writes.
 They appear in the same compact row as other owned Boards. Board positions
@@ -498,8 +510,8 @@ submitted on reorder. Board handles are hidden while filters are active so a
 filtered subset can never replace that complete order.
 These are isolated from Browse's
 near/far-half collision rules; see [drag-and-drop.md](drag-and-drop.md#boards-page-1771).
-Dragging an editable overview Inuksuk by its handle onto another editable Board
-tab highlights the target and **saves a copy of the link**, with a success snackbar.
+Dragging an editable overview Inuksuk card onto another editable Board chip
+highlights the target and **saves a copy of the link**, with a success snackbar.
 Read-only Boards are not drop targets. **Move/Save to…** also offers an explicit atomic move that removes the
 source link in the same PATCH. Other editable Board links retain their positions; non-editable links remain server-preserved. If any membership or
 destination read fails, saving is blocked rather than sending a partial list.
