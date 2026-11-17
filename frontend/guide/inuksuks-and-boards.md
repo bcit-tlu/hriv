@@ -48,6 +48,9 @@ Choose a Board to open its usual dialog and see its authorized saved views.
 The discovery list is independent of the overview filters.
 
 Choose **Cards** or **Table** beside My Inuksuks; the filter bar sits underneath.
+Both overview views are alphabetical by title, ignoring case. Favouriting or moving
+a view does not move its position; renaming places it at the new alphabetical position.
+Favourite stars are filled in the card's accent colour.
 Cards are 195px wide and use Collections-style compass/title/category/scope metadata.
 Table shows title, category, scope, Boards, favourite and actions. Click a Board name
 in the table to open it. Views on multiple Board scopes show each scope pill.

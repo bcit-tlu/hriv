@@ -501,6 +501,10 @@ Owners/transfer reuse the Collections picker via a Board adapter, and require
 reload on 409; reload replaces the staged draft with current server values.
 
 The selected Board displays a flat, ordered collage of saved views.
+The My Inuksuks overview instead sorts every fetched page together by case-insensitive
+title, with numeric Inuksuk ID breaking ties. Favourite and membership changes do not
+change that order; renames move only to their new alphabetical position.
+Filled favourite stars use the primary accent colour, matching the card's compass/title accent.
 Dragging a member card reorders members within the Board, without a separate handle icon;
 Board reorder applies only to editable owned Boards. Read-only program-owned
 Boards remain listed but have no drag handle and are omitted from reorder writes.

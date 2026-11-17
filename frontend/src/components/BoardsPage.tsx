@@ -544,14 +544,20 @@ export default function BoardsPage({
       .filter((row) => !scopes.length || scopes.includes(row.visibility))
       .map((row) => row.id),
   )
-  const filteredItems = data.recent.filter(
-    (item) =>
-      item.owners.some((o) => o.user_id === currentUser?.id) &&
-      (!needle || `${item.title} ${item.description ?? ''}`.toLocaleLowerCase().includes(needle)) &&
-      (!scopes.length || item.board_ids.some((id) => scopeIds.has(id))) &&
-      ownerMatches(item) &&
-      (!favourites || item.favourite),
-  )
+  const filteredItems = data.recent
+    .filter(
+      (item) =>
+        item.owners.some((o) => o.user_id === currentUser?.id) &&
+        (!needle ||
+          `${item.title} ${item.description ?? ''}`.toLocaleLowerCase().includes(needle)) &&
+        (!scopes.length || item.board_ids.some((id) => scopeIds.has(id))) &&
+        ownerMatches(item) &&
+        (!favourites || item.favourite),
+    )
+    .sort(
+      (a, b) =>
+        a.title.toLocaleLowerCase().localeCompare(b.title.toLocaleLowerCase()) || a.id - b.id,
+    )
   const rows = [
     ...reorderableBoards,
     ...own.filter((row) => !reorderableBoards.some((owned) => owned.id === row.id)),

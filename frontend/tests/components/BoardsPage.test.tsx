@@ -88,6 +88,81 @@ function dropOnBoard(boardId: number) {
   } as unknown as DragEndEvent)
 }
 describe('BoardsPage', () => {
+  it('sorts overview Cards and Table case-insensitively by title, then ID', async () => {
+    vi.mocked(api.fetchInuksuks).mockResolvedValue([
+      { ...BOARD_ITEMS[0], title: 'zebra' },
+      { ...BOARD_ITEMS[2], title: 'Alpha' },
+      { ...BOARD_ITEMS[1], title: 'alpha' },
+    ])
+    await setup()
+    expect(
+      screen.getAllByRole('button', { name: /^Open Inuksuk:/ }).map((el) => el.textContent),
+    ).toEqual(['alpha', 'Alpha', 'zebra'])
+    fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+    expect(
+      within(screen.getByRole('table', { name: 'Inuksuks' }))
+        .getAllByRole('row')
+        .slice(1)
+        .map((row) => within(row).getAllByRole('cell')[0].textContent),
+    ).toEqual(['alpha', 'Alpha', 'zebra'])
+  })
+  it('sorts across all overview pages, not just within each page', async () => {
+    vi.mocked(api.fetchInuksuks).mockImplementation(async (params) => {
+      if (params?.board_id) return []
+      return params?.page === 1
+        ? Array.from({ length: 200 }, (_, i) => ({
+            ...BOARD_ITEMS[0],
+            id: i + 100,
+            title: `Zebra ${i}`,
+          }))
+        : [{ ...BOARD_ITEMS[1], title: 'Alpha from page two' }]
+    })
+    await setup()
+    const cards = screen.getAllByRole('button', { name: /^Open Inuksuk:/ })
+    expect(cards).toHaveLength(201)
+    expect(cards[0]).toHaveAccessibleName('Open Inuksuk: Alpha from page two')
+  })
+  it('keeps alphabetical order after favourite and membership updates', async () => {
+    await setup()
+    const titles = () =>
+      screen.getAllByRole('button', { name: /^Open Inuksuk:/ }).map((el) => el.textContent)
+    const initial = titles()
+    vi.mocked(api.fetchInuksuks).mockResolvedValue(
+      [...BOARD_ITEMS]
+        .reverse()
+        .map((item) => ({ ...item, favourite: true, updated_at: '2026-02-01T00:00:00Z' })),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite Stone columns' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Favourite Stone columns' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      ),
+    )
+    expect(titles()).toEqual(initial)
+    expect(
+      within(screen.getByRole('button', { name: 'Favourite Stone columns' })).getByTestId(
+        'StarIcon',
+      ),
+    ).toHaveClass('MuiSvgIcon-colorPrimary')
+    dropOnBoard(3)
+    await screen.findByText('Saved to Next studio project')
+    expect(titles()).toEqual(initial)
+  })
+  it('places a renamed Inuksuk at its new alphabetical position', async () => {
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Inuksuk: Rose window' }))
+    const title = await screen.findByRole('textbox', { name: 'Title' })
+    fireEvent.change(title, { target: { value: 'A new first view' } })
+    vi.mocked(api.fetchInuksuks).mockResolvedValue(
+      BOARD_ITEMS.map((item) => (item.id === 7 ? { ...item, title: 'A new first view' } : item)),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await screen.findByRole('button', { name: 'Open Inuksuk: A new first view' })
+    expect(screen.getAllByRole('button', { name: /^Open Inuksuk:/ })[0]).toHaveAccessibleName(
+      'Open Inuksuk: A new first view',
+    )
+  })
   it('uses a Board chip surface without a grip and still opens on click', async () => {
     const { onSelectBoard } = await setup()
     const chip = screen.getByRole('group', { name: 'Architecture inspiration' })
@@ -108,7 +183,9 @@ describe('BoardsPage', () => {
     expect(heading.compareDocumentPosition(filters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Graph view' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Drag Rose window' })).not.toBeInTheDocument()
-    const card = screen.getAllByTestId('inuksuk-card')[0]
+    const card = screen
+      .getByRole('button', { name: 'Open Inuksuk: Rose window' })
+      .closest('[data-testid="inuksuk-card"]')!
     expect(card).not.toHaveStyle({ minHeight: '235px' })
     expect(within(card).getByTestId('collection-visibility-chip')).toHaveTextContent('Private')
     expect(within(card).getByTestId('StarIcon')).toBeInTheDocument()

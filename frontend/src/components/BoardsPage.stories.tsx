@@ -79,6 +79,16 @@ export const Basic: Story = {
     await expect(
       await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' }),
     ).toBeVisible()
+    await expect(
+      canvas.getAllByRole('button', { name: /^Open Inuksuk:/ }).map((el) => el.textContent),
+    ).toEqual([
+      'A study in geometry',
+      'Light through glass',
+      'Rose window',
+      'Stone columns',
+      'The arcade',
+      'Tracery details',
+    ])
   },
 }
 export const Table: Story = {

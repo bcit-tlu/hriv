@@ -1441,6 +1441,8 @@ selection MouseTracker ignores their presses.
 - Public & shared Boards sits above that row and opens a dialog listing other authorized Boards independent
   of overview filters; choosing one closes the list and opens the existing Board dialog.
 - My Inuksuks has Collections-style Cards/Table controls (no Graph), then the filter bar.
+  The fully paginated overview is case-insensitive title ascending, then numeric ID;
+  favourite/membership updates do not affect order. Filled stars use the primary accent.
   Both views show only personally owned Inuksuks, fetched in pages of 200. Cards
   show the image's parent category below the title, or Uncategorized when absent.
   Cards are 195px wide with proportionally scaled 80px covers, including in Board dialogs.
