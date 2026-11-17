@@ -60,7 +60,7 @@ import MoreVert from '@mui/icons-material/MoreVert'
 import Add from '@mui/icons-material/Add'
 import Edit from '@mui/icons-material/Edit'
 import Close from '@mui/icons-material/Close'
-import { useTheme } from '@mui/material/styles'
+import { alpha, useTheme } from '@mui/material/styles'
 import FilterBar from './FilterBar'
 import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
 import FilterTextPanel from './FilterTextPanel'
@@ -771,7 +771,7 @@ export default function BoardsPage({
                   display: 'grid',
                   placeItems: 'center',
                   bgcolor: 'primary.main',
-                  color: 'white',
+                  color: 'primary.contrastText',
                 }}
               >
                 <CompassCalibration sx={{ fontSize: 48 }} />
@@ -779,18 +779,18 @@ export default function BoardsPage({
             )}
           </CardActionArea>
           <Box
-            sx={{
+            sx={(theme) => ({
               position: 'absolute',
               top: 4,
               right: 4,
               display: 'flex',
               gap: 0.5,
               '& .MuiIconButton-root': {
-                color: 'white',
-                bgcolor: 'rgba(0,0,0,0.25)',
-                '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
+                color: theme.palette.common.white,
+                bgcolor: alpha(theme.palette.common.black, 0.25),
+                '&:hover': { bgcolor: alpha(theme.palette.common.black, 0.45) },
               },
-            }}
+            })}
           >
             {favouriteAction(item)}
             {moveAction(item)}
