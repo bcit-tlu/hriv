@@ -9,20 +9,33 @@ These controls appear only when your deployment enables Inuksuks and Boards.
 Open an image and toggle **Add Inuksuk**. You can still drag, scroll or pinch to
 pan and zoom. A quick click or tap places a blue marker and opens a small panel at
 the top-right. Type a title and choose a Board; your last-used Board is selected
-when available. **+ Create new board** makes a private Board inline. Expand
-**More options** for a description or Favourite. **Save** keeps the tool on for
+when available. The **Add Inuksuk** panel's Boards dropdown has checkboxes, alphabetic
+options and no chips. Selected names show as text (`A, B +1`). Its first item is
+always **+ New Board…**; type a new name for **+ Create Board "text"**, creating and
+selecting a private Board. Without a name, it prompts inline. Expand **More options**
+for a description; toggle the outlined/filled star in the title row for Favourite.
+**Save** keeps the tool on for
 another placement. **Cancel** or Escape removes the unsaved marker; Escape again,
 or the toolbar compass, turns placement off. An unsaved view also appears in the drawer.
 
 Click a saved marker to restore its view and open its information card. The card
 shows its title, description, visible Boards and favourite state. Use the pencil
-to edit if permitted, or X to close. Saving an Inuksuk does not modify the source image.
+to edit in place if permitted. The card has no X: press outside to deselect and
+close it, or Escape. Another marker selects that Inuksuk. Drawer **⋮ → Edit** selects,
+focuses and pans to the same Inuksuk and opens the same inline editor, with Boards,
+description, star, Save changes/Cancel and permitted Delete (with confirmation).
+While editing, outside presses—including other markers/rows—keep your editor open;
+finish with Save/Cancel, or explicitly Escape to cancel and close. The Boards menu
+does not dismiss it. Version conflicts retain your fields and offer Reload current.
+This works in image, Sequence and Synchronized viewers; BoardsPage keeps its modal edit form.
+Saving an Inuksuk does not modify the source image.
 Markers have white circular backgrounds with blue icons, staying upright and
 the same size as you zoom or rotate; label styling is unchanged.
 
 The top-left compass opens the Inuksuks drawer without hiding the image toolbar.
 Use **⋮** for Show/Hide marker, then Show/Hide label and, when allowed,
-Edit or Delete. Group menus apply to all views in that group; a Mixed
+Edit or Delete. Label actions use LabelOff (Hide) / Label (Show) icons, including
+group menus. Group menus apply to all views in that group; a Mixed
 group action shows all. These display preferences are remembered for your account.
 Hidden-marker titles are dimmed and identified as hidden to screen readers.
 **Pin Inuksuks** keeps the drawer open between images, through sequence navigation

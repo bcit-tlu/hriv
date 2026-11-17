@@ -234,6 +234,7 @@ export default function ImageViewer({
   })
   const placeInuksuk = useEffectEvent((view: InuksukView) => {
     if (imageId == null || !inuksuksEnabled) return
+    if (editingInuksuk) return false
     if (inuksukDraft?.imageId === imageId) return
     setEditingInuksuk(null)
     setInfoInuksukId(null)
@@ -262,6 +263,16 @@ export default function ImageViewer({
   }, [inuksuksDrawerOpen, onInuksuksDrawerOpenChange])
   const [panelHost, setPanelHost] = useState<HTMLElement | null>(null)
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
+  const beginInuksukEdit = (item: ApiInuksuk, deleting = false) => {
+    if (!viewerInstance || (editingInuksuk && editingInuksuk.id !== item.id)) return
+    navigateToInuksuk(viewerInstance, item)
+    setSelectedInuksukId(item.id)
+    setFocusInuksukId(item.id)
+    setInuksukDraft(null)
+    setInfoInuksukId(item.id)
+    setDeletingInuksuk(deleting)
+    setEditingInuksuk(item)
+  }
   useEffect(() => {
     const width = panelOpen && !mobilePanel ? 256 : 0
     onViewerPanelWidthChange?.(width)
@@ -2070,21 +2081,16 @@ export default function ImageViewer({
                       focusId={focusInuksukId}
                       error={inuksuks.error}
                       onSelect={(item) => {
+                        if (editingInuksuk) return
                         navigateToInuksuk(viewerInstance, item)
                         setSelectedInuksukId(item.id)
                         setFocusInuksukId(null)
                       }}
                       onEdit={(item) => {
-                        setInuksukDraft(null)
-                        setInfoInuksukId(null)
-                        setDeletingInuksuk(false)
-                        setEditingInuksuk(item)
+                        beginInuksukEdit(item)
                       }}
                       onDelete={(item) => {
-                        setInuksukDraft(null)
-                        setInfoInuksukId(null)
-                        setDeletingInuksuk(true)
-                        setEditingInuksuk(item)
+                        beginInuksukEdit(item, true)
                       }}
                     />
                   }
@@ -2110,21 +2116,16 @@ export default function ImageViewer({
                   focusId={focusInuksukId}
                   error={inuksuks.error}
                   onSelect={(item) => {
+                    if (editingInuksuk) return
                     navigateToInuksuk(viewerInstance, item)
                     setSelectedInuksukId(item.id)
                     setFocusInuksukId(null)
                   }}
                   onEdit={(item) => {
-                    setInuksukDraft(null)
-                    setInfoInuksukId(null)
-                    setDeletingInuksuk(false)
-                    setEditingInuksuk(item)
+                    beginInuksukEdit(item)
                   }}
                   onDelete={(item) => {
-                    setInuksukDraft(null)
-                    setInfoInuksukId(null)
-                    setDeletingInuksuk(true)
-                    setEditingInuksuk(item)
+                    beginInuksukEdit(item, true)
                   }}
                 />,
                 viewerInstance.container,
@@ -2142,6 +2143,7 @@ export default function ImageViewer({
             ]}
             selectedId={selectedInuksukId}
             onSelect={(marker) => {
+              if (editingInuksuk) return
               const item = inuksuks.items.find((value) => value.id === marker.id)
               if (!item) return
               setSelectedInuksukId(item.id)
@@ -2152,7 +2154,6 @@ export default function ImageViewer({
             }}
           />
           {infoInuksukId != null &&
-            !editingInuksuk &&
             inuksuks.items
               .filter((item) => item.id === infoInuksukId)
               .map((item) => (
@@ -2160,23 +2161,29 @@ export default function ImageViewer({
                   key={item.id}
                   item={item}
                   container={viewerInstance.container}
-                  onClose={() => setInfoInuksukId(null)}
-                  onEdit={() => {
-                    setDeletingInuksuk(false)
-                    setEditingInuksuk(item)
+                  editing={editingInuksuk?.id === item.id}
+                  initialDelete={deletingInuksuk}
+                  userId={auth?.currentUser?.id}
+                  onChanged={inuksuks.reload}
+                  onCancelEdit={() => setEditingInuksuk(null)}
+                  onClose={() => {
                     setInfoInuksukId(null)
+                    setSelectedInuksukId(null)
+                    setFocusInuksukId(null)
+                    setEditingInuksuk(null)
+                  }}
+                  onEdit={() => {
+                    beginInuksukEdit(item)
                   }}
                 />
               ))}
-          {(inuksukDraft?.imageId === imageId || editingInuksuk?.image_id === imageId) && (
+          {inuksukDraft?.imageId === imageId && (
             <InuksukFormDialog
-              key={editingInuksuk?.id ?? 'new'}
+              key="new"
               imageId={imageId}
-              view={editingInuksuk ?? inuksukDraft!.view}
-              item={editingInuksuk?.image_id === imageId ? editingInuksuk : null}
+              view={inuksukDraft.view}
               userId={auth?.currentUser?.id}
-              placement={!editingInuksuk}
-              initialDelete={!!editingInuksuk && deletingInuksuk}
+              placement
               onTitleChange={setDraftTitle}
               container={viewerInstance.container}
               onChanged={async (created) => {

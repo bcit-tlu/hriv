@@ -77,6 +77,15 @@ beforeEach(() => {
 })
 
 describe('SequenceCollectionViewer', () => {
+  it.each([false, true])(
+    'delegates the feature-gated Inuksuk card/form flow to ImageViewer, enabled=%s',
+    (inuksuksEnabled) => {
+      renderViewer({ inuksuksEnabled })
+      expect(lastViewerProps?.inuksuksEnabled).toBe(inuksuksEnabled)
+      expect(lastViewerProps?.imageId).toBe(100)
+      expect(screen.queryByRole('dialog', { name: 'Edit Inuksuk' })).toBeNull()
+    },
+  )
   it('keeps sequence arrows inside the resized image area when the panel is open', () => {
     renderViewer({ inuksuksEnabled: true })
     const resize = lastViewerProps?.onViewerPanelWidthChange

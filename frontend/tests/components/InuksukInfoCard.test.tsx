@@ -1,13 +1,62 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../../src/api'
 import InuksukInfoCard from '../../src/components/InuksukInfoCard'
 import { BOARD_FIXTURE, INUKSUK_FIXTURE } from '../../src/components/inuksukFixtures'
 
-afterEach(() => vi.restoreAllMocks())
+vi.mock('../../src/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof api>()),
+  fetchBoards: vi.fn(),
+  fetchBoard: vi.fn(),
+  updateInuksuk: vi.fn(),
+}))
+afterEach(() => vi.clearAllMocks())
 describe('InuksukInfoCard', () => {
-  it('shows only visible Board names, description and favourite with explicit editing and close', async () => {
-    vi.spyOn(api, 'fetchBoards').mockResolvedValue([
+  it('edits inside the card, keeps outside/menu presses from discarding edits and saves its version', async () => {
+    vi.mocked(api.fetchBoards).mockResolvedValue([BOARD_FIXTURE])
+    vi.mocked(api.fetchBoard).mockResolvedValue(BOARD_FIXTURE)
+    const update = vi.mocked(api.updateInuksuk).mockResolvedValue(INUKSUK_FIXTURE)
+    const close = vi.fn(),
+      cancel = vi.fn(),
+      changed = vi.fn()
+    render(
+      <InuksukInfoCard
+        item={INUKSUK_FIXTURE}
+        container={document.body}
+        editing
+        onClose={close}
+        onEdit={() => {}}
+        onCancelEdit={cancel}
+        onChanged={changed}
+      />,
+    )
+    const card = screen.getByRole('region', { name: 'Inuksuk information' })
+    expect(within(card).getByRole('form', { name: 'Edit Inuksuk' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled())
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'My edit' },
+    })
+    fireEvent.pointerDown(document.body)
+    expect(close).not.toHaveBeenCalled()
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Boards' }))
+    const option = await screen.findByRole('option', { name: BOARD_FIXTURE.name })
+    expect(option).toBeVisible()
+    fireEvent.pointerDown(option)
+    expect(close).not.toHaveBeenCalled()
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Boards' }), { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({ title: 'My edit', version: 3 }),
+      ),
+    )
+    expect(changed).toHaveBeenCalledOnce()
+    expect(cancel).toHaveBeenCalledOnce()
+  })
+  it('shows visible Board names, description and favourite without an X; outside pointer and Escape close', async () => {
+    vi.mocked(api.fetchBoards).mockResolvedValue([
       BOARD_FIXTURE,
       { ...BOARD_FIXTURE, id: 2, name: 'Other Board' },
     ])
@@ -26,17 +75,19 @@ describe('InuksukInfoCard', () => {
     expect(screen.getByText(INUKSUK_FIXTURE.description!)).toBeInTheDocument()
     const star = screen.getByRole('img', { name: 'Favourite' })
     expect(star).toBeInTheDocument()
-    expect(star.nextElementSibling).toBe(
-      screen.getByRole('button', { name: 'Close Inuksuk information' }),
-    )
+    expect(screen.queryByRole('button', { name: 'Close Inuksuk information' })).toBeNull()
     expect(screen.queryByText('Favourite', { exact: true })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Edit Rose window' }))
     expect(edit).toHaveBeenCalledOnce()
-    fireEvent.click(screen.getByRole('button', { name: 'Close Inuksuk information' }))
+    fireEvent.pointerDown(screen.getByRole('heading', { name: INUKSUK_FIXTURE.title }))
+    expect(close).not.toHaveBeenCalled()
+    fireEvent.pointerDown(document.body)
     expect(close).toHaveBeenCalledOnce()
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(close).toHaveBeenCalledTimes(2)
   })
   it('handles empty content without offering edit to a viewer', async () => {
-    vi.spyOn(api, 'fetchBoards').mockResolvedValue([])
+    vi.mocked(api.fetchBoards).mockResolvedValue([])
     render(
       <InuksukInfoCard
         item={{
@@ -56,7 +107,7 @@ describe('InuksukInfoCard', () => {
     expect(screen.queryByRole('button', { name: /Edit/ })).not.toBeInTheDocument()
   })
   it('keeps the card usable when Board names cannot be loaded', async () => {
-    vi.spyOn(api, 'fetchBoards').mockRejectedValue(new Error('offline'))
+    vi.mocked(api.fetchBoards).mockRejectedValue(new Error('offline'))
     render(
       <InuksukInfoCard
         item={INUKSUK_FIXTURE}

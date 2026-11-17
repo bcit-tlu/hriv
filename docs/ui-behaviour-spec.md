@@ -1500,15 +1500,28 @@ selection MouseTracker ignores their presses.
   only quick clicks/taps place. Save does not disarm it. Escape cancels an open
   draft first, then disarms placement on the next press; the toolbar also disarms it.
 - Placement uses a compact non-modal top-right panel: selected Title, required
-  remembered Board picker and inline private-Board creation. Description and
-  Favourite start under collapsed More options. Cancel removes the draft marker;
+  remembered Board picker and inline private-Board creation, titled Add Inuksuk.
+  Description starts under collapsed More options. Favourite is a tooltip-labelled
+  outlined/filled title-row star with aria-pressed, not a checkbox. Cancel removes the draft marker;
   the draft also appears as Unsaved in My Inuksuks. One draft is edited at a time.
 - Marker clicks open a top-right information card showing title, optional description,
-  visible Board names, favourite state and a close X. The authorized-only pencil
-  opens the full edit form; marker clicks never directly open the editor.
+  visible Board names and favourite state, without a close X. Outside pointer presses
+  deselect/close it; another marker selects instead. Escape also closes it. The authorized-only
+  pencil replaces its contents with the shared inline edit form, not a central dialog;
+  drawer Edit selects/focuses/pans to the same Inuksuk and opens this editor.
+  It includes title, description, Boards, star, Save changes/Cancel and permitted confirmed Delete.
+  Outside presses keep the editor open, including presses on other markers/rows;
+  Save/Cancel finish, and explicit Escape cancels/closes. Portalled Board menus remain usable.
+  OCC/error/reload behavior is shared with the existing form; BoardsPage retains its modal editor.
+- The Boards menu has checkbox options sorted case-insensitively by name with ID ties,
+  and no selection chips. Closed text shows the first two names then +N, including the
+  remembered last-used Board before opening it. A pinned + New Board… option always appears
+  first; unmatched search offers + Create Board "text". Creation makes/selects a private
+  name-only Board, prompting inline for an empty name. The separate create link is removed.
 - The title-only drawer leaves the bottom toolbar visible. Row/group context menus
   put Show/Hide marker(s) first, then the independent label action. Row menus
-  expose Edit/Delete only when permitted. Default/override/Mixed and localStorage
+  expose Edit/Delete only when permitted. Hide/Show label(s) use LabelOff/Label icons
+  for rows and groups. Default/override/Mixed and localStorage
   semantics remain unchanged.
 - Hidden-marker row titles use text.disabled (text.secondary in light mode for
   AA contrast on the still-navigable row) and an accessible “marker hidden”
