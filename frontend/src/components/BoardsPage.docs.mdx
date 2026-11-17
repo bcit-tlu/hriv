@@ -19,7 +19,13 @@ Card rows size to their content without a minimum-height floor, as in Collection
 Table titles are plain text; clicking a row opens its saved view. Row actions do not navigate.
 Rows are keyboard-focusable and open with Enter or Space; nested controls keep their own activation.
 Read-only Inuksuks hide the favourite toggle; existing favourites keep a non-interactive star.
-Public & shared Boards is outlined at the right of the title row and opens a dialog listing other authorized Boards, independent
+Public & shared Boards is outlined at the right of the title row. Its dialog lists
+public, restricted or co-owned/program-member Boards outside the chip row, never
+other users' private Boards. Admins, instructors and staff additionally have an
+outlined All Boards action listing all API-returned Boards, including private ones;
+students have no All Boards action. Both dialogs use tiles with title, the shared
+scope pill and Collections-style Managed by owner text (No owner when orphaned).
+Tile selection opens the existing Board dialog. Both discovery lists are independent
 of overview filters. Choosing one opens the existing Board dialog.
 The hook fetches every page in batches of 200 rather than truncating at 60.
 My Inuksuks sorts all those pages together by case-insensitive title, then numeric ID.

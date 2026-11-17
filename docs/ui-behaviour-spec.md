@@ -1440,8 +1440,15 @@ selection MouseTracker ignores their presses.
   Editable chips reorder by surface drag without grip icons; clicking still opens a Board. Read-only
   owned/program Boards are available in Public & shared Boards, not the chip row, for every role.
   The chip row requires edit permission as well as ownership, with no instructor/admin exemption.
-- Public & shared Boards is an outlined, right-aligned button in the title row and opens a dialog listing other authorized Boards independent
-  of overview filters; choosing one closes the list and opens the existing Board dialog.
+- Public & shared Boards is an outlined, right-aligned button in the title row. For every
+  role its dialog lists API-returned public, program/group-restricted or co-owned/program-member
+  Boards outside the chip row; other users' private Boards are excluded.
+  Admins, instructors and staff have a second outlined All Boards button listing every
+  API-returned Board, including others' private and already-chipped Boards. Students never see it.
+  Both dialogs use tiles with title, shared scope pill and Collections-style Managed by
+  owner/program names (No owner for orphans). Lists are independent of overview filters;
+  choosing a tile closes discovery and opens the existing Board dialog. UX filtering
+  does not change backend visibility or establish a security boundary.
 - My Inuksuks has Collections-style Cards/Table controls (no Graph), then the filter bar.
   Outlined Select is right-aligned on that Filter by row in both overview views.
   The fully paginated overview is case-insensitive title ascending, then numeric ID;

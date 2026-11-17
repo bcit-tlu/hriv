@@ -113,6 +113,26 @@ export const BOARDS_FIXTURES: ApiBoard[] = [
   },
 ]
 
+export const BOARD_DISCOVERY_FIXTURES: ApiBoard[] = [
+  ...BOARDS_FIXTURES,
+  {
+    ...BOARDS_FIXTURES[2],
+    id: 5,
+    name: 'Morgan’s private studies',
+    visibility: 'private',
+  },
+  {
+    ...BOARDS_FIXTURES[2],
+    id: 6,
+    name: 'Studio reference library',
+    visibility: 'restricted',
+    program_ids: [1],
+    group_ids: [],
+    owner_program_id: 2,
+    owners: [{ user_id: null, program_id: 2, name: 'Engineering', role: null }],
+  },
+]
+
 export function installBoardsFetch(
   state: 'ready' | 'empty' | 'error' = 'ready',
   onWrite?: (path: string, body: unknown) => void,

@@ -5,6 +5,7 @@ import { AuthContext } from '../authContextValue'
 import BoardsPage from './BoardsPage'
 import {
   BOARD_AUTH,
+  BOARD_DISCOVERY_FIXTURES,
   BOARDS_FIXTURES,
   BOARD_GROUPS,
   BOARD_PROGRAMS,
@@ -17,20 +18,24 @@ function Example({
   initialBoardId = null,
   state = 'ready',
   readOnlyOwned = false,
+  role = BOARD_USER.role,
 }: {
   initialBoardId?: number | null
   state?: 'ready' | 'empty' | 'error'
   readOnlyOwned?: boolean
+  role?: typeof BOARD_USER.role
+  discoveryFixtures?: boolean
 }) {
   const [selection, setSelection] = useState<{ boardId: number | null }>({
     boardId: initialBoardId,
   })
+  const currentUser = { ...BOARD_USER, role: readOnlyOwned ? ('student' as const) : role }
   return (
-    <AuthContext.Provider value={BOARD_AUTH}>
+    <AuthContext.Provider value={{ ...BOARD_AUTH, currentUser }}>
       <BoardsPage
         key={state}
         enabled
-        currentUser={readOnlyOwned ? { ...BOARD_USER, role: 'student' } : BOARD_USER}
+        currentUser={currentUser}
         programs={BOARD_PROGRAMS}
         groups={BOARD_GROUPS}
         {...selection}
@@ -64,7 +69,14 @@ const meta = {
             },
             { ...BOARDS_FIXTURES[0], id: 4, name: 'Another editable Board', sort_order: 2 },
           ]
-        : BOARDS_FIXTURES,
+        : args.discoveryFixtures
+          ? BOARD_DISCOVERY_FIXTURES.filter(
+              (board) =>
+                args.role !== 'student' ||
+                board.visibility !== 'private' ||
+                board.owners.some((owner) => owner.user_id === BOARD_USER.id),
+            )
+          : BOARDS_FIXTURES,
     )
   },
 } satisfies Meta<typeof Example>
@@ -161,6 +173,7 @@ export const ScopeFilter: Story = {
   },
 }
 export const PublicSharedBoards: Story = {
+  args: { role: 'admin', discoveryFixtures: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(await canvas.findByRole('button', { name: 'Public & shared Boards' }))
@@ -172,6 +185,46 @@ export const PublicSharedBoards: Story = {
         within(dialog).getByRole('button', { name: 'Open Board: Shared discoveries' }),
       ).toBeVisible(),
     )
+    await expect(within(dialog).getByText('Managed by Morgan')).toBeVisible()
+    await expect(within(dialog).getByText('Managed by program Engineering')).toBeVisible()
+    await expect(
+      within(dialog).queryByRole('button', { name: 'Open Board: Morgan’s private studies' }),
+    ).not.toBeInTheDocument()
+  },
+}
+export const StudentPublicSharedBoards: Story = {
+  args: { role: 'student', discoveryFixtures: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.queryByRole('button', { name: 'All Boards' })).not.toBeInTheDocument()
+    await userEvent.click(await canvas.findByRole('button', { name: 'Public & shared Boards' }))
+    const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
+      name: 'Public & shared Boards',
+    })
+    await waitFor(() => expect(within(dialog).getByText('Managed by Morgan')).toBeVisible())
+    await expect(within(dialog).getByText('Managed by program Engineering')).toBeVisible()
+    await expect(
+      within(dialog).queryByRole('button', { name: 'Open Board: Morgan’s private studies' }),
+    ).not.toBeInTheDocument()
+  },
+}
+export const AllBoards: Story = {
+  args: { role: 'admin', discoveryFixtures: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'All Boards' }))
+    const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
+      name: 'All Boards',
+    })
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole('button', { name: 'Open Board: Morgan’s private studies' }),
+      ).toBeVisible(),
+    )
+    await expect(within(dialog).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(
+      BOARD_DISCOVERY_FIXTURES.length,
+    )
+    await expect(within(dialog).getByText('Managed by program Engineering')).toBeVisible()
   },
 }
 export const Empty: Story = { args: { state: 'empty' } }

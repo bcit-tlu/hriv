@@ -459,6 +459,8 @@ starting with **New Board**. Owned Boards share that row, with a flush-left squa
 Board cover (or a renewing member thumbnail, then the themed placeholder) and a
 single-line name. The **My Boards** heading shares Collections' unpadded flex header.
 An outlined **Public & shared Boards** button sits at its right, above the Board row.
+Admins, instructors and staff also have an outlined **All Boards** button beside it;
+students never see All Boards.
 Only the page heading changes; the Boards & Inuksuks navigation label remains unchanged.
 Below it, **My Inuksuks** contains Collections-style Cards/Table controls and then
 the filter bar. There is no Graph view. Only personally owned Inuksuks appear; both lists are
@@ -479,10 +481,19 @@ Boards (navigable), Favourite and Actions columns. Scope shows each distinct vis
 Board visibility when a view belongs to Boards with different scopes. View choice
 is local to the page mount and starts on Cards.
 **Public & shared Boards** opens a separate dialog listing server-authorized
-Boards not owned by the user, plus owned Boards without edit permission. Selecting one closes the list and opens the existing
+Boards outside the chip row that are public, restricted by program/group, or shared
+with the current user through co-ownership or program ownership/membership. Other
+users' private Boards are excluded for every role. **All Boards** lists every Board
+returned by the backend for admins, instructors and staff, including others' private Boards
+and editable owned Boards already in the chip row. Both dialogs render clickable
+tiles with title, the shared scope pill and the Collections-style **Managed by** owner
+line (program names, co-owner names, or No owner), using the existing API owner data.
+Selecting a tile closes the list and opens the existing
 Board dialog; overview filters do not narrow this discovery list. Program-owned
 Boards retain the existing program-membership ownership rules. Backend visibility
 remains authoritative; this overview separation is not an authorization boundary.
+The frontend neither expands nor changes backend Board visibility. Discovery is UX
+scoping, not a privacy/security boundary; All Boards adds no new API permissions.
 The field uses the existing image visibility gate and eagerly loaded category.
 Collections' filter components provide title/description search, Private /
 Restricted / Public scope, owner/Mine, and Favourite filters on both surfaces.

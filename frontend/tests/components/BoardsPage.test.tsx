@@ -199,7 +199,8 @@ describe('BoardsPage', () => {
     await setup()
     const pageTitle = screen.getByRole('heading', { name: 'My Boards', level: 1 })
     const link = screen.getByRole('button', { name: 'Public & shared Boards' })
-    expect(pageTitle.parentElement).toBe(link.parentElement)
+    expect(pageTitle.parentElement).toBe(link.parentElement?.parentElement)
+    expect(link.parentElement).toHaveStyle({ justifyContent: 'flex-end' })
     expect(pageTitle).toHaveClass('MuiTypography-h5')
     expect(pageTitle.parentElement).toHaveStyle({
       display: 'flex',
@@ -721,6 +722,106 @@ describe('BoardsPage', () => {
     expect(view.onSelectBoard).toHaveBeenCalledWith(2)
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
+  it.each(['admin', 'instructor', 'staff', 'student'] as const)(
+    'scopes discovery for %s while rendering scope and manager metadata',
+    async (role) => {
+      const privateBoard = {
+        ...BOARDS_FIXTURES[2],
+        id: 20,
+        name: 'Morgan private Board',
+        visibility: 'private' as const,
+      }
+      const restrictedBoard = {
+        ...BOARDS_FIXTURES[2],
+        id: 21,
+        name: 'Studio Board',
+        visibility: 'restricted' as const,
+        program_ids: [1],
+        group_ids: [1],
+      }
+      const programBoard = {
+        ...BOARDS_FIXTURES[0],
+        id: 22,
+        name: 'Design program Board',
+        owner_program_id: 1,
+        owners: [{ user_id: null, program_id: 1, name: 'Design', role: null }],
+        permissions: { ...BOARDS_FIXTURES[0].permissions, can_edit: false },
+      }
+      const orphanBoard = { ...BOARDS_FIXTURES[2], id: 23, name: 'Orphan Board', owners: [] }
+      const coOwnedBoard = {
+        ...privateBoard,
+        id: 24,
+        name: 'Co-owned Board',
+        owners: [...privateBoard.owners, ...BOARDS_FIXTURES[0].owners],
+      }
+      const boards = [
+        BOARDS_FIXTURES[0],
+        BOARDS_FIXTURES[2],
+        privateBoard,
+        restrictedBoard,
+        programBoard,
+        orphanBoard,
+        coOwnedBoard,
+      ]
+      vi.mocked(api.fetchBoards).mockResolvedValue(boards)
+      const view = await setup(null, { currentUser: { ...BOARD_USER, role } })
+      const allButton = screen.queryByRole('button', { name: 'All Boards' })
+      expect(allButton != null).toBe(role !== 'student')
+      fireEvent.click(screen.getByRole('button', { name: 'Public & shared Boards' }))
+      const shared = screen.getByRole('dialog', { name: 'Public & shared Boards' })
+      expect(
+        within(shared).queryByRole('button', { name: `Open Board: ${privateBoard.name}` }),
+      ).not.toBeInTheDocument()
+      expect(
+        within(shared).queryByRole('button', { name: `Open Board: ${BOARDS_FIXTURES[0].name}` }),
+      ).not.toBeInTheDocument()
+      const publicTile = within(shared).getByRole('button', {
+        name: 'Open Board: Shared discoveries',
+      })
+      expect(within(publicTile).getByRole('heading', { name: 'Shared discoveries' })).toBeVisible()
+      expect(within(publicTile).getByText('Managed by Morgan')).toBeVisible()
+      expect(within(publicTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
+        'Public',
+      )
+      const restrictedTile = within(shared).getByRole('button', {
+        name: `Open Board: ${restrictedBoard.name}`,
+      })
+      expect(within(restrictedTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
+        'Restricted',
+      )
+      expect(within(shared).getByText('Managed by program Design')).toBeVisible()
+      expect(within(shared).getByText('No owner')).toBeVisible()
+      expect(within(shared).getByText('Managed by Morgan, Alex')).toBeVisible()
+      fireEvent.click(within(shared).getByRole('button', { name: 'Close' }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      if (allButton) {
+        expect(allButton).toHaveClass('MuiButton-outlined')
+        fireEvent.click(allButton)
+        const all = screen.getByRole('dialog', { name: 'All Boards' })
+        expect(within(all).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(
+          boards.length,
+        )
+        const privateTile = within(all).getByRole('button', {
+          name: `Open Board: ${privateBoard.name}`,
+        })
+        expect(within(privateTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
+          'Private',
+        )
+        expect(within(privateTile).getByText('Managed by Morgan')).toBeVisible()
+        fireEvent.click(privateTile)
+        expect(view.onSelectBoard).toHaveBeenCalledWith(privateBoard.id)
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      }
+    },
+  )
+  it('shows an empty All Boards dialog', async () => {
+    vi.mocked(api.fetchBoards).mockResolvedValue([])
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'All Boards' }))
+    expect(
+      within(screen.getByRole('dialog', { name: 'All Boards' })).getByText('No Boards available.'),
+    ).toBeVisible()
+  })
   it('shows an empty public/shared dialog and closes without navigation', async () => {
     vi.mocked(api.fetchBoards).mockResolvedValue([BOARDS_FIXTURES[0]])
     const view = await setup()
@@ -729,14 +830,17 @@ describe('BoardsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(view.onSelectBoard).not.toHaveBeenCalled()
   })
-  it('shows overview read errors rather than an empty public/shared list', async () => {
-    vi.mocked(api.fetchBoards).mockRejectedValue(new api.ApiError(503, 'Unavailable'))
-    await setup()
-    fireEvent.click(screen.getByRole('button', { name: 'Public & shared Boards' }))
-    expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent(
-      'Unable to load Boards.',
-    )
-  })
+  it.each(['Public & shared Boards', 'All Boards'])(
+    'shows overview read errors rather than an empty %s list',
+    async (name) => {
+      vi.mocked(api.fetchBoards).mockRejectedValue(new api.ApiError(503, 'Unavailable'))
+      await setup()
+      fireEvent.click(screen.getByRole('button', { name }))
+      expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent(
+        'Unable to load Boards.',
+      )
+    },
+  )
   it('excludes non-owned Inuksuks even when their Board is owned', async () => {
     vi.mocked(api.fetchInuksuks).mockResolvedValue([
       BOARD_ITEMS[0],

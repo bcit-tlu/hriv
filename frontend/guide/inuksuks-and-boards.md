@@ -45,8 +45,15 @@ and one-line name. Your row includes only owned Boards you can edit, including p
 Read-only Boards are in Public & shared Boards instead, even for instructors and admins.
 Drag an editable Board chip by its surface to reorder it; there is no grip icon.
 Clicking still opens the Board. Active filters disable Board reordering.
-Use the outlined **Public & shared Boards** button at the right of the title row to list other people's Boards you can view and your read-only Boards in a dialog.
-Choose a Board to open its usual dialog and see its authorized saved views.
+Use the outlined **Public & shared Boards** button at the right of the title row for
+public, program/group-restricted or co-owned/program-member Boards outside your chip
+row. Other people's private Boards are excluded for every role.
+Admins, instructors and staff also see **All Boards**, listing every Board returned
+by the API, including others' private Boards and Boards already in their chip row.
+Students never see All Boards. Both dialogs show tiles with title, scope pill and
+**Managed by {name}** (or program name / No owner). Choose a tile to open its usual
+dialog and see its authorized saved views. These are UX lists; backend visibility
+remains authoritative and unchanged.
 The discovery list is independent of the overview filters.
 
 Choose **Cards** or **Table** beside My Inuksuks; the filter bar sits underneath.

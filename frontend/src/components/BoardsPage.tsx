@@ -7,7 +7,11 @@ import {
   createCollectionFromSources,
   useEditableCollections,
 } from '../useAddToCollection'
-import { studentTypesAtCap } from '../collectionUtils'
+import {
+  apiCollectionOwnerToOwner,
+  describeCollectionOwners,
+  studentTypesAtCap,
+} from '../collectionUtils'
 import type { Category, CollectionType } from '../types'
 import type { CollectionSources } from '../api'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -492,7 +496,7 @@ export default function BoardsPage({
   const [query, setQuery] = useState('')
   const [scopes, setScopes] = useState<string[]>([])
   const [owner, setOwner] = useState('any')
-  const [publicBoardsOpen, setPublicBoardsOpen] = useState(false)
+  const [discovery, setDiscovery] = useState<'shared' | 'all' | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [boardMenu, setBoardMenu] = useState<HTMLElement | null>(null)
   const [favourites, setFavourites] = useState(false)
@@ -528,8 +532,13 @@ export default function BoardsPage({
   }
   const own = data.boards.filter((row) => ownsBoard(row, currentUser))
   const publicBoards = data.boards.filter(
-    (row) => !ownsBoard(row, currentUser) || !row.permissions.can_edit,
+    (row) =>
+      (!ownsBoard(row, currentUser) || !row.permissions.can_edit) &&
+      (row.visibility !== 'private' || ownsBoard(row, currentUser)),
   )
+  const canBrowseAllBoards =
+    currentUser != null && ['admin', 'instructor', 'staff'].includes(currentUser.role)
+  const discoveryBoards = discovery === 'all' && canBrowseAllBoards ? data.boards : publicBoards
   const reorderableBoards = own.filter((row) => row.permissions.can_edit)
   const needle = query.trim().toLocaleLowerCase()
   const ownerMatches = (item: ApiBoardSummary | ApiInuksuk) =>
@@ -1055,9 +1064,16 @@ export default function BoardsPage({
         <Typography variant="h5" component="h1">
           My Boards
         </Typography>
-        <Button variant="outlined" onClick={() => setPublicBoardsOpen(true)}>
-          Public &amp; shared Boards
-        </Button>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 1 }}>
+          <Button variant="outlined" onClick={() => setDiscovery('shared')}>
+            Public &amp; shared Boards
+          </Button>
+          {canBrowseAllBoards && (
+            <Button variant="outlined" onClick={() => setDiscovery('all')}>
+              All Boards
+            </Button>
+          )}
+        </Box>
       </Box>
       {boardId != null && !board && (
         <Button onClick={() => onSelectBoard(null)}>All Inuksuks</Button>
@@ -1216,40 +1232,88 @@ export default function BoardsPage({
         </Box>
 
         <Dialog
-          open={publicBoardsOpen}
-          onClose={() => setPublicBoardsOpen(false)}
+          open={discovery === 'shared' || (discovery === 'all' && canBrowseAllBoards)}
+          onClose={() => setDiscovery(null)}
           fullWidth
           maxWidth="sm"
           aria-labelledby="public-boards-title"
         >
-          <DialogTitle id="public-boards-title">Public &amp; shared Boards</DialogTitle>
+          <DialogTitle id="public-boards-title">
+            {discovery === 'all' ? 'All Boards' : 'Public & shared Boards'}
+          </DialogTitle>
           <DialogContent>
             {data.loading ? (
-              <CircularProgress aria-label="Loading public and shared Boards" size={24} />
+              <CircularProgress
+                aria-label={
+                  discovery === 'all' ? 'Loading all Boards' : 'Loading public and shared Boards'
+                }
+                size={24}
+              />
             ) : data.error ? (
               <Alert severity="error">{data.error}</Alert>
-            ) : publicBoards.length ? (
-              <Stack spacing={1}>
-                {publicBoards.map((row) => (
-                  <Button
-                    key={row.id}
-                    onClick={() => {
-                      setPublicBoardsOpen(false)
-                      onSelectBoard(row.id)
-                    }}
-                    aria-label={`Open Board: ${row.name}`}
-                    sx={{ justifyContent: 'flex-start' }}
-                  >
-                    {row.name}
-                  </Button>
-                ))}
-              </Stack>
+            ) : discoveryBoards.length ? (
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+                  gap: 2,
+                }}
+              >
+                {discoveryBoards.map((row) => {
+                  const owners = row.owners.flatMap((owner) => {
+                    const mapped = apiCollectionOwnerToOwner(owner)
+                    return mapped ? [mapped] : []
+                  })
+                  const programOwner = owners.find((owner) => owner.kind === 'program')
+                  const ownerText = programOwner
+                    ? `Managed by program ${programOwner.name}`
+                    : owners.length
+                      ? `Managed by ${describeCollectionOwners(owners)}`
+                      : 'No owner'
+                  return (
+                    <Card key={row.id} variant="outlined">
+                      <CardActionArea
+                        onClick={() => {
+                          setDiscovery(null)
+                          onSelectBoard(row.id)
+                        }}
+                        aria-label={`Open Board: ${row.name}`}
+                        sx={{ height: '100%' }}
+                      >
+                        <CardContent>
+                          <Typography
+                            component="h3"
+                            variant="body2"
+                            fontWeight={600}
+                            sx={{ overflowWrap: 'anywhere' }}
+                          >
+                            {row.name}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            component="p"
+                            sx={{ mb: 1, overflowWrap: 'anywhere' }}
+                          >
+                            {ownerText}
+                          </Typography>
+                          <CollectionVisibilityChip visibility={row.visibility} />
+                        </CardContent>
+                      </CardActionArea>
+                    </Card>
+                  )
+                })}
+              </Box>
             ) : (
-              <Typography color="text.secondary">No public or shared Boards available.</Typography>
+              <Typography color="text.secondary">
+                {discovery === 'all'
+                  ? 'No Boards available.'
+                  : 'No public or shared Boards available.'}
+              </Typography>
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setPublicBoardsOpen(false)}>Close</Button>
+            <Button onClick={() => setDiscovery(null)}>Close</Button>
           </DialogActions>
         </Dialog>
         {!boardId && collageToolbar('My Inuksuks')}
