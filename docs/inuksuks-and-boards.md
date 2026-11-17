@@ -455,11 +455,18 @@ The same flag gates direct links and all page requests.
 Frontend telemetry preserves `boards` in both page and from-page dimensions.
 
 The overview has one short, horizontally scrolling row of compact Board tabs,
-starting with **New Board**. All server-authorized Boards share that row, with
+starting with **New Board**. Owned Boards share that row, with
 up to four renewing coordinate thumbnails and a themed placeholder. Below it,
-every visible Inuksuk appears in a responsive column collage; both lists are
+only personally owned Inuksuks appear in a compact responsive tile grid; both lists are
 fetched in pages of 200 without the former recent-60 cap. Each card shows the
 image's parent category below its title (`category_name`, null if unfiled).
+The heading uses the same h5/h1 typography as Collections. Board tiles are about
+20% shorter; Inuksuk tiles use the same 156px width, including inside Board dialogs.
+**Public & shared Boards** opens a separate dialog listing server-authorized
+Boards not owned by the user. Selecting one closes the list and opens the existing
+Board dialog; overview filters do not narrow this discovery list. Program-owned
+Boards retain the existing program-membership ownership rules. Backend visibility
+remains authoritative; this overview separation is not an authorization boundary.
 The field uses the existing image visibility gate and eagerly loaded category.
 Collections' filter components provide title/description search, Private /
 Restricted / Public scope, owner/Mine, and Favourite filters on both surfaces.
@@ -485,7 +492,7 @@ The selected Board displays a flat, ordered collage of saved views.
 Handle-based DnD reorders members within the Board;
 Board reorder applies only to editable owned Boards. Read-only program-owned
 Boards remain listed but have no drag handle and are omitted from reorder writes.
-They appear in the same compact row as other authorized Boards. Board positions
+They appear in the same compact row as other owned Boards. Board positions
 are stored globally, not per user; only the complete editable-owned subset is
 submitted on reorder. Board handles are hidden while filters are active so a
 filtered subset can never replace that complete order.

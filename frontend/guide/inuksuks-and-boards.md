@@ -34,11 +34,16 @@ the new marker. Escape closes an unpinned drawer; pinned drawers stay open.
 
 ## Organize a Board
 
-Open **Boards** to see compact Board tabs across the top and all your visible
-saved views in a collage below. **New Board** is the first tab. Use Title, Scope
+Open **Boards** to see your owned Board tabs across the top and your personally owned
+saved views in a compact tile grid below. **New Board** is the first tab. Use Title, Scope
 (Private / Restricted / Public), Owner/Mine or Favourite to narrow both lists;
 remove filter chips or use Clear filters to reset. Each saved view shows its
 image's parent category under the title.
+The page heading matches Collections, with shorter Board tiles and similarly narrow
+Inuksuk tiles. Program-owned Boards remain in your row when you belong to that program.
+Use **Public & shared Boards** to list other people's Boards you can view in a dialog.
+Choose a Board to open its usual dialog and see its authorized saved views.
+The discovery list is independent of the overview filters.
 
 Drag a saved view by its handle onto an editable Board tab to save it there too;
 the other Board memberships stay intact. A highlighted target and confirmation

@@ -113,7 +113,7 @@ export const Favourites: Story = {
 export const ScopeFilter: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await canvas.findByRole('button', { name: 'Open Board: Shared discoveries' })
+    await canvas.findByRole('button', { name: 'Open Board: Architecture inspiration' })
     await userEvent.click(canvas.getByRole('button', { name: 'Scope' }))
     await userEvent.click(
       within(canvasElement.ownerDocument.body).getByRole('menuitemcheckbox', {
@@ -125,6 +125,18 @@ export const ScopeFilter: Story = {
       canvas.queryByRole('button', { name: 'Open Board: Shared discoveries' }),
     ).not.toBeInTheDocument()
     await expect(canvas.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBeVisible()
+  },
+}
+export const PublicSharedBoards: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Public & shared Boards' }))
+    const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
+      name: 'Public & shared Boards',
+    })
+    await expect(
+      within(dialog).getByRole('button', { name: 'Open Board: Shared discoveries' }),
+    ).toBeVisible()
   },
 }
 export const Empty: Story = { args: { state: 'empty' } }

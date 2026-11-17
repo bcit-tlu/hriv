@@ -258,7 +258,7 @@ function BoardCover({ board }: { board: ApiBoardSummary }) {
   return (
     <Box
       sx={{
-        height: 68,
+        height: 48,
         bgcolor: 'action.hover',
         display: 'grid',
         gridTemplateColumns: items.length > 1 ? '1fr 1fr' : '1fr',
@@ -480,6 +480,7 @@ export default function BoardsPage({
   const [query, setQuery] = useState('')
   const [scopes, setScopes] = useState<string[]>([])
   const [owner, setOwner] = useState('any')
+  const [publicBoardsOpen, setPublicBoardsOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [boardMenu, setBoardMenu] = useState<HTMLElement | null>(null)
   const [favourites, setFavourites] = useState(false)
@@ -516,6 +517,7 @@ export default function BoardsPage({
     setConflict(false)
   }
   const own = data.boards.filter((row) => ownsBoard(row, currentUser))
+  const publicBoards = data.boards.filter((row) => !ownsBoard(row, currentUser))
   const reorderableBoards = own.filter((row) => row.permissions.can_edit)
   const needle = query.trim().toLocaleLowerCase()
   const ownerMatches = (item: ApiBoardSummary | ApiInuksuk) =>
@@ -534,6 +536,7 @@ export default function BoardsPage({
   )
   const filteredItems = data.recent.filter(
     (item) =>
+      item.owners.some((o) => o.user_id === currentUser?.id) &&
       (!needle || `${item.title} ${item.description ?? ''}`.toLocaleLowerCase().includes(needle)) &&
       (!scopes.length || item.board_ids.some((id) => scopeIds.has(id))) &&
       ownerMatches(item) &&
@@ -541,7 +544,7 @@ export default function BoardsPage({
   )
   const rows = [
     ...reorderableBoards,
-    ...data.boards.filter((row) => !reorderableBoards.some((owned) => owned.id === row.id)),
+    ...own.filter((row) => !reorderableBoards.some((owned) => owned.id === row.id)),
   ].filter(
     (row) =>
       (!needle || `${row.name} ${row.description ?? ''}`.toLocaleLowerCase().includes(needle)) &&
@@ -670,14 +673,15 @@ export default function BoardsPage({
               alt=""
               sx={{
                 width: '100%',
-                height: 'auto',
+                height: 64,
+                objectFit: 'cover',
                 display: 'block',
               }}
             />
           ) : (
             <Box
               sx={{
-                aspectRatio: '4 / 3',
+                height: 64,
                 display: 'grid',
                 placeItems: 'center',
                 bgcolor: 'action.hover',
@@ -689,15 +693,27 @@ export default function BoardsPage({
           <CardContent sx={{ pb: 1 }}>
             <Stack direction="row" spacing={1} alignItems="center">
               <CompassCalibration fontSize="small" color="primary" />
-              <Typography variant="subtitle1" component="p" fontWeight={600}>
+              <Typography variant="body2" component="p" fontWeight={600} noWrap title={item.title}>
                 {item.title}
               </Typography>
             </Stack>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              noWrap
+              title={item.category_name ?? 'Uncategorized'}
+              sx={{ mt: 0.5 }}
+            >
               {item.category_name ?? 'Uncategorized'}
             </Typography>
             {item.description && (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                noWrap
+                title={item.description}
+                sx={{ mt: 0.5 }}
+              >
                 {item.description}
               </Typography>
             )}
@@ -805,7 +821,7 @@ export default function BoardsPage({
   if (!enabled) return null
   return (
     <Box sx={{ p: { xs: 1, sm: 3 }, maxWidth: 1500, mx: 'auto' }}>
-      <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
+      <Typography variant="h5" component="h1" sx={{ mb: 2 }}>
         Boards &amp; Inuksuks
       </Typography>
       {boardId != null && !board && (
@@ -1008,7 +1024,7 @@ export default function BoardsPage({
               }}
               sx={{
                 height: '100%',
-                minHeight: 104,
+                minHeight: 84,
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'center',
@@ -1070,11 +1086,51 @@ export default function BoardsPage({
             </Box>
           ))}
         </Box>
+        <Button onClick={() => setPublicBoardsOpen(true)} sx={{ mb: 2 }}>
+          Public &amp; shared Boards
+        </Button>
+        <Dialog
+          open={publicBoardsOpen}
+          onClose={() => setPublicBoardsOpen(false)}
+          fullWidth
+          maxWidth="sm"
+          aria-labelledby="public-boards-title"
+        >
+          <DialogTitle id="public-boards-title">Public &amp; shared Boards</DialogTitle>
+          <DialogContent>
+            {data.loading ? (
+              <CircularProgress aria-label="Loading public and shared Boards" size={24} />
+            ) : data.error ? (
+              <Alert severity="error">{data.error}</Alert>
+            ) : publicBoards.length ? (
+              <Stack spacing={1}>
+                {publicBoards.map((row) => (
+                  <Button
+                    key={row.id}
+                    onClick={() => {
+                      setPublicBoardsOpen(false)
+                      onSelectBoard(row.id)
+                    }}
+                    aria-label={`Open Board: ${row.name}`}
+                    sx={{ justifyContent: 'flex-start' }}
+                  >
+                    {row.name}
+                  </Button>
+                ))}
+              </Stack>
+            ) : (
+              <Typography color="text.secondary">No public or shared Boards available.</Typography>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setPublicBoardsOpen(false)}>Close</Button>
+          </DialogActions>
+        </Dialog>
         {data.loading && <CircularProgress aria-label="Loading Boards" size={24} />}
         {!data.loading && (!data.error || data.boards.length > 0 || data.recent.length > 0) && (
           <>
             {!boardId && collageToolbar('Inuksuks')}
-            <Box sx={{ columns: { xs: '1', sm: '2', md: '3', lg: '4' }, columnGap: 2 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 156px)', gap: 2 }}>
               {filteredItems.map((item, index) => memberCard(item, index))}
             </Box>
             {!filteredItems.length && (
@@ -1167,7 +1223,9 @@ export default function BoardsPage({
             {data.boardLoading && <CircularProgress aria-label="Loading Board" size={24} />}
             {board && (
               <>
-                <Box sx={{ columns: { xs: '1', sm: '2', md: '3', lg: '4' }, columnGap: 2 }}>
+                <Box
+                  sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 156px)', gap: 2 }}
+                >
                   {board.inuksuks.map((item, index) => memberCard(item, index, true))}
                 </Box>
                 {!board.inuksuks.length && (
