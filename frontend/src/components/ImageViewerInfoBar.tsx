@@ -8,7 +8,7 @@ export interface ImageViewerInfoBarProps {
   name: string
   /** false appends an ' (inactive)' marker. */
   active?: boolean
-  note?: string | null
+  description?: string | null
   /** Staff-only note; null for students. */
   instructorNote?: string | null
   /** Collections the image belongs to (may be empty). */
@@ -34,7 +34,7 @@ export default function ImageViewerInfoBar({
   imageId,
   name,
   active = true,
-  note,
+  description,
   instructorNote,
   collections,
   onOpenCollection,
@@ -50,7 +50,7 @@ export default function ImageViewerInfoBar({
         key={`caption-${imageId}`}
         name={name}
         active={active}
-        note={note}
+        description={description}
         instructorNote={instructorNote}
         noteDialogOpen={noteDialogOpen}
         onShowNote={onShowNote}

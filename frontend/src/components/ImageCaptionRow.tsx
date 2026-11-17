@@ -9,8 +9,8 @@ export interface ImageCaptionRowProps {
   name: string
   /** false appends an ' (inactive)' marker to the title. */
   active?: boolean
-  /** The image's note; whitespace-only notes render nothing. */
-  note?: string | null
+  /** The image's description; whitespace-only text renders nothing. */
+  description?: string | null
   /** Staff-only note (null for students); whitespace-only renders nothing. */
   instructorNote?: string | null
   /** Whether the caller's notes dialog is open (aria-expanded on "…more"). */
@@ -33,15 +33,15 @@ export interface ImageCaptionRowProps {
 export default function ImageCaptionRow({
   name,
   active = true,
-  note,
+  description,
   instructorNote,
   noteDialogOpen = false,
   onShowNote,
   end,
 }: ImageCaptionRowProps) {
-  const noteText = note?.trim() ?? ''
+  const descriptionText = description?.trim() ?? ''
   const instructorText = instructorNote?.trim() ?? ''
-  const hasText = noteText !== '' || instructorText !== ''
+  const hasText = descriptionText !== '' || instructorText !== ''
 
   // One clamped "label: text …more" cell; both cells open the same dialog.
   const segment = (label: ReactNode, text: string, moreAriaLabel: string, spaced: boolean) => (
@@ -102,10 +102,10 @@ export default function ImageCaptionRow({
         {name}
         {!active ? ' (inactive)' : ''}
       </Typography>
-      {noteText !== '' &&
+      {descriptionText !== '' &&
         segment(
           'Description:',
-          noteText,
+          descriptionText,
           'Show full description',
           instructorText !== '' || end != null,
         )}

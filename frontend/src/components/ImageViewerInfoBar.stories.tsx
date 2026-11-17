@@ -33,10 +33,10 @@ function InfoBarExample(args: ImageViewerInfoBarProps) {
       >
         <ViewportDialog
           open={dialog === 'note'}
-          title={imageNotesTitle(args.note, args.instructorNote)}
+          title={imageNotesTitle(args.description, args.instructorNote)}
           onClose={() => setDialog(null)}
         >
-          <ImageNotesContent description={args.note} instructorNote={args.instructorNote} />
+          <ImageNotesContent description={args.description} instructorNote={args.instructorNote} />
         </ViewportDialog>
         <ViewportDialog
           open={dialog === 'collections'}
@@ -107,13 +107,14 @@ type Story = StoryObj<typeof meta>
 
 export const Basic: Story = {
   args: {
-    note: 'The cathedral’s construction began in 1386.',
+    description: 'The cathedral’s construction began in 1386.',
   },
 }
 
 export const LongNote: Story = {
   args: {
-    note: 'The cathedral’s construction began in 1386 and continued for centuries.\nThe main façade was completed in the 19th century after many redesigns.\nRestoration work continues today on the marble exterior, the spires, and the stained-glass windows.',
+    description:
+      'The cathedral’s construction began in 1386 and continued for centuries.\nThe main façade was completed in the 19th century after many redesigns.\nRestoration work continues today on the marble exterior, the spires, and the stained-glass windows.',
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -126,7 +127,7 @@ export const LongNote: Story = {
 
 export const ManyCollections: Story = {
   args: {
-    note: 'The cathedral’s construction began in 1386.',
+    description: 'The cathedral’s construction began in 1386.',
     // Long names at full row width so "… + N more" engages naturally.
     collections: [
       { id: 1621, name: 'Duomo of Milan digital archive' },
@@ -156,7 +157,7 @@ export const ManyCollections: Story = {
 
 export const NarrowCollections: Story = {
   args: {
-    note: 'The cathedral’s construction began in 1386.',
+    description: 'The cathedral’s construction began in 1386.',
     collections: [
       { id: 1621, name: 'Duomo of Milan digital archive' },
       { id: 1622, name: 'Italian Renaissance architecture' },
@@ -197,7 +198,7 @@ export const NarrowCollections: Story = {
 
 export const NarrowSingleCollection: Story = {
   args: {
-    note: 'The cathedral’s construction began in 1386.',
+    description: 'The cathedral’s construction began in 1386.',
     // Long enough to overflow 420px even with the label and gaps, so it
     // ellipsizes at any viewport.
     collections: [
@@ -235,7 +236,7 @@ export const NarrowSingleCollection: Story = {
 
 export const TitleOnly: Story = {
   args: {
-    note: null,
+    description: null,
     collections: [],
   },
 }

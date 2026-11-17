@@ -49,21 +49,23 @@ describe('ImageCaptionRow', () => {
   })
 
   it('shows a visible "Description:" label and the flattened note', () => {
-    render(<ImageCaptionRow name="Slice A" note={'Line one.\nLine two.'} onShowNote={vi.fn()} />)
+    render(
+      <ImageCaptionRow name="Slice A" description={'Line one.\nLine two.'} onShowNote={vi.fn()} />,
+    )
     expect(screen.getByText('Description:')).toBeInTheDocument()
     expect(screen.getByText('Line one. Line two.')).toBeInTheDocument()
   })
 
   it('widens the gap between the title and the note only when a note shows', () => {
     const { unmount } = render(
-      <ImageCaptionRow name="Slice A" note="A note" onShowNote={vi.fn()} />,
+      <ImageCaptionRow name="Slice A" description="A note" onShowNote={vi.fn()} />,
     )
     expect(screen.getByRole('heading', { level: 2 })).toHaveStyle({ marginRight: '32px' })
     unmount()
 
     for (const note of [undefined, '', '  \n  ']) {
       const { unmount: done } = render(
-        <ImageCaptionRow name="Slice A" note={note} onShowNote={vi.fn()} />,
+        <ImageCaptionRow name="Slice A" description={note} onShowNote={vi.fn()} />,
       )
       const title = screen.getByRole('heading', { level: 2 })
       expect(title).not.toHaveStyle({ marginRight: '32px' })
@@ -72,7 +74,7 @@ describe('ImageCaptionRow', () => {
   })
 
   it('treats a whitespace-only note as absent', () => {
-    render(<ImageCaptionRow name="Slice A" note={'  \n  '} onShowNote={vi.fn()} />)
+    render(<ImageCaptionRow name="Slice A" description={'  \n  '} onShowNote={vi.fn()} />)
     expect(screen.queryByText(/^Description:/)).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2 })).toHaveStyle({ flex: '1' })
   })
@@ -80,7 +82,7 @@ describe('ImageCaptionRow', () => {
   it('calls onShowNote from "…more" on overflow', () => {
     stubOverflow()
     const onShowNote = vi.fn()
-    render(<ImageCaptionRow name="Slice A" note="A long note" onShowNote={onShowNote} />)
+    render(<ImageCaptionRow name="Slice A" description="A long note" onShowNote={onShowNote} />)
     fireEvent.click(screen.getByRole('button', { name: 'Show full description' }))
     expect(onShowNote).toHaveBeenCalledTimes(1)
   })
@@ -89,7 +91,7 @@ describe('ImageCaptionRow', () => {
     render(
       <ImageCaptionRow
         name="Slice A"
-        note="A note"
+        description="A note"
         onShowNote={vi.fn()}
         end={<button>Open image</button>}
       />,
@@ -103,7 +105,7 @@ describe('ImageCaptionRow', () => {
     render(
       <ImageCaptionRow
         name="Slice A"
-        note="Public text"
+        description="Public text"
         instructorNote={'Staff\nonly'}
         onShowNote={vi.fn()}
       />,
@@ -121,7 +123,7 @@ describe('ImageCaptionRow', () => {
       const { unmount } = render(
         <ImageCaptionRow
           name="Slice A"
-          note="Public text"
+          description="Public text"
           instructorNote={instructorNote}
           onShowNote={vi.fn()}
         />,

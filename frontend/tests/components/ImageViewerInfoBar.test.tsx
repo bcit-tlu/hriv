@@ -93,7 +93,7 @@ describe('ImageViewerInfoBar', () => {
     render(
       <ImageViewerInfoBar
         {...defaultProps}
-        note={'First line\nSecond line'}
+        description={'First line\nSecond line'}
         onShowNote={onShowNote}
       />,
     )
@@ -106,13 +106,15 @@ describe('ImageViewerInfoBar', () => {
   })
 
   it('passes the instructor note through to the caption row', () => {
-    render(<ImageViewerInfoBar {...defaultProps} note="Public" instructorNote="Staff only" />)
+    render(
+      <ImageViewerInfoBar {...defaultProps} description="Public" instructorNote="Staff only" />,
+    )
     expect(screen.getByText('Instructor note:')).toBeInTheDocument()
     expect(screen.getByText('Staff only')).toBeInTheDocument()
   })
 
   it('does not render the note affordance without overflow', () => {
-    render(<ImageViewerInfoBar {...defaultProps} note="Short" />)
+    render(<ImageViewerInfoBar {...defaultProps} description="Short" />)
     expect(screen.queryByRole('button', { name: 'Show full description' })).not.toBeInTheDocument()
   })
 

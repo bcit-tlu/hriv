@@ -3191,7 +3191,7 @@ export default function App() {
                 imageId={selectedImage.id}
                 name={selectedImage.name}
                 active={selectedImage.active}
-                note={selectedImage.description}
+                description={selectedImage.description}
                 instructorNote={selectedImage.instructorNote}
                 collections={selectedImageCollections}
                 onOpenCollection={handleOpenCollection}

@@ -663,7 +663,7 @@ export default function SequenceCollectionViewer({
         key={`caption-${memberKey(current)}`}
         name={inuksuksEnabled ? current.slot?.label || current.name : current.name}
         active={current.active}
-        note={current.description}
+        description={current.description}
         instructorNote={current.instructorNote}
         noteDialogOpen={noteDialogOpen}
         onShowNote={() => setNoteDialogOpen(true)}
