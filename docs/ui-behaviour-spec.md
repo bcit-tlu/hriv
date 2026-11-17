@@ -1442,6 +1442,7 @@ selection MouseTracker ignores their presses.
 - Public & shared Boards is an outlined, right-aligned button in the title row and opens a dialog listing other authorized Boards independent
   of overview filters; choosing one closes the list and opens the existing Board dialog.
 - My Inuksuks has Collections-style Cards/Table controls (no Graph), then the filter bar.
+  Outlined Select is right-aligned on that Filter by row in both overview views.
   The fully paginated overview is case-insensitive title ascending, then numeric ID;
   favourite/membership updates do not affect order. Filled stars use the primary accent.
   Both views show only personally owned Inuksuks, fetched in pages of 200. Cards

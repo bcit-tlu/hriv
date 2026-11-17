@@ -914,6 +914,19 @@ export default function BoardsPage({
     </TableContainer>
   )
 
+  const selectAction = collectionsEnabled && (
+    <Button
+      variant="outlined"
+      aria-pressed={selecting}
+      sx={{ whiteSpace: 'nowrap' }}
+      onClick={() => {
+        setSelecting(!selecting)
+        setSelection({ boardId, ids: [] })
+      }}
+    >
+      {selecting ? 'Cancel selection' : 'Select'}
+    </Button>
+  )
   const collageToolbar = (title: string) => (
     <Box sx={{ mb: 2 }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
@@ -951,17 +964,7 @@ export default function BoardsPage({
               </ToggleButton>
             </ToggleButtonGroup>
           )}
-          {collectionsEnabled && (
-            <Button
-              aria-pressed={selecting}
-              onClick={() => {
-                setSelecting(!selecting)
-                setSelection({ boardId, ids: [] })
-              }}
-            >
-              {selecting ? 'Cancel selection' : 'Select'}
-            </Button>
-          )}
+          {boardId != null && selectAction}
         </Box>
       </Stack>
       {collectionsEnabled && selecting && (
@@ -1222,6 +1225,7 @@ export default function BoardsPage({
         {!boardId && collageToolbar('My Inuksuks')}
         <FilterBar
           ariaLabel="Filter Boards and Inuksuks"
+          actions={boardId == null ? selectAction : undefined}
           clearAction={
             !mobile && filtered ? (
               <Button

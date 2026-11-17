@@ -81,7 +81,9 @@ export const Basic: Story = {
       await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' }),
     ).toBeVisible()
     await expect(
-      canvas.getAllByRole('button', { name: /^Open Inuksuk:/ }).map((el) => el.textContent),
+      canvas
+        .getAllByRole('button', { name: /^Open Inuksuk:/ })
+        .map((el) => el.getAttribute('aria-label')?.replace('Open Inuksuk: ', '')),
     ).toEqual([
       'A study in geometry',
       'Light through glass',
@@ -99,6 +101,12 @@ export const Table: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Table view' }))
     await expect(canvas.getByRole('table', { name: 'Inuksuks' })).toBeVisible()
     await expect(canvas.getByRole('columnheader', { name: 'Boards' })).toBeVisible()
+    await expect(
+      within(canvas.getByRole('region', { name: 'Filter Boards and Inuksuks' })).getByRole(
+        'button',
+        { name: 'Select' },
+      ),
+    ).toHaveClass(/MuiButton-outlined/)
   },
 }
 export const SelectedBoard: Story = {

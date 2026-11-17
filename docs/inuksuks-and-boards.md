@@ -462,7 +462,9 @@ An outlined **Public & shared Boards** button sits at its right, above the Board
 Only the page heading changes; the Boards & Inuksuks navigation label remains unchanged.
 Below it, **My Inuksuks** contains Collections-style Cards/Table controls and then
 the filter bar. There is no Graph view. Only personally owned Inuksuks appear; both lists are
-fetched in pages of 200 without the former recent-60 cap. Each card shows the
+fetched in pages of 200 without the former recent-60 cap.
+The overview's outlined Select button is right-aligned on the Filter by row in both views.
+Each card shows the
 image's parent category below its title (`category_name`, null if unfiled).
 The heading uses the same h5/h1 typography as Collections. Inuksuk cards are 195px
 wide (25% wider than the previous 156px), with proportionally scaled 80px covers,

@@ -88,6 +88,21 @@ function dropOnBoard(boardId: number) {
   } as unknown as DragEndEvent)
 }
 describe('BoardsPage', () => {
+  it('keeps outlined Select on the filter row in Cards and Table views', async () => {
+    await setup()
+    const filters = screen.getByRole('region', { name: 'Filter Boards and Inuksuks' })
+    const select = within(filters).getByRole('button', { name: 'Select' })
+    expect(select).toHaveClass('MuiButton-outlined')
+    fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+    fireEvent.click(select)
+    expect(within(filters).getByRole('button', { name: 'Cancel selection' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getAllByRole('checkbox', { name: /^Select / })).toHaveLength(BOARD_ITEMS.length)
+    fireEvent.click(within(filters).getByRole('button', { name: 'Cancel selection' }))
+    expect(screen.queryByRole('checkbox', { name: /^Select / })).not.toBeInTheDocument()
+  })
   it('sorts overview Cards and Table case-insensitively by title, then ID', async () => {
     vi.mocked(api.fetchInuksuks).mockResolvedValue([
       { ...BOARD_ITEMS[0], title: 'zebra' },
@@ -96,7 +111,9 @@ describe('BoardsPage', () => {
     ])
     await setup()
     expect(
-      screen.getAllByRole('button', { name: /^Open Inuksuk:/ }).map((el) => el.textContent),
+      screen
+        .getAllByRole('button', { name: /^Open Inuksuk:/ })
+        .map((el) => el.getAttribute('aria-label')?.replace('Open Inuksuk: ', '')),
     ).toEqual(['alpha', 'Alpha', 'zebra'])
     fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
     expect(
@@ -125,7 +142,9 @@ describe('BoardsPage', () => {
   it('keeps alphabetical order after favourite and membership updates', async () => {
     await setup()
     const titles = () =>
-      screen.getAllByRole('button', { name: /^Open Inuksuk:/ }).map((el) => el.textContent)
+      screen
+        .getAllByRole('button', { name: /^Open Inuksuk:/ })
+        .map((el) => el.getAttribute('aria-label'))
     const initial = titles()
     vi.mocked(api.fetchInuksuks).mockResolvedValue(
       [...BOARD_ITEMS]
@@ -585,9 +604,7 @@ describe('BoardsPage', () => {
     expect(
       screen.queryByRole('button', { name: 'Open Board: Shared discoveries' }),
     ).not.toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Boards & Inuksuks' })).toHaveClass(
-      'MuiTypography-h5',
-    )
+    expect(screen.getByRole('heading', { name: 'My Boards' })).toHaveClass('MuiTypography-h5')
     fireEvent.click(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' }))
     expect(view.onOpenInuksuk).toHaveBeenCalledWith(BOARD_ITEMS[0])
     fireEvent.click(screen.getByRole('button', { name: 'New Board' }))
