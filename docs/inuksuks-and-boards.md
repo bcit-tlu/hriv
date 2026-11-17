@@ -457,7 +457,9 @@ Frontend telemetry preserves `boards` in both page and from-page dimensions.
 The overview has one short, horizontally scrolling row of outlined, rounded Board chips,
 starting with **New Board**. Owned Boards share that row, with a flush-left square
 Board cover (or a renewing member thumbnail, then the themed placeholder) and a
-single-line name. The **Public & shared Boards** link sits above the row.
+single-line name. The **My Boards** heading shares Collections' unpadded flex header.
+An outlined **Public & shared Boards** button sits at its right, above the Board row.
+Only the page heading changes; the Boards & Inuksuks navigation label remains unchanged.
 Below it, **My Inuksuks** contains Collections-style Cards/Table controls and then
 the filter bar. There is no Graph view. Only personally owned Inuksuks appear; both lists are
 fetched in pages of 200 without the former recent-60 cap. Each card shows the

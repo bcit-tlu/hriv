@@ -73,6 +73,7 @@ type Story = StoryObj<typeof meta>
 export const Basic: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
+    await expect(await canvas.findByRole('heading', { name: 'My Boards', level: 1 })).toBeVisible()
     await expect(
       await canvas.findByRole('button', { name: 'Open Board: Architecture inspiration' }),
     ).toBeVisible()

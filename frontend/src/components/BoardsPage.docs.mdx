@@ -9,13 +9,14 @@ The feature-gated Boards utility opens `?page=boards`. A short, horizontally
 scrollable Board row starts with New Board; rounded outlined chips have a square
 cover/renewing thumbnail or placeholder flush left and a one-line name. Only personally
 owned Inuksuks appear below under My Inuksuks, with Cards/Table controls then filters.
-The h5/h1 heading matches Collections. Inuksuk cards are 195px wide with 80px covers,
+The My Boards h5/h1 heading matches Collections' unpadded flex header.
+The Boards & Inuksuks navigation label is unchanged. Cards are 195px wide with 80px covers,
 including in Board dialogs. Program ownership follows program membership.
 Card rows size to their content without a minimum-height floor, as in Collections.
 Table titles are plain text; clicking a row opens its saved view. Row actions do not navigate.
 Rows are keyboard-focusable and open with Enter or Space; nested controls keep their own activation.
 Read-only Inuksuks hide the favourite toggle; existing favourites keep a non-interactive star.
-Public & shared Boards, above the row, opens a dialog listing other authorized Boards, independent
+Public & shared Boards is outlined at the right of the title row and opens a dialog listing other authorized Boards, independent
 of overview filters. Choosing one opens the existing Board dialog.
 The hook fetches every page in batches of 200 rather than truncating at 60.
 My Inuksuks sorts all those pages together by case-insensitive title, then numeric ID.

@@ -174,7 +174,16 @@ describe('BoardsPage', () => {
   })
   it('orders discovery, chip Boards, My Inuksuks and the filter bar like Collections', async () => {
     await setup()
+    const pageTitle = screen.getByRole('heading', { name: 'My Boards', level: 1 })
     const link = screen.getByRole('button', { name: 'Public & shared Boards' })
+    expect(pageTitle.parentElement).toBe(link.parentElement)
+    expect(pageTitle).toHaveClass('MuiTypography-h5')
+    expect(pageTitle.parentElement).toHaveStyle({
+      display: 'flex',
+      justifyContent: 'space-between',
+    })
+    expect(link).toHaveClass('MuiButton-outlined')
+    expect(pageTitle.parentElement?.parentElement).not.toHaveStyle({ padding: '24px' })
     const boards = screen.getByRole('region', { name: 'Boards' })
     const heading = screen.getByRole('heading', { name: 'My Inuksuks' })
     const filters = screen.getByRole('region', { name: 'Filter Boards and Inuksuks' })

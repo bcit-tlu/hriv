@@ -1433,12 +1433,13 @@ selection MouseTracker ignores their presses.
 
 ### Boards & Inuksuks overview and Board dialog
 
-- The page title uses Collections' h5 variant and h1 element exactly.
+- The My Boards page title uses Collections' h5/h1 and unpadded flex header exactly.
+  The Boards & Inuksuks navigation/tab label is unchanged.
 - One short horizontally scrolling owned-Board row begins with New Board. Rounded,
   editable chips reorder by surface drag without grip icons; clicking still opens a Board.
   outlined chips have a flush-left square cover/placeholder and single-line name. Read-only
   Boards stay visible, without drag handles or drop targets.
-- Public & shared Boards sits above that row and opens a dialog listing other authorized Boards independent
+- Public & shared Boards is an outlined, right-aligned button in the title row and opens a dialog listing other authorized Boards independent
   of overview filters; choosing one closes the list and opens the existing Board dialog.
 - My Inuksuks has Collections-style Cards/Table controls (no Graph), then the filter bar.
   The fully paginated overview is case-insensitive title ascending, then numeric ID;

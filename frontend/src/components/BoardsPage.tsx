@@ -1006,10 +1006,25 @@ export default function BoardsPage({
   )
   if (!enabled) return null
   return (
-    <Box sx={{ p: { xs: 1, sm: 3 }, maxWidth: 1500, mx: 'auto' }}>
-      <Typography variant="h5" component="h1" sx={{ mb: 2 }}>
-        Boards &amp; Inuksuks
-      </Typography>
+    <Box>
+      <Box
+        sx={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 1,
+          mb: 3,
+          flexShrink: 0,
+        }}
+      >
+        <Typography variant="h5" component="h1">
+          My Boards
+        </Typography>
+        <Button variant="outlined" onClick={() => setPublicBoardsOpen(true)}>
+          Public &amp; shared Boards
+        </Button>
+      </Box>
       {boardId != null && !board && (
         <Button onClick={() => onSelectBoard(null)}>All Inuksuks</Button>
       )}
@@ -1078,9 +1093,6 @@ export default function BoardsPage({
         }}
         onDragEnd={dragEnd}
       >
-        <Button onClick={() => setPublicBoardsOpen(true)} sx={{ mb: 2 }}>
-          Public &amp; shared Boards
-        </Button>
         <Box
           role="region"
           aria-label="Boards"
