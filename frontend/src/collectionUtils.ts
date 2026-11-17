@@ -161,6 +161,7 @@ export function apiImageToItem(img: ApiImage): ImageItem {
     categoryId: img.category_id,
     copyright: img.copyright,
     description: img.description,
+    instructorNote: img.instructor_note,
     active: img.active,
     sortOrder: img.sort_order,
     version: img.version,

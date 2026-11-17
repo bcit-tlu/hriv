@@ -1392,7 +1392,9 @@ describe('useBrowseData', () => {
         card_image_id: 42,
         card_thumb: '/api/tiles/42/thumbnail.jpeg?tile_token=x',
         children: [makeApiTree({ id: 2, label: 'Child', parent_id: 1 })],
-        images: [makeApiImage(10, { category_id: 1 })],
+        images: [
+          makeApiImage(10, { category_id: 1, description: 'Public', instructor_note: 'Staff' }),
+        ],
       })
 
       const cat = apiTreeToCategory(apiTree)
@@ -1409,6 +1411,8 @@ describe('useBrowseData', () => {
       expect(cat.images).toHaveLength(1)
       expect(cat.images[0].id).toBe(10)
       expect(cat.images[0].categoryId).toBe(1)
+      expect(cat.images[0].description).toBe('Public')
+      expect(cat.images[0].instructorNote).toBe('Staff')
     })
 
     it('handles null metadata_extra', () => {

@@ -75,6 +75,7 @@ export interface UseProcessingJobsDeps {
     category_id: number | null
     copyright: string | null
     description: string | null
+    instructor_note?: string | null
     active: boolean
     sort_order: number
     version: number
@@ -308,6 +309,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
                 categoryId: fresh.category_id,
                 copyright: fresh.copyright,
                 description: fresh.description,
+                instructorNote: fresh.instructor_note,
                 active: fresh.active,
                 sortOrder: fresh.sort_order,
                 version: fresh.version,
