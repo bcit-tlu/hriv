@@ -135,6 +135,8 @@ describe('UploadImageModal', () => {
     fireEvent.change(fileInput as HTMLInputElement, { target: { files: [file] } })
 
     const nameField = await screen.findByLabelText('Name')
+    await user.type(screen.getByRole('textbox', { name: 'Description' }), 'Public text')
+    await user.type(screen.getByRole('textbox', { name: 'Instructor note' }), 'Staff text')
     await user.clear(nameField)
     await user.type(nameField, 'Edited slide')
     await user.keyboard('{Enter}')
@@ -147,8 +149,8 @@ describe('UploadImageModal', () => {
       'Edited slide',
       undefined,
       undefined,
-      undefined,
-      undefined,
+      'Public text',
+      'Staff text',
       true,
       expect.any(Function),
       expect.any(AbortSignal),

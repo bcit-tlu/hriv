@@ -6,7 +6,8 @@ import type { ImageMetadataValues } from '../../src/components/ImageMetadataFiel
 
 const defaultValues: ImageMetadataValues = {
   copyright: '',
-  note: '',
+  description: '',
+  instructorNote: '',
   active: true,
 }
 
@@ -14,7 +15,8 @@ describe('ImageMetadataFields', () => {
   it('renders all form fields', () => {
     render(<ImageMetadataFields values={defaultValues} onChange={vi.fn()} />)
     expect(screen.getByLabelText(/copyright/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/note/i)).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Description' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Instructor note' })).toBeInTheDocument()
     expect(screen.getByLabelText(/visibility/i)).toBeInTheDocument()
   })
 
@@ -29,14 +31,22 @@ describe('ImageMetadataFields', () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ copyright: 'A' }))
   })
 
-  it('calls onChange when note text is entered', async () => {
+  it('calls onChange when description text is entered', async () => {
     const onChange = vi.fn()
     const user = userEvent.setup()
     render(<ImageMetadataFields values={defaultValues} onChange={onChange} />)
 
-    const noteField = screen.getByLabelText(/note/i)
-    await user.type(noteField, 'X')
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ note: 'X' }))
+    await user.type(screen.getByRole('textbox', { name: 'Description' }), 'X')
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ description: 'X' }))
+  })
+
+  it('calls onChange when instructor note text is entered', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    render(<ImageMetadataFields values={defaultValues} onChange={onChange} />)
+
+    await user.type(screen.getByRole('textbox', { name: 'Instructor note' }), 'Y')
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ instructorNote: 'Y' }))
   })
 
   it('calls onChange when active toggle is switched', async () => {
@@ -61,10 +71,12 @@ describe('ImageMetadataFields', () => {
     expect(screen.getByRole('switch', { name: /visibility.*hidden by category/i })).toBeDisabled()
   })
 
-  it('limits note input to 500 characters and shows a counter', () => {
-    render(<ImageMetadataFields values={{ ...defaultValues, note: 'abc' }} onChange={vi.fn()} />)
+  it('limits description input to 500 characters and shows a counter', () => {
+    render(
+      <ImageMetadataFields values={{ ...defaultValues, description: 'abc' }} onChange={vi.fn()} />,
+    )
 
-    expect(screen.getByLabelText(/note/i)).toHaveAttribute('maxlength', '500')
+    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveAttribute('maxlength', '500')
     expect(screen.getByText('3/500')).toBeInTheDocument()
   })
 
@@ -72,23 +84,30 @@ describe('ImageMetadataFields', () => {
     render(<ImageMetadataFields values={defaultValues} onChange={vi.fn()} idPrefix="upload" />)
 
     expect(screen.getByLabelText(/copyright/i)).toHaveAttribute('id', 'upload-copyright')
-    expect(screen.getByLabelText(/note/i)).toHaveAttribute('id', 'upload-note')
+    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveAttribute(
+      'id',
+      'upload-description',
+    )
+    expect(screen.getByRole('textbox', { name: 'Instructor note' })).toHaveAttribute(
+      'id',
+      'upload-instructor-note',
+    )
     expect(screen.getByRole('switch', { name: /visibility/i })).toHaveAttribute(
       'id',
       'upload-visibility',
     )
   })
 
-  it('shows placeholder text for copyright and note', () => {
+  it('shows placeholder text for copyright and description', () => {
     render(
       <ImageMetadataFields
         values={defaultValues}
         onChange={vi.fn()}
         copyrightPlaceholder="custom copyright"
-        notePlaceholder="custom note"
+        descriptionPlaceholder="custom description"
       />,
     )
     expect(screen.getByPlaceholderText('custom copyright')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('custom note')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('custom description')).toBeInTheDocument()
   })
 })
