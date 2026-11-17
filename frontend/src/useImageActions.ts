@@ -238,7 +238,8 @@ export function useImageActions(deps: UseImageActionsDeps) {
               categoryId:
                 formData.category_id !== undefined ? formData.category_id : prev.categoryId,
               copyright: formData.copyright !== undefined ? formData.copyright : prev.copyright,
-              note: formData.note !== undefined ? formData.note : prev.note,
+              description:
+                formData.description !== undefined ? formData.description : prev.description,
               active: formData.active !== undefined ? formData.active : prev.active,
             }
           : prev,

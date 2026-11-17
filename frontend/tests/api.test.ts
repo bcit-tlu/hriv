@@ -1944,6 +1944,15 @@ describe('XHR upload abort support', () => {
     expect(upload.has('note') || bulk.has('note')).toBe(false)
   })
 
+  it('replaceImage sends metadata.description as the description form field', () => {
+    const file = new File(['test'], 'test.png', { type: 'image/png' })
+    void replaceImage(1, file, undefined, undefined, { description: '' })
+    const form = xhrInstances[0].send.mock.calls[0][0] as FormData
+    // An explicit empty value is sent so the backend clears the stored text.
+    expect(form.get('description')).toBe('')
+    expect(form.has('note')).toBe(false)
+  })
+
   it('replaceImage rejects with AbortError when signal is aborted', async () => {
     const ac = new AbortController()
     const file = new File(['test'], 'test.png', { type: 'image/png' })

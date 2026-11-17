@@ -30,7 +30,7 @@ export interface ImageFormData {
   name?: string
   category_id?: number | null
   copyright?: string
-  note?: string
+  description?: string
   active?: boolean
   metadata_extra?: Record<string, unknown>
 }
@@ -127,7 +127,7 @@ function EditImageForm({
   const [name, setName] = useState(image?.name ?? '')
   const [categoryId, setCategoryId] = useState<number | null>(image?.category_id ?? null)
   const [copyright, setCopyright] = useState(image?.copyright ?? '')
-  const [note, setNote] = useState(image?.note ?? '')
+  const [note, setNote] = useState(image?.description ?? '')
   const [active, setActive] = useState(image?.active ?? true)
   const categoryHidden = isCategoryHiddenInTree(categories, categoryId)
   const meta = image?.metadata_extra as Record<string, unknown> | null
@@ -159,7 +159,7 @@ function EditImageForm({
     name !== (image?.name ?? '') ||
     categoryId !== (image?.category_id ?? null) ||
     copyright !== (image?.copyright ?? '') ||
-    note !== (image?.note ?? '') ||
+    note !== (image?.description ?? '') ||
     activeChanged ||
     measurementScale !== (meta?.measurement_scale != null ? String(meta.measurement_scale) : '') ||
     measurementUnit !== (typeof meta?.measurement_unit === 'string' ? meta.measurement_unit : '') ||
@@ -197,7 +197,7 @@ function EditImageForm({
       copyright: copyright.trim() || undefined,
       // Keep an explicit empty string so the API can clear an existing note.
       // Omitting the field would preserve the stored value on PATCH.
-      note: note.trim(),
+      description: note.trim(),
       active,
     }
 

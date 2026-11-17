@@ -11,7 +11,7 @@ const baseImage: ApiImage = {
   tile_sources: '/tiles/1',
   category_id: null,
   copyright: null,
-  note: null,
+  description: null,
   active: true,
   sort_order: 0,
   metadata_extra: null,
@@ -200,7 +200,7 @@ describe('EditImageModal – form fields and save', () => {
         ...baseImage,
         name: 'My Image',
         copyright: '© 2026',
-        note: 'Test note',
+        description: 'Test note',
       },
     })
 
@@ -259,7 +259,7 @@ describe('EditImageModal – form fields and save', () => {
 
     await user.click(screen.getByRole('button', { name: /^save$/i }))
 
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ note: 'A sample note' }))
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ description: 'A sample note' }))
   })
 
   it('sends an empty note when an existing note is cleared', async () => {
@@ -267,14 +267,14 @@ describe('EditImageModal – form fields and save', () => {
     const { onSave } = renderModal({
       image: {
         ...baseImage,
-        note: 'Existing note',
+        description: 'Existing note',
       },
     })
 
     await user.clear(screen.getByLabelText('Note'))
     await user.click(screen.getByRole('button', { name: /^save$/i }))
 
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ note: '' }))
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ description: '' }))
   })
 
   it('includes measurement_scale and measurement_unit in metadata_extra', async () => {

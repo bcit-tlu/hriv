@@ -672,7 +672,7 @@ export function updateImage(
     tile_sources?: string
     category_id?: number | null
     copyright?: string
-    note?: string
+    description?: string
     active?: boolean
     metadata_extra?: Record<string, unknown>
     metadata_extra_merge?: Record<string, unknown | null>
@@ -1785,7 +1785,7 @@ export async function replaceImage(
     name?: string
     category_id?: number | null
     copyright?: string
-    note?: string
+    description?: string
     active?: boolean
     metadata_extra?: Record<string, unknown>
   },
@@ -1797,7 +1797,7 @@ export async function replaceImage(
     if (metadata.category_id !== undefined)
       form.append('category_id', metadata.category_id === null ? '' : String(metadata.category_id))
     if (metadata.copyright !== undefined) form.append('copyright', metadata.copyright)
-    if (metadata.note !== undefined) form.append('note', metadata.note)
+    if (metadata.description !== undefined) form.append('description', metadata.description)
     if (metadata.active !== undefined) form.append('active', String(metadata.active))
     if (metadata.metadata_extra !== undefined)
       form.append('metadata_extra', JSON.stringify(metadata.metadata_extra))
