@@ -14,12 +14,14 @@ vi.mock('../../src/api', async (importOriginal) => ({
   createBoard: vi.fn(),
   updateBoard: vi.fn(),
   fetchBoard: vi.fn(),
+  deleteBoard: vi.fn(),
 }))
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(api.createBoard).mockResolvedValue(BOARDS_FIXTURES[0])
   vi.mocked(api.updateBoard).mockResolvedValue(BOARDS_FIXTURES[0])
   vi.mocked(api.fetchBoard).mockResolvedValue({ ...BOARDS_FIXTURES[0], version: 8 })
+  vi.mocked(api.deleteBoard).mockResolvedValue()
 })
 function setup(board?: (typeof BOARDS_FIXTURES)[0], auth = BOARD_AUTH) {
   const onSaved = vi.fn()
@@ -31,14 +33,48 @@ function setup(board?: (typeof BOARDS_FIXTURES)[0], auth = BOARD_AUTH) {
         groups={BOARD_GROUPS}
         onClose={vi.fn()}
         onSaved={onSaved}
+        onDeleted={vi.fn()}
       />
     </AuthContext.Provider>,
   )
   return onSaved
 }
 describe('BoardEditDialog', () => {
+  it('confirms deletion, blocks stale versions and reloads before retrying', async () => {
+    vi.mocked(api.deleteBoard).mockRejectedValueOnce(new api.ApiError(409, 'stale'))
+    setup(BOARDS_FIXTURES[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Board' }))
+    expect(api.deleteBoard).not.toHaveBeenCalled()
+    expect(
+      screen.getByText(/Inuksuks only on this Board will be permanently deleted/),
+    ).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Delete Board' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('before deleting')
+    expect(screen.getByRole('button', { name: 'Confirm Delete Board' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Reload latest' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Delete Board' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Board' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Delete Board' }))
+    await waitFor(() => expect(api.deleteBoard).toHaveBeenLastCalledWith(1, 8))
+  })
+  it('retains the form when deletion fails without an OCC conflict', async () => {
+    vi.mocked(api.deleteBoard).mockRejectedValueOnce(new api.ApiError(403, 'Deletion denied'))
+    setup(BOARDS_FIXTURES[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Board' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Delete Board' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Deletion denied')
+    expect(screen.getByRole('dialog', { name: 'Edit Board' })).toBeVisible()
+  })
+  it('hides deletion for new and non-deletable Boards', () => {
+    setup({
+      ...BOARDS_FIXTURES[0],
+      permissions: { ...BOARDS_FIXTURES[0].permissions, can_delete: false },
+    })
+    expect(screen.queryByRole('button', { name: 'Delete Board' })).not.toBeInTheDocument()
+  })
   it('requires a name and defaults to private', async () => {
     const saved = setup()
+    expect(screen.queryByRole('button', { name: 'Delete Board' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save Board' })).toBeDisabled()
     fireEvent.change(screen.getByLabelText(/Name/), { target: { value: '  Inspiration  ' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save Board' }))

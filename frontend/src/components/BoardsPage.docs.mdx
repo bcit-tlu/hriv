@@ -36,13 +36,19 @@ Favourite controls for both surfaces. A Board matches Favourite when it contains
 a favourite view. Scope matches any visible Board membership of an Inuksuk.
 
 Selecting a Board opens a large dialog (full-screen on mobile). Its fixed heading
-retains the title, authorized edit pencil, scope, count, Select and an overflow
-menu for owners, deletion and Create Sequence Collection. The collage scrolls
+retains the title, authorized edit pencil, count and Select. The Collections scope
+pill sits beside the Collections-style Managed by owner line; its transfer icon
+opens owner management when permitted. Create Sequence Collection is an outlined
+button immediately before Close. There is no Board overflow menu; Delete lives at
+the bottom of Edit Board with an explicit confirmation and orphan-deletion warning.
+The collage scrolls
 below it. Overview filters do not hide members inside the opened Board. The
 page has its own dnd-kit provider, separate from Browse: reorder
 owned Boards or members, or drag an editable overview Inuksuk onto an editable
 Board tab to add a membership without removing the others. A highlighted target
 and success snackbar acknowledge the save; read-only Boards never accept drops.
+Notifications use the app's bottom-centre Snackbar with a filled Alert: success
+for saves, info for existing membership and warning for other refusals.
 Rejected drops still reach the page: `Already in {Board name}` or
 `You can't add Inuksuks to {Board name}` explains the rejection, with no highlight or write.
 Move/Save to… is the explicit copy/move flow;

@@ -38,6 +38,7 @@ vi.mock('../../src/api', async (importOriginal) => ({
   deleteBoard: vi.fn(),
   reorderBoardInuksuks: vi.fn(),
   removeBoardInuksuk: vi.fn(),
+  fetchUsersPaged: vi.fn(),
 }))
 beforeEach(() => {
   vi.clearAllMocks()
@@ -52,6 +53,7 @@ beforeEach(() => {
   vi.mocked(api.deleteBoard).mockResolvedValue()
   vi.mocked(api.reorderBoardInuksuks).mockResolvedValue(BOARDS_FIXTURES[0])
   vi.mocked(api.removeBoardInuksuk).mockResolvedValue(BOARDS_FIXTURES[0])
+  vi.mocked(api.fetchUsersPaged).mockResolvedValue({ items: [], total: 0 })
 })
 async function setup(
   boardId: number | null = null,
@@ -494,7 +496,7 @@ describe('BoardsPage', () => {
     expect(
       within(dialog.querySelector('#board-heading')!).getByText('Private', { exact: true }),
     ).toBeVisible()
-    expect(within(dialog).getByText('6 Inuksuks')).toBeVisible()
+    expect(within(dialog).getByText('(6 Inuksuks)')).toBeVisible()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close Board' }))
     expect(view.onSelectBoard).toHaveBeenCalledWith(null)
   })
@@ -882,11 +884,56 @@ describe('BoardsPage', () => {
     )
   })
 
+  it('uses Collection scope and owner controls without a Board overflow menu', async () => {
+    vi.mocked(api.fetchBoard).mockResolvedValue({
+      ...BOARDS_FIXTURES[0],
+      permissions: { ...BOARDS_FIXTURES[0].permissions, can_transfer: true },
+      owners: [
+        ...BOARDS_FIXTURES[0].owners,
+        { user_id: 77, program_id: null, name: 'Morgan', role: 'instructor' },
+      ],
+    })
+    await setup(1)
+    const dialog = screen.getByRole('dialog', { name: 'Architecture inspiration' })
+    const scope = within(
+      within(dialog).getByRole('group', { name: 'Board scope and owners' }),
+    ).getByTestId('collection-visibility-chip')
+    expect(scope).toHaveTextContent('Private')
+    expect(scope.querySelector('svg')).not.toBeNull()
+    expect(scope.parentElement).toHaveTextContent('Managed by Alex, Morgan')
+    expect(screen.queryByRole('button', { name: 'Board options' })).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Delete Board' })).not.toBeInTheDocument()
+    const sequence = within(dialog).getByRole('button', { name: 'Create Sequence Collection' })
+    expect(sequence).toHaveClass('MuiButton-outlined')
+    expect(sequence.nextElementSibling).toBe(
+      within(dialog).getByRole('button', { name: 'Close Board' }),
+    )
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Manage owners' }))
+    expect(await screen.findByRole('dialog', { name: 'Owners' })).toBeVisible()
+  })
+  it('disables sequence creation for an empty Board and respects the feature flag', async () => {
+    vi.mocked(api.fetchBoard).mockResolvedValue(BOARDS_FIXTURES[1])
+    const view = await setup(3)
+    expect(screen.getByRole('button', { name: 'Create Sequence Collection' })).toBeDisabled()
+    view.rerender(
+      <BoardsPage
+        enabled
+        currentUser={BOARD_AUTH.currentUser}
+        collectionsEnabled={false}
+        boardId={3}
+        onSelectBoard={vi.fn()}
+        onOpenInuksuk={vi.fn()}
+      />,
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Create Sequence Collection' }),
+    ).not.toBeInTheDocument()
+  })
   it('hides management actions without permissions', async () => {
     vi.mocked(api.fetchBoard).mockResolvedValue(BOARDS_FIXTURES[2])
     await setup(2)
     expect(screen.queryByRole('button', { name: 'Edit Board' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Owners' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Manage owners' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete Board' })).not.toBeInTheDocument()
   })
 
@@ -963,11 +1010,12 @@ describe('BoardsPage', () => {
   })
   it('warns about orphan deletion before deleting a Board', async () => {
     const view = await setup(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Board options' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete Board' }))
-    const dialog = screen.getByRole('dialog')
-    expect(dialog).toHaveTextContent('Inuksuks only on this Board will be permanently deleted')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Board' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit Board' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete Board' }))
+    expect(dialog).toHaveTextContent('Inuksuks only on this Board will be permanently deleted')
+    expect(api.deleteBoard).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm Delete Board' }))
     await waitFor(() => expect(view.onSelectBoard).toHaveBeenCalledWith(null))
     expect(api.deleteBoard).toHaveBeenCalledWith(1, 5)
   })
@@ -1030,8 +1078,7 @@ it('creates a Sequence from the Board source and navigates to it', async () => {
     onOpenCollection: open,
     categories: [makeCategory({ id: 10, label: 'Studies' })],
   })
-  fireEvent.click(screen.getByRole('button', { name: 'Board options' }))
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Create Sequence Collection' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Create Sequence Collection' }))
   fireEvent.change(screen.getByRole('textbox', { name: 'Collection name' }), {
     target: { value: 'Board sequence' },
   })

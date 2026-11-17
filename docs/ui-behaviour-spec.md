@@ -1472,10 +1472,16 @@ selection MouseTracker ignores their presses.
   preserving existing memberships. Targets highlight and success shows a snackbar.
   Rejected drops stay unhighlighted but show a snackbar: Already in {Board name},
   or You can't add Inuksuks to {Board name}; no mutation is sent.
+  The bottom-centre Snackbar contains the app's filled Alert, using success for
+  saves, info for duplicates and warning for other refusals.
   Failures retain data and show the error. Browse collision logic is unchanged.
 - A Board opens in a large dialog, full-screen below the small breakpoint. Its
-  fixed heading holds title, authorized edit pencil, scope, count, Select and an
-  overflow for Owners/Delete/Create Sequence Collection. Its ordered collage
+  fixed heading holds title, authorized edit pencil, count and Select. The exact
+  Collections scope pill sits beside Managed by and the permitted owner-management
+  transfer icon. Create Sequence Collection is a right-aligned outlined button
+  immediately left of Close, disabled for empty Boards. There is no Board overflow.
+  Delete is in Edit Board, with a second confirmation and orphan-Inuksuk warning;
+  version conflicts block mutations until an explicit reload. Its ordered collage
   scrolls independently and does not inherit overview filters. Editable Boards
   retain member reorder. Select sits at the right of each collage toolbar.
 - Board URL/history state is retained: Back closes the Board dialog; opening an

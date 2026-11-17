@@ -502,8 +502,13 @@ matches Favourite if it holds a favourite Inuksuk. Active filters have removable
 chips and a Clear filters action. Select sits at the right of the collage toolbar.
 Opening a Board shows all authorized members, independent of overview filters,
 in a large dialog, full-screen on mobile. Its fixed heading keeps the title,
-editable-only pencil, scope pill, count and Select visible while members scroll.
-The overflow holds permitted Owners/Delete actions and Create Sequence Collection.
+editable-only pencil, count and Select visible while members scroll. The exact
+Collections scope pill sits beside the Managed by owner line; its transfer icon
+opens owner management for users with `can_transfer`. An outlined Create Sequence
+Collection button sits immediately left of Close, disabled for an empty Board.
+There is no Board overflow menu. Delete Board is at the bottom of Edit Board, like
+Delete Collection, and requires a second confirmation before deleting orphaned
+Inuksuks. Delete uses the form's Board version and explicit 409 reload flow.
 The URL retains `?board=`; Back closes the dialog, and Back from a saved-view
 image returns to that Board dialog.
 
@@ -536,6 +541,8 @@ Dragging an editable overview Inuksuk card onto another editable Board chip
 highlights the target and **saves a copy of the link**, with a success snackbar.
 Read-only Boards cannot accept saves. Rejected drops stay unhighlighted and explain
 duplicate membership or missing edit permission in the page snackbar, without sending a mutation.
+Drop notices reuse the app's bottom-centre Snackbar and filled Alert: green success
+for a saved link, info for duplicate membership and warning for other refusals.
 **Move/Save to…** also offers an explicit atomic move that removes the source link
 in the same PATCH. Other editable Board links retain their positions; non-editable
 links remain server-preserved. If any membership or

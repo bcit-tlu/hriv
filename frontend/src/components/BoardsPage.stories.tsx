@@ -128,9 +128,29 @@ export const Table: Story = {
 }
 export const SelectedBoard: Story = {
   args: { initialBoardId: 1 },
+  beforeEach: () =>
+    installBoardsFetch(
+      'ready',
+      undefined,
+      BOARDS_FIXTURES.map((row) =>
+        row.id === 1 ? { ...row, permissions: { ...row.permissions, can_transfer: true } } : row,
+      ),
+    ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body)
     const dialog = await canvas.findByRole('dialog', { name: 'Architecture inspiration' })
+    const metadata = within(dialog).getByRole('group', { name: 'Board scope and owners' })
+    await expect(within(metadata).getByTestId('collection-visibility-chip')).toHaveTextContent(
+      'Private',
+    )
+    await expect(within(metadata).getByText('Managed by Alex')).toBeVisible()
+    await expect(within(metadata).getByRole('button', { name: 'Manage owners' })).toBeVisible()
+    await expect(
+      within(dialog).queryByRole('button', { name: 'Board options' }),
+    ).not.toBeInTheDocument()
+    await expect(
+      within(dialog).getByRole('button', { name: 'Create Sequence Collection' }),
+    ).toHaveClass('MuiButton-outlined')
     await waitFor(() =>
       expect(
         within(dialog).getByRole('button', { name: 'Open Inuksuk: Rose window' }),
@@ -141,6 +161,32 @@ export const SelectedBoard: Story = {
         within(dialog).getByRole('button', { name: 'Open Inuksuk: Light through glass' }),
       ).toBeVisible(),
     )
+  },
+}
+export const SelectedBoardEdit: Story = {
+  ...SelectedBoard,
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement.ownerDocument.body)
+    const board = await canvas.findByRole('dialog', { name: 'Architecture inspiration' })
+    await userEvent.click(within(board).getByRole('button', { name: 'Edit Board' }))
+    const edit = await canvas.findByRole('dialog', { name: 'Edit Board' })
+    await expect(within(edit).getByRole('button', { name: 'Delete Board' })).toBeVisible()
+    await expect(within(edit).getByRole('button', { name: 'Save Board' })).toBeVisible()
+  },
+}
+export const NewlyCreatedBoard: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement.ownerDocument.body)
+    await userEvent.click(await canvas.findByRole('button', { name: 'New Board' }))
+    await userEvent.type(canvas.getByRole('textbox', { name: 'Name' }), 'Fresh study')
+    await userEvent.click(canvas.getByRole('button', { name: 'Save Board' }))
+    const dialog = await canvas.findByRole('dialog', { name: 'Fresh study' })
+    await expect(
+      within(dialog).getByRole('group', { name: 'Board scope and owners' }),
+    ).toHaveTextContent('Managed by Alex')
+    await expect(
+      within(dialog).getByRole('button', { name: 'Create Sequence Collection' }),
+    ).toBeDisabled()
   },
 }
 export const Favourites: Story = {

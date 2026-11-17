@@ -31,7 +31,6 @@ import {
   DialogTitle,
   FormControlLabel,
   IconButton,
-  Menu,
   MenuItem,
   Stack,
   Switch,
@@ -60,10 +59,11 @@ import ViewModule from '@mui/icons-material/ViewModule'
 import TableRows from '@mui/icons-material/TableRows'
 import { CollectionVisibilityChip } from './CollectionCard'
 import { graphToggleSx } from '../collectionsGraph/toggleStyles'
-import MoreVert from '@mui/icons-material/MoreVert'
 import Add from '@mui/icons-material/Add'
 import Edit from '@mui/icons-material/Edit'
 import Close from '@mui/icons-material/Close'
+import SwapHoriz from '@mui/icons-material/SwapHoriz'
+import ViewCarousel from '@mui/icons-material/ViewCarousel'
 import { alpha, useTheme } from '@mui/material/styles'
 import FilterBar from './FilterBar'
 import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
@@ -82,7 +82,6 @@ import { PointerActivationConstraints } from '@dnd-kit/dom'
 import { CollisionPriority } from '@dnd-kit/abstract'
 import {
   ApiError,
-  deleteBoard,
   fetchBoard,
   fetchInuksuk,
   fetchInuksuks,
@@ -120,6 +119,19 @@ interface BoardsPageProps {
   boardId: number | null
   onSelectBoard: (boardId: number | null) => void
   onOpenInuksuk: (item: ApiInuksuk) => void
+}
+
+function boardManagerText(board: ApiBoardSummary) {
+  const owners = board.owners.flatMap((owner) => {
+    const mapped = apiCollectionOwnerToOwner(owner)
+    return mapped ? [mapped] : []
+  })
+  const programOwner = owners.find((owner) => owner.kind === 'program')
+  return programOwner
+    ? `Managed by program ${programOwner.name}`
+    : owners.length
+      ? `Managed by ${describeCollectionOwners(owners)}`
+      : 'No owner'
 }
 
 type SortableFrameProps = {
@@ -503,13 +515,11 @@ export default function BoardsPage({
   } | null>(null)
   const notify = (message: string, severity: 'success' | 'info' | 'warning' = 'warning') =>
     setNotice({ message, severity })
-  const [boardMenu, setBoardMenu] = useState<HTMLElement | null>(null)
   const [favourites, setFavourites] = useState(false)
   const data = useBoardsData(boardId, favourites, enabled)
   const board = data.board
   const [edit, setEdit] = useState<'new' | 'edit' | null>(null)
   const [owners, setOwners] = useState(false)
-  const [deleting, setDeleting] = useState(false)
   const [savingItem, setSavingItem] = useState<ApiInuksuk | null>(null)
   const [removingItem, setRemovingItem] = useState<ApiInuksuk | null>(null)
   const [editingItem, setEditingItem] = useState<ApiInuksuk | null>(null)
@@ -526,11 +536,9 @@ export default function BoardsPage({
     setAppliedBoardId(boardId)
     setEdit(null)
     setOwners(false)
-    setDeleting(false)
     setSavingItem(null)
     setRemovingItem(null)
     setEditingItem(null)
-    setBoardMenu(null)
     setBusy(false)
     setError(null)
     setConflict(false)
@@ -1265,16 +1273,6 @@ export default function BoardsPage({
                 }}
               >
                 {discoveryBoards.map((row) => {
-                  const owners = row.owners.flatMap((owner) => {
-                    const mapped = apiCollectionOwnerToOwner(owner)
-                    return mapped ? [mapped] : []
-                  })
-                  const programOwner = owners.find((owner) => owner.kind === 'program')
-                  const ownerText = programOwner
-                    ? `Managed by program ${programOwner.name}`
-                    : owners.length
-                      ? `Managed by ${describeCollectionOwners(owners)}`
-                      : 'No owner'
                   return (
                     <Card key={row.id} variant="outlined">
                       <CardActionArea
@@ -1300,7 +1298,7 @@ export default function BoardsPage({
                             component="p"
                             sx={{ mb: 1, overflowWrap: 'anywhere' }}
                           >
-                            {ownerText}
+                            {boardManagerText(row)}
                           </Typography>
                           <CollectionVisibilityChip visibility={row.visibility} />
                         </CardContent>
@@ -1479,43 +1477,87 @@ export default function BoardsPage({
                 <Typography
                   id="board-dialog-title"
                   component="h2"
-                  variant="h5"
+                  variant="body2"
                   sx={{ minWidth: 0, overflowWrap: 'anywhere' }}
                 >
                   {board?.name ?? 'Board'}
                 </Typography>
+                {board && (
+                  <Typography
+                    component="span"
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ ml: 0.5, fontSize: '0.9em' }}
+                  >
+                    ({board.inuksuk_count} Inuksuks)
+                  </Typography>
+                )}
                 {board?.permissions.can_edit && (
                   <IconButton
+                    size="small"
                     aria-label="Edit Board"
                     disabled={busy || conflict}
                     onClick={() => setEdit('edit')}
                   >
-                    <Edit />
+                    <Edit sx={{ fontSize: 16 }} />
                   </IconButton>
                 )}
               </Box>
-              <IconButton
-                aria-label="Board options"
-                onClick={(event) => setBoardMenu(event.currentTarget)}
-              >
-                <MoreVert />
-              </IconButton>
+              {collectionsEnabled && board && (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<ViewCarousel />}
+                  disabled={!board.inuksuks.length || busy || conflict}
+                  onClick={() =>
+                    beginCollection(board.inuksuks, 'sequence', false, {
+                      source_board_id: board.id,
+                    })
+                  }
+                >
+                  Create Sequence Collection
+                </Button>
+              )}
               <IconButton aria-label="Close Board" onClick={() => onSelectBoard(null)}>
                 <Close />
               </IconButton>
             </Stack>
             {board && (
               <>
-                <Stack direction="row" alignItems="center" gap={1} sx={{ my: 1 }}>
-                  <Chip
-                    label={board.visibility[0].toUpperCase() + board.visibility.slice(1)}
-                    size="small"
-                    variant="outlined"
-                  />
-                  <Typography variant="body2" color="text.secondary">
-                    {board.inuksuk_count} Inuksuks
-                  </Typography>
-                </Stack>
+                <Box
+                  role="group"
+                  aria-label="Board scope and owners"
+                  sx={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: 1,
+                    mb: 1,
+                    mt: 1,
+                  }}
+                >
+                  <CollectionVisibilityChip visibility={board.visibility} />
+                  <Box
+                    sx={{ flex: '1 1 240px', minWidth: 0, display: 'flex', alignItems: 'center' }}
+                  >
+                    <Typography variant="body2" color="text.secondary">
+                      {boardManagerText(board)}
+                    </Typography>
+                    {board.permissions.can_transfer && (
+                      <Tooltip title="Manage owners">
+                        <IconButton
+                          size="small"
+                          aria-label="Manage owners"
+                          disabled={busy || conflict}
+                          sx={{ ml: 0.25, p: 0.25 }}
+                          onClick={() => setOwners(true)}
+                        >
+                          <SwapHoriz fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                  </Box>
+                </Box>
                 {board.description && (
                   <Typography
                     variant="body2"
@@ -1555,42 +1597,6 @@ export default function BoardsPage({
             )}
           </DialogContent>
         </Dialog>
-        <Menu anchorEl={boardMenu} open={!!boardMenu} onClose={() => setBoardMenu(null)}>
-          {board?.permissions.can_transfer && (
-            <MenuItem
-              disabled={busy || conflict}
-              onClick={() => {
-                setBoardMenu(null)
-                setOwners(true)
-              }}
-            >
-              Owners
-            </MenuItem>
-          )}
-          {collectionsEnabled && board && (
-            <MenuItem
-              disabled={!board.inuksuks.length}
-              onClick={() => {
-                setBoardMenu(null)
-                beginCollection(board.inuksuks, 'sequence', false, { source_board_id: board.id })
-              }}
-            >
-              Create Sequence Collection
-            </MenuItem>
-          )}
-          {board?.permissions.can_delete && (
-            <MenuItem
-              disabled={busy || conflict}
-              onClick={() => {
-                setBoardMenu(null)
-                setError(null)
-                setDeleting(true)
-              }}
-            >
-              Delete Board
-            </MenuItem>
-          )}
-        </Menu>
       </DragDropProvider>
       <Snackbar
         open={!!notice}
@@ -1619,6 +1625,10 @@ export default function BoardsPage({
             data.upsertBoard(saved)
             if (edit === 'new') onSelectBoard(saved.id)
             else void data.reload()
+          }}
+          onDeleted={() => {
+            onSelectBoard(null)
+            void data.reload()
           }}
         />
       )}
@@ -1666,34 +1676,6 @@ export default function BoardsPage({
             })
           }}
         />
-      )}
-      {deleting && board && (
-        <Dialog open onClose={busy ? undefined : () => setDeleting(false)}>
-          <DialogTitle>Delete Board?</DialogTitle>
-          <DialogContent>
-            {error && <Alert severity="error">{error}</Alert>}Delete “{board.name}”? Its links will
-            be removed. Inuksuks only on this Board will be permanently deleted.
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setDeleting(false)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button
-              color="error"
-              disabled={busy || conflict}
-              onClick={() => {
-                void run(() => deleteBoard(board.id, board.version)).then((ok) => {
-                  if (ok) {
-                    setDeleting(false)
-                    onSelectBoard(null)
-                  }
-                })
-              }}
-            >
-              Delete Board
-            </Button>
-          </DialogActions>
-        </Dialog>
       )}
       {removingItem && board && (
         <Dialog open onClose={busy ? undefined : () => setRemovingItem(null)}>

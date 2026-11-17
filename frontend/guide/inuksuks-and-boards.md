@@ -73,12 +73,19 @@ the other Board memberships stay intact. A highlighted target and confirmation
 message show the result. Read-only Boards do not accept saves.
 Rejected drops show why: **Already in {Board name}** or **You can't add Inuksuks
 to {Board name}**. Ineligible targets do not highlight and no save is sent.
+Messages use the standard bottom-centre filled alert: green for a successful save,
+info for an existing link and warning for other refusals.
 **Move/Save to…** via the move icon is the explicit alternative, including moving between Boards.
 
 Click a Board tab to open its large dialog (full-screen on a phone). The heading
 keeps its title, scope, count and controls visible while the saved views scroll.
-The pencil edits the Board when permitted; **⋮** contains Owners, Delete and
-Create Sequence Collection as allowed. Reorder cards by dragging them to arrange
+The Collections-style scope pill sits beside **Managed by {owner names}**; its
+transfer icon opens owner management when permitted. The pencil opens Edit Board,
+where **Delete Board** sits below the fields. It requires confirmation and warns
+that Inuksuks left without a Board will be permanently deleted. Conflicts require
+Reload latest before saving or deleting. **Create Sequence Collection** is an
+outlined button just left of Close (disabled for an empty Board). There is no Board
+**⋮** menu. Reorder cards by dragging them to arrange
 the study. **Select**, at the right of the collage toolbar, enables Collection
 actions. Click a saved view to open its image; Back returns to the Board dialog,
 and Back again returns to the overview. Board owners can edit their Boards;
