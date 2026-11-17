@@ -714,7 +714,7 @@ export default function ManagePage({
       if (!match('id', String(img.id))) return false
       if (!match('name', img.name)) return false
       if (!match('copyright', img.copyright ?? '')) return false
-      if (!match('note', img.note ?? '')) return false
+      if (!match('note', img.description ?? '')) return false
       if (selectedCategories.size > 0) {
         if (img.category_id == null) return false
         const seg = categoryPaths.get(img.category_id)
@@ -775,7 +775,7 @@ export default function ManagePage({
           cmp = (a.copyright ?? '').localeCompare(b.copyright ?? '')
           break
         case 'note':
-          cmp = (a.note ?? '').localeCompare(b.note ?? '')
+          cmp = (a.description ?? '').localeCompare(b.description ?? '')
           break
         case 'program':
           cmp = getProgramNames(a).localeCompare(getProgramNames(b))
@@ -1687,7 +1687,11 @@ export default function ManagePage({
                   copyright: <TableCell {...dimAttr}>{img.copyright ?? '—'}</TableCell>,
                   note: (
                     <TableCell {...dimAttr} sx={{ maxWidth: 260, minWidth: 180 }}>
-                      {img.note ? <NoteDisplay note={img.note} collapsedLines={2} /> : '—'}
+                      {img.description ? (
+                        <NoteDisplay note={img.description} collapsedLines={2} />
+                      ) : (
+                        '—'
+                      )}
                     </TableCell>
                   ),
                   program: (

@@ -458,7 +458,7 @@ function addImageMatches(
   const fields: { field: string; value: string | null | undefined }[] = [
     { field: 'Name', value: img.name },
     { field: 'Copyright', value: img.copyright },
-    { field: 'Note', value: img.note },
+    { field: 'Note', value: img.description },
     ...getAnnotationSearchFields(img.metadataExtra),
   ]
   if (parentCat) {
