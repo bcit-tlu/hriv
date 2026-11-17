@@ -1689,7 +1689,7 @@ export async function uploadSourceImage(
   name?: string,
   categoryId?: number | null,
   copyright?: string,
-  note?: string,
+  description?: string,
   active?: boolean,
   onProgress?: (fraction: number) => void,
   signal?: AbortSignal,
@@ -1699,7 +1699,7 @@ export async function uploadSourceImage(
   if (name) form.append('name', name)
   if (categoryId != null) form.append('category_id', String(categoryId))
   if (copyright) form.append('copyright', copyright)
-  if (note) form.append('note', note)
+  if (description) form.append('description', description)
   if (active !== undefined) form.append('active', String(active))
 
   // Use XMLHttpRequest for upload progress reporting (essential for large TIFFs)
@@ -1882,7 +1882,7 @@ export async function bulkImportImages(
   files: File[],
   categoryId: number | null,
   copyright?: string,
-  note?: string,
+  description?: string,
   active?: boolean,
   onProgress?: (fraction: number) => void,
   signal?: AbortSignal,
@@ -1893,7 +1893,7 @@ export async function bulkImportImages(
   }
   if (categoryId != null) form.append('category_id', String(categoryId))
   if (copyright) form.append('copyright', copyright)
-  if (note) form.append('note', note)
+  if (description) form.append('description', description)
   if (active !== undefined) form.append('active', String(active))
 
   return new Promise<ApiBulkImportJob>((resolve, reject) => {

@@ -1934,6 +1934,16 @@ describe('XHR upload abort support', () => {
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
   })
 
+  it('uploadSourceImage and bulkImportImages send the description form field', () => {
+    const file = new File(['test'], 'test.png', { type: 'image/png' })
+    void uploadSourceImage(file, undefined, undefined, undefined, 'Upload text')
+    void bulkImportImages([file], null, undefined, 'Bulk text')
+    const [upload, bulk] = xhrInstances.map((xhr) => xhr.send.mock.calls[0][0] as FormData)
+    expect(upload.get('description')).toBe('Upload text')
+    expect(bulk.get('description')).toBe('Bulk text')
+    expect(upload.has('note') || bulk.has('note')).toBe(false)
+  })
+
   it('replaceImage rejects with AbortError when signal is aborted', async () => {
     const ac = new AbortController()
     const file = new File(['test'], 'test.png', { type: 'image/png' })
