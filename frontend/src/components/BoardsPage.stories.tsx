@@ -176,6 +176,21 @@ export const PublicSharedBoards: Story = {
 }
 export const Empty: Story = { args: { state: 'empty' } }
 export const ErrorState: Story = { args: { state: 'error' } }
+
+async function expectHorizontalBoardChips(row: HTMLElement) {
+  await waitFor(async () => {
+    const chips = within(row).getAllByRole('group')
+    await expect(Array.from(row.children).slice(1)).toEqual(chips)
+    const bounds = chips.map((chip) => chip.getBoundingClientRect())
+    await expect(bounds[0].height).toBeGreaterThan(0)
+    for (let i = 1; i < bounds.length; i++) {
+      await expect(Math.abs(bounds[i].top - bounds[0].top)).toBeLessThan(1)
+      await expect(Math.abs(bounds[i].height - bounds[0].height)).toBeLessThan(1)
+      await expect(bounds[i].left).toBeGreaterThanOrEqual(bounds[i - 1].right)
+    }
+  })
+}
+
 export const KeyboardReorder: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -190,6 +205,7 @@ export const KeyboardReorder: Story = {
         'Open Board: Next studio project',
       ),
     )
+    await expectHorizontalBoardChips(canvas.getByRole('region', { name: 'Boards' }))
   },
 }
 export const ReadOnlyOwnedBoard: Story = {
@@ -225,6 +241,7 @@ export const ReadOnlyOwnedBoard: Story = {
       ).toHaveAccessibleName('Open Board: Another editable Board'),
     )
     await expect(within(readOnly).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(2)
+    await expectHorizontalBoardChips(readOnly)
     await userEvent.click(canvas.getByRole('button', { name: 'Public & shared Boards' }))
     const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
       name: 'Public & shared Boards',

@@ -186,6 +186,7 @@ function ActiveSortableFrame({
         outline: isDragSource ? '2px dashed' : undefined,
         outlineColor: 'primary.main',
         minWidth: 0,
+        ...(type === 'board-card' && { flex: '0 0 auto', maxWidth: 280 }),
       }}
     >
       {!hideHandle && (
@@ -1162,56 +1163,55 @@ export default function BoardsPage({
             </CardActionArea>
           </Card>
           {rows.map((row) => (
-            <Box key={row.id} sx={{ flex: '0 0 auto', maxWidth: 280, minWidth: 0 }}>
-              <SortableFrame
-                id={`board:${row.id}`}
-                index={reorderableBoards.findIndex((b) => b.id === row.id)}
-                type="board-card"
-                group="boards"
-                disabled={filtered || !reorderableBoards.some((b) => b.id === row.id)}
-                label={row.name}
-                hideHandle
+            <SortableFrame
+              key={row.id}
+              id={`board:${row.id}`}
+              index={reorderableBoards.findIndex((b) => b.id === row.id)}
+              type="board-card"
+              group="boards"
+              disabled={filtered || !reorderableBoards.some((b) => b.id === row.id)}
+              label={row.name}
+              hideHandle
+            >
+              <DropArea
+                id={`save:${row.id}`}
+                label={`Save to ${row.name}`}
+                enabled={
+                  !!activeItem?.permissions.can_edit &&
+                  row.permissions.can_edit &&
+                  !activeItem.board_ids.includes(row.id)
+                }
               >
-                <DropArea
-                  id={`save:${row.id}`}
-                  label={`Save to ${row.name}`}
-                  enabled={
-                    !!activeItem?.permissions.can_edit &&
-                    row.permissions.can_edit &&
-                    !activeItem.board_ids.includes(row.id)
-                  }
+                <Card
+                  variant="outlined"
+                  sx={{
+                    borderRadius: 2,
+                    borderColor: row.id === boardId ? 'primary.main' : 'divider',
+                  }}
                 >
-                  <Card
-                    variant="outlined"
-                    sx={{
-                      borderRadius: 2,
-                      borderColor: row.id === boardId ? 'primary.main' : 'divider',
-                    }}
+                  <CardActionArea
+                    onClick={() => onSelectBoard(row.id)}
+                    aria-label={`Open Board: ${row.name}`}
+                    sx={{ display: 'flex', justifyContent: 'flex-start', gap: 1 }}
                   >
-                    <CardActionArea
-                      onClick={() => onSelectBoard(row.id)}
-                      aria-label={`Open Board: ${row.name}`}
-                      sx={{ display: 'flex', justifyContent: 'flex-start', gap: 1 }}
+                    <BoardCover board={row} />
+                    <Typography
+                      variant="body2"
+                      component="p"
+                      noWrap
+                      fontWeight={600}
+                      sx={{
+                        px: 1,
+                        py: 0.75,
+                      }}
+                      title={row.name}
                     >
-                      <BoardCover board={row} />
-                      <Typography
-                        variant="body2"
-                        component="p"
-                        noWrap
-                        fontWeight={600}
-                        sx={{
-                          px: 1,
-                          py: 0.75,
-                        }}
-                        title={row.name}
-                      >
-                        {row.name}
-                      </Typography>
-                    </CardActionArea>
-                  </Card>
-                </DropArea>
-              </SortableFrame>
-            </Box>
+                      {row.name}
+                    </Typography>
+                  </CardActionArea>
+                </Card>
+              </DropArea>
+            </SortableFrame>
           ))}
         </Box>
 

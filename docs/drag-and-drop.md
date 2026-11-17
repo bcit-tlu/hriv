@@ -305,6 +305,10 @@ their surfaces for dragging without a separate grip icon. Clicking still opens t
   non-owned/read-only tabs cannot drag. Filters disable Board dragging so a
   subset cannot replace the complete owned order. That order and per-Board
   versions go to `PUT /boards/order`.
+  Board sortable roots are direct siblings in the horizontal row, with chip width
+  constraints on those roots. Optimistic sorting must not reparent them into
+  separate per-chip wrappers. Keyboard reorder stories verify sibling structure
+  and horizontal, non-overlapping geometry after the order is saved.
 - `board-member` / `item:{id}`: members sort in one flat Board group. The
   request contains every visible member exactly once, leaving hidden members to
   the backend.
