@@ -8,7 +8,7 @@ specified in detail.
 ## Access and visibility
 
 - Board Sections were shelved; saved-view organization is by Boards only. See
-  [`inuksuks-and-boards.md`](inuksuks-and-boards.md).
+  [`markers-and-boards.md`](markers-and-boards.md).
 
 - Only admins can see or download source images; instructors and students
   never can. See [`category-visibility-and-programs.md`](category-visibility-and-programs.md).

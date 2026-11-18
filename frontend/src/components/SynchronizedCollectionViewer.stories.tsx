@@ -122,7 +122,7 @@ const READ_ONLY = makeCollection(
 const SINGLE = makeCollection([makeImage(101, 'Skull — frontal')], true)
 
 interface StoryArgs {
-  inuksuksEnabled?: boolean
+  markersEnabled?: boolean
   collection: Collection
   onSaveViewport: (
     state: Record<string, unknown>,
@@ -138,7 +138,7 @@ function SynchronizedViewerExample(args: StoryArgs) {
   return (
     <AuthContext.Provider value={makeAuth(user)}>
       <SynchronizedCollectionViewer
-        inuksuksEnabled={args.inuksuksEnabled}
+        markersEnabled={args.markersEnabled}
         collection={args.collection}
         onSaveViewport={args.onSaveViewport}
         onOpenImage={args.onOpenImage}
@@ -286,7 +286,7 @@ export const SameImageSlots: Story = {
         typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
         window.location.href,
       )
-      if (/^\/api\/images\/\d+\/inuksuks$/.test(url.pathname)) return Response.json([])
+      if (/^\/api\/images\/\d+\/markers$/.test(url.pathname)) return Response.json([])
       return original(input, init)
     }
     return () => {
@@ -294,11 +294,11 @@ export const SameImageSlots: Story = {
     }
   },
   args: {
-    inuksuksEnabled: true,
+    markersEnabled: true,
     collection: makeCollection(
       [0.3, 0.7].map((x, index) => ({
         ...makeImage(101, 'Architectural study'),
-        tileSources: '/inuksuk-image.json',
+        tileSources: '/marker-image.json',
         slot: {
           id: 501 + index,
           label: index ? 'Right study' : 'Left study',

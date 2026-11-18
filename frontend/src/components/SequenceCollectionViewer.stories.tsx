@@ -115,7 +115,7 @@ const EMPTY = makeCollection([], true)
 const EMPTY_READ_ONLY = makeCollection([], false)
 
 interface StoryArgs {
-  inuksuksEnabled?: boolean
+  markersEnabled?: boolean
   collection: Collection
   itemId: number | null
   onSelectItem: (id: number, slotId?: number) => void
@@ -132,7 +132,7 @@ function SequenceViewerExample(args: StoryArgs) {
   return (
     <AuthContext.Provider value={makeAuth(user)}>
       <SequenceCollectionViewer
-        inuksuksEnabled={args.inuksuksEnabled}
+        markersEnabled={args.markersEnabled}
         slotId={slotId}
         collection={args.collection}
         itemId={itemId}
@@ -261,7 +261,7 @@ export const SameImageSlots: Story = {
         typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
         window.location.href,
       )
-      if (/^\/api\/images\/\d+\/inuksuks$/.test(url.pathname)) return Response.json([])
+      if (/^\/api\/images\/\d+\/markers$/.test(url.pathname)) return Response.json([])
       return original(input, init)
     }
     return () => {
@@ -269,11 +269,11 @@ export const SameImageSlots: Story = {
     }
   },
   args: {
-    inuksuksEnabled: true,
+    markersEnabled: true,
     collection: makeCollection(
       [0.3, 0.7].map((x, index) => ({
         ...makeImage(101, 'Architectural study'),
-        tileSources: '/inuksuk-image.json',
+        tileSources: '/marker-image.json',
         slot: {
           id: 501 + index,
           label: index ? 'Right study' : 'Left study',

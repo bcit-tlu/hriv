@@ -28,10 +28,10 @@ from ..database import async_session, get_db, settings
 from ..filenames import sanitize_upload_filename, storage_extension
 from ..image_validation import is_valid_image
 from ..image_source_info import build_image_source_info
-from ..inuksuk_thumbs import remove_image_inuksuk_thumbnails
+from ..marker_thumbs import remove_image_marker_thumbnails
 from ..board_memberships import bump_board_membership_versions
-from ..inuksuks import require_inuksuks_enabled
-from .inuksuks import image_inuksuks
+from ..markers import require_markers_enabled
+from .markers import image_markers
 from ..upload_staging import (
     UploadTooLargeError,
     cleanup_unowned_final,
@@ -50,7 +50,7 @@ from ..schemas import (
     ImageOut,
     ImageSourceInfoOut,
     ImageUpdate,
-    InuksukOut,
+    MarkerOut,
     SourceImageOut,
     normalize_note_value,
 )
@@ -64,9 +64,9 @@ tracer = trace.get_tracer(__name__)
 
 router = APIRouter(prefix="/images", tags=["images"])
 router.add_api_route(
-    "/{image_id}/inuksuks", image_inuksuks, methods=["GET"],
-    response_model=list[InuksukOut],
-    dependencies=[Depends(require_inuksuks_enabled)],
+    "/{image_id}/markers", image_markers, methods=["GET"],
+    response_model=list[MarkerOut],
+    dependencies=[Depends(require_markers_enabled)],
 )
 
 
@@ -876,7 +876,7 @@ async def bulk_delete_images(
                     },
                 )
             for img in images:
-                await asyncio.to_thread(remove_image_inuksuk_thumbnails, img)
+                await asyncio.to_thread(remove_image_marker_thumbnails, img)
         except Exception as exc:
             record_exception_if_server_error(span, exc)
             raise
@@ -910,7 +910,7 @@ async def delete_image(
                 await bump_browse_revision(db)
             await db.commit()
             await cleanup_slot_thumbs(slot_paths)
-            await asyncio.to_thread(remove_image_inuksuk_thumbnails, img)
+            await asyncio.to_thread(remove_image_marker_thumbnails, img)
             logger.info(
                 "Image deleted",
                 extra={

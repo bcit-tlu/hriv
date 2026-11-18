@@ -1,4 +1,4 @@
-"""Shared transactional guards and thumbnail lifecycle for Board/Inuksuk writes."""
+"""Shared transactional guards and thumbnail lifecycle for Board/Marker writes."""
 
 import asyncio
 import logging
@@ -13,17 +13,17 @@ from sqlalchemy.orm import attributes, selectinload
 from .authz import can_edit_board
 from .board_memberships import bump_board_membership_versions
 from .board_views import (
-    BoardViewerContext, board_load_options, board_out, inuksuk_load_options,
-    inuksuk_out, load_memberships,
+    BoardViewerContext, board_load_options, board_out, marker_load_options,
+    marker_out, load_memberships,
 )
 from .browse_state import bump_browse_revision
-from .inuksuk_thumbs import generate_inuksuk_thumbnail, remove_inuksuk_thumbnail
+from .marker_thumbs import generate_marker_thumbnail, remove_marker_thumbnail
 from .models import (
-    Board, BoardInuksuk, Image, Inuksuk, User,
-    STUDENT_MAX_BOARDS, STUDENT_MAX_INUKSUKS,
+    Board, BoardMarker, Image, Marker, User,
+    STUDENT_MAX_BOARDS, STUDENT_MAX_MARKERS,
 )
 from .routers.collections import _resolve_owner_users
-from .schemas import BoardAssignment, BoardOut, InuksukOut
+from .schemas import BoardAssignment, BoardOut, MarkerOut
 
 logger = logging.getLogger(__name__)
 
@@ -85,25 +85,25 @@ async def board_projection(db: AsyncSession, ctx: BoardViewerContext, board_id: 
     )).scalars().unique().one_or_none()
     if board is None:
         raise HTTPException(404, "Board not found")
-    links = await load_memberships(db, (link.inuksuk_id for link in board.inuksuk_links))
+    links = await load_memberships(db, (link.marker_id for link in board.marker_links))
     return board_out(ctx, board, links)
 
 
-async def inuksuk_projection(
-    db: AsyncSession, ctx: BoardViewerContext, inuksuk_id: int,
-) -> InuksukOut:
+async def marker_projection(
+    db: AsyncSession, ctx: BoardViewerContext, marker_id: int,
+) -> MarkerOut:
     item = (await db.execute(
-        select(Inuksuk).where(Inuksuk.id == inuksuk_id).options(
-            *inuksuk_load_options(),
-            selectinload(Inuksuk.owners).selectinload(User.programs),
-            selectinload(Inuksuk.owners).selectinload(User.groups),
+        select(Marker).where(Marker.id == marker_id).options(
+            *marker_load_options(),
+            selectinload(Marker.owners).selectinload(User.programs),
+            selectinload(Marker.owners).selectinload(User.groups),
         )
         .execution_options(populate_existing=True)
     )).scalars().unique().one_or_none()
     if item is None:
-        raise HTTPException(404, "Inuksuk not found")
+        raise HTTPException(404, "Marker not found")
     links = await load_memberships(db, [item.id])
-    return inuksuk_out(ctx, item, ctx.visible_boards(links.get(item.id, [])))
+    return marker_out(ctx, item, ctx.visible_boards(links.get(item.id, [])))
 
 
 async def bump_board(
@@ -119,61 +119,61 @@ async def bump_board(
     attributes.set_committed_value(board, "version", version + 1)
 
 
-async def bump_inuksuk(
-    db: AsyncSession, ctx: BoardViewerContext, item: Inuksuk, version: int,
+async def bump_marker(
+    db: AsyncSession, ctx: BoardViewerContext, item: Marker, version: int,
 ) -> None:
     result = await db.execute(
-        update(Inuksuk).where(Inuksuk.id == item.id, Inuksuk.version == version)
+        update(Marker).where(Marker.id == item.id, Marker.version == version)
         .values(version=version + 1).execution_options(synchronize_session=False)
     )
     if not result.rowcount:
-        current = await inuksuk_projection(db, ctx, item.id)
+        current = await marker_projection(db, ctx, item.id)
         raise HTTPException(409, current.model_dump(mode="json"))
     attributes.set_committed_value(item, "version", version + 1)
 
 
-async def touch_inuksuks(db: AsyncSession, ids: Iterable[int]) -> None:
+async def touch_markers(db: AsyncSession, ids: Iterable[int]) -> None:
     ids = set(ids)
     if ids:
         await db.execute(
-            update(Inuksuk).where(Inuksuk.id.in_(ids)).values(version=Inuksuk.version + 1)
+            update(Marker).where(Marker.id.in_(ids)).values(version=Marker.version + 1)
             .execution_options(synchronize_session=False)
         )
 
 
-async def lock_inuksuks(db: AsyncSession, ids: Iterable[int]) -> list[Inuksuk]:
+async def lock_markers(db: AsyncSession, ids: Iterable[int]) -> list[Marker]:
     return list((await db.execute(
-        select(Inuksuk).where(Inuksuk.id.in_(set(ids))).order_by(Inuksuk.id)
+        select(Marker).where(Marker.id.in_(set(ids))).order_by(Marker.id)
         .with_for_update().execution_options(populate_existing=True)
         .options(
-            *inuksuk_load_options(),
-            selectinload(Inuksuk.owners).selectinload(User.programs),
-            selectinload(Inuksuk.owners).selectinload(User.groups),
+            *marker_load_options(),
+            selectinload(Marker.owners).selectinload(User.programs),
+            selectinload(Marker.owners).selectinload(User.groups),
         )
     )).scalars().unique().all())
 
 
-async def lock_inuksuk_graph(
+async def lock_marker_graph(
     db: AsyncSession, ctx: BoardViewerContext, ids: Iterable[int],
     target_board_ids: Iterable[int] = (),
-) -> tuple[dict[int, Board], dict[int, Inuksuk], dict[int, list[BoardInuksuk]]]:
+) -> tuple[dict[int, Board], dict[int, Marker], dict[int, list[BoardMarker]]]:
     ids = set(ids)
     board_ids = set((await db.execute(
-        select(BoardInuksuk.board_id).where(BoardInuksuk.inuksuk_id.in_(ids))
+        select(BoardMarker.board_id).where(BoardMarker.marker_id.in_(ids))
     )).scalars())
     board_ids.update(target_board_ids)
     boards = await lock_boards(db, board_ids)
-    items = {item.id: item for item in await lock_inuksuks(db, ids)}
+    items = {item.id: item for item in await lock_markers(db, ids)}
     if set(items) != ids:
-        raise HTTPException(404, "Inuksuk not found")
+        raise HTTPException(404, "Marker not found")
     links = await load_memberships(db, ids)
     for item in items.values():
         memberships = links.get(item.id, [])
-        if not ctx.can_view_inuksuk(item, ctx.visible_boards(memberships)):
-            raise HTTPException(404, "Inuksuk not found")
-        # Board locks precede Inuksuk locks; retry if a new parent appeared.
+        if not ctx.can_view_marker(item, ctx.visible_boards(memberships)):
+            raise HTTPException(404, "Marker not found")
+        # Board locks precede Marker locks; retry if a new parent appeared.
         if any(link.board_id not in boards for link in memberships):
-            raise HTTPException(409, (await inuksuk_projection(db, ctx, item.id)).model_dump(mode="json"))
+            raise HTTPException(409, (await marker_projection(db, ctx, item.id)).model_dump(mode="json"))
     return boards, items, links
 
 
@@ -191,7 +191,7 @@ async def owner_targets(db: AsyncSession, ids: list[int]) -> list[User]:
 
 async def enforce_cap(
     db: AsyncSession, owners: list[User], existing_ids: set[int],
-    kind: Literal["board", "inuksuk"],
+    kind: Literal["board", "marker"],
 ) -> None:
     for owner in owners:
         if owner.role != "student" or owner.id in existing_ids:
@@ -200,8 +200,8 @@ async def enforce_cap(
             count = await db.scalar(select(func.count()).select_from(Board).where(Board.owners.any(User.id == owner.id)))
             cap = STUDENT_MAX_BOARDS
         else:
-            count = await db.scalar(select(func.count()).select_from(Inuksuk).where(Inuksuk.owners.any(User.id == owner.id)))
-            cap = STUDENT_MAX_INUKSUKS
+            count = await db.scalar(select(func.count()).select_from(Marker).where(Marker.owners.any(User.id == owner.id)))
+            cap = STUDENT_MAX_MARKERS
         if count >= cap:
             raise HTTPException(422, f"Students may own at most {cap} {kind}s")
 
@@ -215,14 +215,14 @@ def validate_assignments(
 
 
 async def replace_assignments(
-    db: AsyncSession, ctx: BoardViewerContext, item: Inuksuk,
-    boards: dict[int, Board], links: list[BoardInuksuk],
+    db: AsyncSession, ctx: BoardViewerContext, item: Marker,
+    boards: dict[int, Board], links: list[BoardMarker],
     assignments: list[BoardAssignment],
 ) -> None:
     validate_assignments(ctx, boards, assignments)
     retained = [link for link in links if not can_edit_board(ctx.user, link.board)]
     if not retained and not assignments:
-        raise HTTPException(422, "An Inuksuk must belong to at least one Board")
+        raise HTTPException(422, "A Marker must belong to at least one Board")
     editable = {link.board_id: link for link in links if can_edit_board(ctx.user, link.board)}
     requested = {assignment.board_id for assignment in assignments}
     for board_id, link in editable.items():
@@ -232,9 +232,9 @@ async def replace_assignments(
         link = editable.get(assignment.board_id)
         if link is None:
             board = boards[assignment.board_id]
-            next_order = max((link.sort_order for link in board.inuksuk_links), default=-1) + 1
-            link = BoardInuksuk(
-                board_id=board.id, inuksuk_id=item.id, sort_order=next_order,
+            next_order = max((link.sort_order for link in board.marker_links), default=-1) + 1
+            link = BoardMarker(
+                board_id=board.id, marker_id=item.id, sort_order=next_order,
             )
             db.add(link)
         if assignment.sort_order is not None:
@@ -250,32 +250,32 @@ async def commit_write(
     logger.info(action, extra={"user_id": user.id, "resource_id": resource_id})
 
 
-def thumbnail_target(item: Inuksuk) -> tuple[Image, int]:
+def thumbnail_target(item: Marker) -> tuple[Image, int]:
     return Image(tile_sources=item.image.tile_sources), item.id
 
 
 async def cleanup_thumbnails(targets: Iterable[tuple[Image, int]]) -> None:
     for image, item_id in targets:
         try:
-            await asyncio.to_thread(remove_inuksuk_thumbnail, image, item_id)
+            await asyncio.to_thread(remove_marker_thumbnail, image, item_id)
         except Exception:
-            logger.exception("inuksuk.thumbnail_cleanup_failed", extra={"inuksuk_id": item_id})
+            logger.exception("marker.thumbnail_cleanup_failed", extra={"marker_id": item_id})
 
 
-async def delete_orphans(db: AsyncSession, items: list[Inuksuk]) -> list[tuple[Image, int]]:
+async def delete_orphans(db: AsyncSession, items: list[Marker]) -> list[tuple[Image, int]]:
     linked = set((await db.execute(
-        select(BoardInuksuk.inuksuk_id).where(BoardInuksuk.inuksuk_id.in_([item.id for item in items]))
+        select(BoardMarker.marker_id).where(BoardMarker.marker_id.in_([item.id for item in items]))
     )).scalars())
     orphans = [item for item in items if item.id not in linked]
     if orphans:
-        await bump_board_membership_versions(db, inuksuk_ids=[item.id for item in orphans])
-        await db.execute(delete(Inuksuk).where(Inuksuk.id.in_([item.id for item in orphans])))
+        await bump_board_membership_versions(db, marker_ids=[item.id for item in orphans])
+        await db.execute(delete(Marker).where(Marker.id.in_([item.id for item in orphans])))
     return [thumbnail_target(item) for item in orphans]
 
 
 async def regenerate_thumbnail(db: AsyncSession, item_id: int, version: int) -> None:
     try:
-        items = await lock_inuksuks(db, [item_id])
+        items = await lock_markers(db, [item_id])
         if not items or items[0].version != version:
             await db.rollback()
             return
@@ -283,16 +283,16 @@ async def regenerate_thumbnail(db: AsyncSession, item_id: int, version: int) -> 
         await cleanup_thumbnails([thumbnail_target(item)])
         try:
             path = await asyncio.to_thread(
-                generate_inuksuk_thumbnail, item.image, item.id,
+                generate_marker_thumbnail, item.image, item.id,
                 item.x, item.y, item.zoom, item.rotation,
             )
         except Exception:
             path = None
-            logger.exception("inuksuk.thumbnail_failed", extra={"inuksuk_id": item_id})
+            logger.exception("marker.thumbnail_failed", extra={"marker_id": item_id})
         if path is None:
-            logger.info("inuksuk.thumbnail_fallback", extra={"inuksuk_id": item_id})
+            logger.info("marker.thumbnail_fallback", extra={"marker_id": item_id})
         item.thumb = path
         await db.commit()
     except Exception:
         await db.rollback()
-        logger.exception("inuksuk.thumbnail_failed", extra={"inuksuk_id": item_id})
+        logger.exception("marker.thumbnail_failed", extra={"marker_id": item_id})

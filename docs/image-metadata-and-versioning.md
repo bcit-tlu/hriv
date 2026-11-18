@@ -157,10 +157,10 @@ updates it atomically with the source-image insert; both are part of the
 metadata snapshot, so a required-mode enqueue rejection restores the original
 values along with the rest of the metadata.
 
-Replacement deletes the image's `Inuksuk` rows in the same transaction as
+Replacement deletes the image's `Marker` rows in the same transaction as
 the geometry update; ownership rows and Board links cascade. Boards
 remain, but old coordinate bookmarks cannot survive a geometry
-replacement. The old image's `inuksuks/` thumbnail directory is removed only
+replacement. The old image's `markers/` thumbnail directory is removed only
 after the database commit succeeds. A failed replacement preserves the rows
 and old thumbnails.
 

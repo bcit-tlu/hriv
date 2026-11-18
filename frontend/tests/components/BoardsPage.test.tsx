@@ -32,12 +32,13 @@ vi.mock('../../src/api', async (importOriginal) => ({
   createCollection: vi.fn(),
   createBoard: vi.fn(),
   fetchBoard: vi.fn(),
-  fetchInuksuks: vi.fn(),
-  fetchInuksuk: vi.fn(),
-  updateInuksuk: vi.fn(),
+  fetchMarkers: vi.fn(),
+  fetchMarker: vi.fn(),
+  updateMarker: vi.fn(),
   deleteBoard: vi.fn(),
-  reorderBoardInuksuks: vi.fn(),
-  removeBoardInuksuk: vi.fn(),
+  reorderBoardMarkers: vi.fn(),
+  removeBoardMarker: vi.fn(),
+  fetchUsersPaged: vi.fn(),
 }))
 beforeEach(() => {
   vi.clearAllMocks()
@@ -46,19 +47,20 @@ beforeEach(() => {
   vi.mocked(api.fetchBoard).mockImplementation(
     async (id) => BOARDS_FIXTURES.find((board) => board.id === id) ?? BOARDS_FIXTURES[0],
   )
-  vi.mocked(api.fetchInuksuks).mockResolvedValue(BOARD_ITEMS)
-  vi.mocked(api.fetchInuksuk).mockResolvedValue(BOARD_ITEMS[0])
-  vi.mocked(api.updateInuksuk).mockResolvedValue(BOARD_ITEMS[0])
+  vi.mocked(api.fetchMarkers).mockResolvedValue(BOARD_ITEMS)
+  vi.mocked(api.fetchMarker).mockResolvedValue(BOARD_ITEMS[0])
+  vi.mocked(api.updateMarker).mockResolvedValue(BOARD_ITEMS[0])
   vi.mocked(api.deleteBoard).mockResolvedValue()
-  vi.mocked(api.reorderBoardInuksuks).mockResolvedValue(BOARDS_FIXTURES[0])
-  vi.mocked(api.removeBoardInuksuk).mockResolvedValue(BOARDS_FIXTURES[0])
+  vi.mocked(api.reorderBoardMarkers).mockResolvedValue(BOARDS_FIXTURES[0])
+  vi.mocked(api.removeBoardMarker).mockResolvedValue(BOARDS_FIXTURES[0])
+  vi.mocked(api.fetchUsersPaged).mockResolvedValue({ items: [], total: 0 })
 })
 async function setup(
   boardId: number | null = null,
   props: Partial<React.ComponentProps<typeof BoardsPage>> = {},
 ) {
   const onSelectBoard = vi.fn(),
-    onOpenInuksuk = vi.fn()
+    onOpenMarker = vi.fn()
   const view = render(
     <AuthContext.Provider value={BOARD_AUTH}>
       <BoardsPage
@@ -66,17 +68,17 @@ async function setup(
         currentUser={BOARD_USER}
         boardId={boardId}
         onSelectBoard={onSelectBoard}
-        onOpenInuksuk={onOpenInuksuk}
+        onOpenMarker={onOpenMarker}
         {...props}
       />
     </AuthContext.Provider>,
   )
   if (props.enabled !== false)
     await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument())
-  return { ...view, onSelectBoard, onOpenInuksuk, user: userEvent.setup() }
+  return { ...view, onSelectBoard, onOpenMarker, user: userEvent.setup() }
 }
 async function actions() {
-  fireEvent.click(await screen.findByRole('button', { name: 'Actions for Rose window' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit Marker: Rose window' }))
 }
 function dropOnBoard(boardId: number) {
   drag.end?.({
@@ -88,37 +90,291 @@ function dropOnBoard(boardId: number) {
   } as unknown as DragEndEvent)
 }
 describe('BoardsPage', () => {
-  it.each(['Boards', 'Inuksuks'])(
+  it('keeps outlined Select on the filter row in Cards and Table views', async () => {
+    await setup()
+    const filters = screen.getByRole('region', { name: 'Filter Boards and Markers' })
+    const select = within(filters).getByRole('button', { name: 'Select' })
+    expect(select).toHaveClass('MuiButton-outlined')
+    fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+    fireEvent.click(select)
+    expect(within(filters).getByRole('button', { name: 'Cancel selection' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getAllByRole('checkbox', { name: /^Select / })).toHaveLength(BOARD_ITEMS.length)
+    fireEvent.click(within(filters).getByRole('button', { name: 'Cancel selection' }))
+    expect(screen.queryByRole('checkbox', { name: /^Select / })).not.toBeInTheDocument()
+  })
+  it('sorts overview Cards and Table case-insensitively by title, then ID', async () => {
+    vi.mocked(api.fetchMarkers).mockResolvedValue([
+      { ...BOARD_ITEMS[0], title: 'zebra' },
+      { ...BOARD_ITEMS[2], title: 'Alpha' },
+      { ...BOARD_ITEMS[1], title: 'alpha' },
+    ])
+    await setup()
+    expect(
+      screen
+        .getAllByRole('button', { name: /^Open Marker:/ })
+        .map((el) => el.getAttribute('aria-label')?.replace('Open Marker: ', '')),
+    ).toEqual(['alpha', 'Alpha', 'zebra'])
+    fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+    expect(
+      within(screen.getByRole('table', { name: 'Markers' }))
+        .getAllByRole('row')
+        .slice(1)
+        .map((row) => within(row).getAllByRole('cell')[0].textContent),
+    ).toEqual(['alpha', 'Alpha', 'zebra'])
+  })
+  it('sorts across all overview pages, not just within each page', async () => {
+    vi.mocked(api.fetchMarkers).mockImplementation(async (params) => {
+      if (params?.board_id) return []
+      return params?.page === 1
+        ? Array.from({ length: 200 }, (_, i) => ({
+            ...BOARD_ITEMS[0],
+            id: i + 100,
+            title: `Zebra ${i}`,
+          }))
+        : [{ ...BOARD_ITEMS[1], title: 'Alpha from page two' }]
+    })
+    await setup()
+    const cards = screen.getAllByRole('button', { name: /^Open Marker:/ })
+    expect(cards).toHaveLength(201)
+    expect(cards[0]).toHaveAccessibleName('Open Marker: Alpha from page two')
+  })
+  it('keeps alphabetical order after favourite and membership updates', async () => {
+    await setup()
+    const titles = () =>
+      screen
+        .getAllByRole('button', { name: /^Open Marker:/ })
+        .map((el) => el.getAttribute('aria-label'))
+    const initial = titles()
+    vi.mocked(api.fetchMarkers).mockResolvedValue(
+      [...BOARD_ITEMS]
+        .reverse()
+        .map((item) => ({ ...item, favourite: true, updated_at: '2026-02-01T00:00:00Z' })),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite Stone columns' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Favourite Stone columns' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      ),
+    )
+    expect(titles()).toEqual(initial)
+    expect(
+      within(screen.getByRole('button', { name: 'Favourite Stone columns' })).getByTestId(
+        'StarIcon',
+      ),
+    ).toHaveStyle({ color: 'rgb(255, 255, 255)' })
+    dropOnBoard(3)
+    await screen.findByText('Saved to Next studio project')
+    expect(titles()).toEqual(initial)
+  })
+  it('places a renamed Marker at its new alphabetical position', async () => {
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Marker: Rose window' }))
+    const title = await screen.findByRole('textbox', { name: 'Title' })
+    fireEvent.change(title, { target: { value: 'A new first view' } })
+    vi.mocked(api.fetchMarkers).mockResolvedValue(
+      BOARD_ITEMS.map((item) => (item.id === 7 ? { ...item, title: 'A new first view' } : item)),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await screen.findByRole('button', { name: 'Open Marker: A new first view' })
+    expect(screen.getAllByRole('button', { name: /^Open Marker:/ })[0]).toHaveAccessibleName(
+      'Open Marker: A new first view',
+    )
+  })
+  it('uses a Board chip surface without a grip and still opens on click', async () => {
+    const { onSelectBoard } = await setup()
+    const chip = screen.getByRole('group', { name: 'Architecture inspiration' })
+    const row = screen.getByRole('region', { name: 'Boards' })
+    const chips = within(row).getAllByRole('group')
+    expect(Array.from(row.children).slice(1)).toEqual(chips)
+    expect(chip).toHaveStyle({ flex: '0 0 auto', maxWidth: '280px' })
+    expect(within(chip).queryByTestId('DragIndicatorIcon')).not.toBeInTheDocument()
+    fireEvent.click(
+      within(chip).getByRole('button', { name: 'Open Board: Architecture inspiration' }),
+    )
+    expect(onSelectBoard).toHaveBeenCalledWith(1)
+  })
+  it('orders discovery, chip Boards, My Markers and the filter bar like Collections', async () => {
+    await setup()
+    const pageTitle = screen.getByRole('heading', { name: 'My Boards', level: 1 })
+    const link = screen.getByRole('button', { name: 'Public & shared Boards' })
+    expect(pageTitle.parentElement).toBe(link.parentElement?.parentElement)
+    expect(link.parentElement).toHaveStyle({ justifyContent: 'flex-end' })
+    expect(pageTitle).toHaveClass('MuiTypography-h5')
+    expect(pageTitle.parentElement).toHaveStyle({
+      display: 'flex',
+      justifyContent: 'space-between',
+    })
+    expect(link).toHaveClass('MuiButton-outlined')
+    expect(pageTitle.parentElement?.parentElement).not.toHaveStyle({ padding: '24px' })
+    const boards = screen.getByRole('region', { name: 'Boards' })
+    const heading = screen.getByRole('heading', { name: 'My Markers' })
+    const filters = screen.getByRole('region', { name: 'Filter Boards and Markers' })
+    expect(link.compareDocumentPosition(boards) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(boards.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(heading.compareDocumentPosition(filters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Graph view' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Drag Rose window' })).not.toBeInTheDocument()
+    const card = screen
+      .getByRole('button', { name: 'Open Marker: Rose window' })
+      .closest('[data-testid="marker-card"]')!
+    expect(card).not.toHaveStyle({ minHeight: '235px' })
+    expect(card.parentElement?.parentElement).toHaveStyle({
+      gridTemplateColumns: 'repeat(auto-fill, 234px)',
+    })
+    expect(card.querySelector('img')).toHaveStyle({ height: '96px' })
+    expect(within(card).getByTestId('collection-visibility-chip')).toHaveTextContent('Private')
+    expect(within(card).getByTestId('StarIcon')).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Edit Marker: Rose window' })).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Actions for Rose window' }),
+    ).not.toBeInTheDocument()
+  })
+  it('offers equivalent table columns and preserves actions and filters across view changes', async () => {
+    const view = await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+    const table = within(screen.getByRole('table', { name: 'Markers' }))
+    expect(table.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
+      'Title',
+      'Category',
+      'Scope',
+      'Boards',
+      'Favourite',
+      'Actions',
+    ])
+    const row = within(table.getByText('Rose window').closest('tr')!)
+    expect(row.queryByRole('button', { name: 'Rose window' })).not.toBeInTheDocument()
+    expect(row.getByText('Architectural details')).toBeVisible()
+    expect(row.getByText('Private')).toBeVisible()
+    fireEvent.click(row.getByRole('button', { name: 'Architecture inspiration' }))
+    expect(view.onSelectBoard).toHaveBeenCalledWith(1)
+    expect(view.onOpenMarker).not.toHaveBeenCalled()
+    fireEvent.click(row.getByText('Architectural details'))
+    expect(view.onOpenMarker).toHaveBeenCalledWith(BOARD_ITEMS[0])
+    view.onOpenMarker.mockClear()
+    fireEvent.click(row.getByRole('button', { name: 'Favourite Rose window' }))
+    await waitFor(() =>
+      expect(api.updateMarker).toHaveBeenCalledWith(7, { version: 3, favourite: false }),
+    )
+    expect(view.onOpenMarker).not.toHaveBeenCalled()
+    fireEvent.click(row.getByRole('button', { name: 'Move/Save Rose window to Board' }))
+    expect(view.onOpenMarker).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(row.getByRole('button', { name: 'Edit Marker: Rose window' }))
+    expect(view.onOpenMarker).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(table.getByText('Uncategorized')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Title' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Filter Boards and Markers by title' }), {
+      target: { value: 'No such view' },
+    })
+    expect(screen.getByText('No matching Markers.')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Cards view' }))
+    expect(screen.queryByTestId('marker-card')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(screen.getAllByTestId('marker-card')).toHaveLength(BOARD_ITEMS.length)
+  })
+  it('opens focused table rows with Enter or Space but ignores nested controls', async () => {
+    const view = await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+    const row = within(screen.getByRole('table')).getByText('Rose window').closest('tr')!
+    expect(row).toHaveAttribute('tabindex', '0')
+    row.focus()
+    expect(row).toHaveFocus()
+    await view.user.keyboard('{Enter} ')
+    expect(view.onOpenMarker).toHaveBeenCalledTimes(2)
+    expect(view.onOpenMarker).toHaveBeenLastCalledWith(BOARD_ITEMS[0])
+    view.onOpenMarker.mockClear()
+    await view.user.keyboard('{Escape}')
+    for (const key of ['Enter', ' ']) {
+      fireEvent.keyDown(within(row).getByRole('button', { name: 'Favourite Rose window' }), { key })
+    }
+    expect(view.onOpenMarker).not.toHaveBeenCalled()
+  })
+  it('keeps move, edit and delete reachable without a Marker overflow menu', async () => {
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Move/Save Rose window to Board' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Save “Rose window” to…')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Marker: Rose window' }))
+    expect(await screen.findByRole('button', { name: 'Delete' })).toBeVisible()
+    expect(screen.getByRole('textbox', { name: 'Title' })).toBeVisible()
+  })
+  it.each([
+    ['Cards', true],
+    ['Cards', false],
+    ['Table', true],
+    ['Table', false],
+  ] as const)(
+    'hides read-only favourite controls in %s with favourite=%s',
+    async (view, favourite) => {
+      vi.mocked(api.fetchMarkers).mockResolvedValue([
+        { ...BOARD_ITEMS[0], favourite, permissions: { can_edit: false, can_delete: false } },
+      ])
+      await setup()
+      fireEvent.click(screen.getByRole('button', { name: `${view} view` }))
+      expect(
+        screen.queryByRole('button', { name: 'Favourite Rose window' }),
+      ).not.toBeInTheDocument()
+      const indicator = screen.queryByRole('img', { name: 'Favourite Rose window' })
+      if (favourite) {
+        expect(indicator).toBeVisible()
+        expect(indicator!.querySelector('svg')).toHaveStyle({ color: 'rgb(255, 255, 255)' })
+      } else expect(indicator).not.toBeInTheDocument()
+      expect(api.updateMarker).not.toHaveBeenCalled()
+    },
+  )
+  it.each(['Cards', 'Table'])('uses a white filled favourite star in %s', async (view) => {
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: `${view} view` }))
+    const toggle = screen.getByRole('button', { name: 'Favourite Rose window' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(within(toggle).getByTestId('StarIcon')).toHaveStyle({ color: 'rgb(255, 255, 255)' })
+  })
+  it('retains table rows and exposes errors when a favourite mutation fails', async () => {
+    vi.mocked(api.updateMarker).mockRejectedValue(
+      new api.ApiError(422, 'Unable to update favourite'),
+    )
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite Rose window' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to update favourite')
+    expect(within(screen.getByRole('table')).getByText('Rose window')).toBeVisible()
+  })
+  it.each(['Boards', 'Markers'])(
     'shows an initial %s load error instead of the empty state and allows retry',
     async (source) => {
-      const fetch = source === 'Boards' ? vi.mocked(api.fetchBoards) : vi.mocked(api.fetchInuksuks)
+      const fetch = source === 'Boards' ? vi.mocked(api.fetchBoards) : vi.mocked(api.fetchMarkers)
       fetch.mockRejectedValueOnce(new api.ApiError(422, 'Overview unavailable'))
       await setup()
       expect(screen.getByRole('alert')).toHaveTextContent('Overview unavailable')
-      expect(screen.queryByText(/No Inuksuks yet/)).not.toBeInTheDocument()
+      expect(screen.queryByText(/No Markers yet/)).not.toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: 'Reload latest' }))
-      await screen.findByRole('button', { name: 'Open Inuksuk: Rose window' })
+      await screen.findByRole('button', { name: 'Open Marker: Rose window' })
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     },
   )
   it('retains the loaded collage and covers when a silent refresh fails and allows retry', async () => {
     await setup()
-    const card = screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })
+    const card = screen.getByRole('button', { name: 'Open Marker: Rose window' })
     const cover = screen.getByRole('button', { name: 'Open Board: Architecture inspiration' })
     vi.mocked(api.fetchBoards).mockRejectedValueOnce(new api.ApiError(422, 'Overview unavailable'))
     fireEvent.click(screen.getByRole('button', { name: 'Favourite Rose window' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Overview unavailable')
-    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBe(card)
+    expect(screen.getByRole('button', { name: 'Open Marker: Rose window' })).toBe(card)
     expect(screen.getByRole('button', { name: 'Open Board: Architecture inspiration' })).toBe(cover)
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
-    expect(screen.queryByText(/No Inuksuks yet/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/No Markers yet/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Reload latest' }))
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
-    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBe(card)
+    expect(screen.getByRole('button', { name: 'Open Marker: Rose window' })).toBe(card)
   })
   it('keeps collage nodes mounted throughout a drag-save and silent refresh', async () => {
     const { container } = await setup()
-    const card = screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })
+    const card = screen.getByRole('button', { name: 'Open Marker: Rose window' })
     let removed = false
     let loading = false
     const observer = new MutationObserver((records) => {
@@ -133,21 +389,20 @@ describe('BoardsPage', () => {
     observer.disconnect()
     expect(removed).toBe(false)
     expect(loading).toBe(false)
-    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBe(card)
+    expect(screen.getByRole('button', { name: 'Open Marker: Rose window' })).toBe(card)
     expect(api.fetchBoards).toHaveBeenCalledTimes(2)
-    expect(api.fetchInuksuks).toHaveBeenCalledTimes(5)
+    expect(api.fetchMarkers).toHaveBeenCalledTimes(4)
   })
-  it('does not reload or remount the collage for Inuksuk editing, Board creation or Board navigation', async () => {
+  it('does not reload or remount the collage for Marker editing, Board creation or Board navigation', async () => {
     const view = await setup()
-    const card = screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })
+    const card = screen.getByRole('button', { name: 'Open Marker: Rose window' })
     const cover = screen.getByRole('button', { name: 'Open Board: Architecture inspiration' })
     await actions()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit Inuksuk' }))
     await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument())
     expect(card.isConnected).toBe(true)
     expect(cover.isConnected).toBe(true)
     expect(api.fetchBoards).toHaveBeenCalledTimes(2) // overview and the form's Board picker
-    expect(api.fetchInuksuks).toHaveBeenCalledTimes(4) // overview and three Board covers
+    expect(api.fetchMarkers).toHaveBeenCalledTimes(3) // overview and two owned Board covers
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     fireEvent.click(screen.getByRole('button', { name: 'New Board' }))
     expect(card.isConnected).toBe(true)
@@ -164,7 +419,7 @@ describe('BoardsPage', () => {
           currentUser={BOARD_USER}
           boardId={3}
           onSelectBoard={view.onSelectBoard}
-          onOpenInuksuk={view.onOpenInuksuk}
+          onOpenMarker={view.onOpenMarker}
         />
       </AuthContext.Provider>,
     )
@@ -173,7 +428,7 @@ describe('BoardsPage', () => {
     expect(cover.isConnected).toBe(true)
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
     expect(api.fetchBoards).toHaveBeenCalledTimes(2)
-    expect(api.fetchInuksuks).toHaveBeenCalledTimes(4)
+    expect(api.fetchMarkers).toHaveBeenCalledTimes(3)
   })
   it('filters both surfaces by title and restores them with Clear filters', async () => {
     vi.mocked(api.fetchBoards).mockResolvedValue([
@@ -182,23 +437,23 @@ describe('BoardsPage', () => {
     ])
     await setup()
     fireEvent.click(screen.getByRole('button', { name: 'Title' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Filter Boards and Inuksuks by title' }), {
+    fireEvent.change(screen.getByRole('textbox', { name: 'Filter Boards and Markers by title' }), {
       target: { value: 'Rose' },
     })
     expect(screen.getByRole('button', { name: 'Open Board: Rose studies' })).toBeVisible()
     expect(
       screen.queryByRole('button', { name: 'Open Board: Next studio project' }),
     ).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Open Marker: Rose window' })).toBeVisible()
     expect(
-      screen.queryByRole('button', { name: 'Open Inuksuk: Stone columns' }),
+      screen.queryByRole('button', { name: 'Open Marker: Stone columns' }),
     ).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
-    expect(screen.getByRole('button', { name: 'Open Inuksuk: Stone columns' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Open Marker: Stone columns' })).toBeVisible()
   })
-  it('offers deduplicated Board and Inuksuk owners, including owners with no visible Board', async () => {
+  it('offers deduplicated Board and Marker owners, including owners with no visible Board', async () => {
     const guestOwner = { user_id: 88, program_id: null, name: 'Taylor', role: 'student' as const }
-    vi.mocked(api.fetchInuksuks).mockResolvedValue([
+    vi.mocked(api.fetchMarkers).mockResolvedValue([
       { ...BOARD_ITEMS[0], owners: [guestOwner], board_ids: [2] },
       BOARD_ITEMS[1],
       { ...BOARD_ITEMS[2], owners: [guestOwner], board_ids: [2] },
@@ -213,31 +468,30 @@ describe('BoardsPage', () => {
       'Taylor',
     ])
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'Taylor' }))
-    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBeVisible()
-    expect(
-      screen.queryByRole('button', { name: 'Open Inuksuk: Stone columns' }),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Open Marker:/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Open Board:/ })).not.toBeInTheDocument()
   })
-  it('uses visible Board memberships for scope, including multiple scopes on one Inuksuk', async () => {
-    vi.mocked(api.fetchInuksuks).mockResolvedValue([
+  it('uses visible Board memberships for scope, including multiple scopes on one Marker', async () => {
+    vi.mocked(api.fetchMarkers).mockResolvedValue([
       { ...BOARD_ITEMS[0], board_ids: [1, 2] },
       { ...BOARD_ITEMS[1], board_ids: [1] },
     ])
     await setup()
     fireEvent.click(screen.getByRole('button', { name: 'Scope' }))
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Public' }))
-    expect(screen.getByRole('button', { name: 'Open Board: Shared discoveries' })).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Open Board: Shared discoveries' }),
+    ).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Open Board: Architecture inspiration' }),
     ).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Open Marker: Rose window' })).toBeVisible()
     expect(
-      screen.queryByRole('button', { name: 'Open Inuksuk: Stone columns' }),
+      screen.queryByRole('button', { name: 'Open Marker: Stone columns' }),
     ).not.toBeInTheDocument()
   })
   it('shows the image category below the title, with a fallback for uncategorized images', async () => {
-    vi.mocked(api.fetchInuksuks).mockResolvedValue([
+    vi.mocked(api.fetchMarkers).mockResolvedValue([
       { ...BOARD_ITEMS[0], category_name: 'Architecture' },
       { ...BOARD_ITEMS[1], category_name: null },
     ])
@@ -248,8 +502,10 @@ describe('BoardsPage', () => {
   it('opens Board details in a dialog with fixed heading controls and a close action', async () => {
     const view = await setup(1)
     const dialog = screen.getByRole('dialog', { name: 'Architecture inspiration' })
-    expect(within(dialog).getByText('Private', { exact: true })).toBeVisible()
-    expect(within(dialog).getByText('6 Inuksuks')).toBeVisible()
+    expect(
+      within(dialog.querySelector('#board-heading')!).getByText('Private', { exact: true }),
+    ).toBeVisible()
+    expect(within(dialog).getByText('(6 Markers)')).toBeVisible()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close Board' }))
     expect(view.onSelectBoard).toHaveBeenCalledWith(null)
   })
@@ -257,7 +513,7 @@ describe('BoardsPage', () => {
     await setup()
     dropOnBoard(3)
     await waitFor(() =>
-      expect(api.updateInuksuk).toHaveBeenCalledWith(7, {
+      expect(api.updateMarker).toHaveBeenCalledWith(7, {
         version: 3,
         board_assignments: [
           { board_id: 1, sort_order: BOARD_ITEMS[0].sort_order },
@@ -266,15 +522,91 @@ describe('BoardsPage', () => {
       }),
     )
     expect(await screen.findByText('Saved to Next studio project')).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveClass('MuiAlert-filledSuccess')
+    expect(screen.getByRole('alert').parentElement).toHaveClass(
+      'MuiSnackbar-anchorOriginBottomCenter',
+    )
   })
-  it('ignores read-only targets and already-linked targets', async () => {
+  it.each([
+    [2, "You can't add Markers to Shared discoveries"],
+    [1, 'Already in Architecture inspiration'],
+    [999, 'This Board is no longer available. Reload before saving.'],
+  ] as const)('explains a rejected drop on Board %s without writing', async (id, message) => {
     await setup()
-    dropOnBoard(2)
-    dropOnBoard(1)
-    expect(api.updateInuksuk).not.toHaveBeenCalled()
+    dropOnBoard(id)
+    expect(await screen.findByText(message)).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveClass(
+      id === 1 ? 'MuiAlert-filledInfo' : 'MuiAlert-filledWarning',
+    )
+    expect(screen.getByRole('alert').parentElement).toHaveClass(
+      'MuiSnackbar-anchorOriginBottomCenter',
+    )
+    expect(api.updateMarker).not.toHaveBeenCalled()
+  })
+  it('explains when the dropped Marker cannot be edited', async () => {
+    vi.mocked(api.fetchMarkers).mockResolvedValue([
+      { ...BOARD_ITEMS[0], permissions: { can_edit: false, can_delete: false } },
+    ])
+    await setup()
+    dropOnBoard(3)
+    expect(
+      await screen.findByText("You can't add this Marker to Next studio project"),
+    ).toBeVisible()
+    expect(api.updateMarker).not.toHaveBeenCalled()
+  })
+  it('explains when the dropped Marker is no longer available', async () => {
+    vi.mocked(api.fetchMarkers).mockResolvedValue([])
+    await setup()
+    dropOnBoard(3)
+    expect(
+      await screen.findByText('This Marker is no longer available. Reload before saving.'),
+    ).toBeVisible()
+    expect(api.updateMarker).not.toHaveBeenCalled()
+  })
+  it('does not show a rejection or write for a cancelled drop', async () => {
+    await setup()
+    drag.end?.({
+      canceled: true,
+      operation: { source: { id: 'item:7', type: 'board-member' }, target: { id: 'save:1' } },
+    } as unknown as DragEndEvent)
+    expect(screen.queryByText('Already in Architecture inspiration')).not.toBeInTheDocument()
+    expect(api.updateMarker).not.toHaveBeenCalled()
+  })
+  it('explains rejection while another mutation is pending', async () => {
+    vi.mocked(api.updateMarker).mockReturnValue(new Promise(() => {}))
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite Rose window' }))
+    dropOnBoard(3)
+    expect(await screen.findByText('Wait for the current change to finish.')).toBeVisible()
+    expect(api.updateMarker).toHaveBeenCalledTimes(1)
+  })
+  it('explains rejection after a conflict', async () => {
+    vi.mocked(api.updateMarker).mockRejectedValue(new api.ApiError(409, 'Conflict'))
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite Rose window' }))
+    await screen.findByRole('alert')
+    dropOnBoard(3)
+    expect(await screen.findByText('Reload latest changes before dropping Markers.')).toBeVisible()
+    expect(api.updateMarker).toHaveBeenCalledTimes(1)
+  })
+  it('explains rejected reorder in a read-only opened Board', async () => {
+    vi.mocked(api.fetchBoard).mockResolvedValue({
+      ...BOARDS_FIXTURES[0],
+      permissions: { ...BOARDS_FIXTURES[0].permissions, can_edit: false },
+    })
+    await setup(1)
+    await screen.findByRole('button', { name: 'Open Marker: Rose window' })
+    drag.end?.({
+      canceled: false,
+      operation: { source: { id: 'item:7', type: 'board-member' }, target: { id: 'item:8' } },
+    } as unknown as DragEndEvent)
+    expect(
+      await screen.findByText("You can't reorder Markers in Architecture inspiration"),
+    ).toBeVisible()
+    expect(api.reorderBoardMarkers).not.toHaveBeenCalled()
   })
   it('reports a failed drag-save without a success snackbar', async () => {
-    vi.mocked(api.updateInuksuk).mockRejectedValue(new api.ApiError(422, 'Cannot save this view'))
+    vi.mocked(api.updateMarker).mockRejectedValue(new api.ApiError(422, 'Cannot save this view'))
     await setup()
     dropOnBoard(3)
     expect(await screen.findByRole('alert')).toHaveTextContent('Cannot save this view')
@@ -282,14 +614,14 @@ describe('BoardsPage', () => {
   })
   it('discards Board-local dialogs and late mutation reloads after navigating to another Board', async () => {
     let finish: (item: (typeof BOARD_ITEMS)[0]) => void = () => {}
-    vi.mocked(api.updateInuksuk).mockReturnValueOnce(
+    vi.mocked(api.updateMarker).mockReturnValueOnce(
       new Promise((resolve) => {
         finish = resolve
       }),
     )
     const view = await setup(1)
     fireEvent.click(screen.getByRole('button', { name: 'Favourite Rose window' }))
-    await waitFor(() => expect(api.updateInuksuk).toHaveBeenCalled())
+    await waitFor(() => expect(api.updateMarker).toHaveBeenCalled())
     view.rerender(
       <AuthContext.Provider value={BOARD_AUTH}>
         <BoardsPage
@@ -297,7 +629,7 @@ describe('BoardsPage', () => {
           currentUser={BOARD_USER}
           boardId={3}
           onSelectBoard={view.onSelectBoard}
-          onOpenInuksuk={view.onOpenInuksuk}
+          onOpenMarker={view.onOpenMarker}
         />
       </AuthContext.Provider>,
     )
@@ -307,7 +639,7 @@ describe('BoardsPage', () => {
     expect(screen.getByRole('dialog', { name: 'Next studio project' })).toBeVisible()
     expect(api.fetchBoard).toHaveBeenLastCalledWith(3)
   })
-  it('includes read-only and shared Boards in one compact row with New Board first', async () => {
+  it('includes read-only owned Boards in the compact row with New Board first', async () => {
     const readOnly = {
       ...BOARDS_FIXTURES[1],
       owners: [],
@@ -318,15 +650,15 @@ describe('BoardsPage', () => {
     await setup(null, { currentUser: { ...BOARD_USER, role: 'student' } })
     const row = screen.getByRole('region', { name: 'Boards' })
     expect(within(row).getAllByRole('button')[0]).toHaveAccessibleName('New Board')
-    expect(within(row).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(3)
+    expect(within(row).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(1)
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: `Reorder ${readOnly.name}` }),
     ).not.toBeInTheDocument()
   })
 
-  it.each(['student', 'staff'] as const)(
-    'keeps read-only program-owned Boards visible but not draggable for %s',
+  it.each(['student', 'staff', 'instructor', 'admin'] as const)(
+    'puts read-only program-owned Boards in discovery rather than chips for %s',
     async (role) => {
       const readOnly = {
         ...BOARDS_FIXTURES[1],
@@ -335,54 +667,217 @@ describe('BoardsPage', () => {
         permissions: { ...BOARDS_FIXTURES[1].permissions, can_edit: false },
       }
       vi.mocked(api.fetchBoards).mockResolvedValue([BOARDS_FIXTURES[0], readOnly])
-      await setup(null, { currentUser: { ...BOARD_USER, role } })
-      expect(screen.getByRole('button', { name: `Open Board: ${readOnly.name}` })).toBeVisible()
+      const view = await setup(null, { currentUser: { ...BOARD_USER, role } })
+      const row = screen.getByRole('region', { name: 'Boards' })
+      expect(
+        within(row).queryByRole('button', { name: `Open Board: ${readOnly.name}` }),
+      ).not.toBeInTheDocument()
       expect(
         screen.queryByRole('button', { name: `Reorder ${readOnly.name}` }),
       ).not.toBeInTheDocument()
-      expect(
-        screen.getByRole('button', { name: `Reorder ${BOARDS_FIXTURES[0].name}` }),
-      ).toBeVisible()
+      expect(screen.getByRole('group', { name: BOARDS_FIXTURES[0].name })).toBeVisible()
+      fireEvent.click(screen.getByRole('button', { name: 'Public & shared Boards' }))
+      const dialog = await screen.findByRole('dialog', { name: 'Public & shared Boards' })
+      fireEvent.click(within(dialog).getByRole('button', { name: `Open Board: ${readOnly.name}` }))
+      expect(view.onSelectBoard).toHaveBeenCalledWith(readOnly.id)
     },
   )
-  it('renews an Inuksuk thumbnail via its own endpoint, not the image id', async () => {
-    vi.mocked(api.fetchInuksuk).mockResolvedValue({ ...BOARD_ITEMS[0], thumb: '/renewed.jpg' })
+  it('puts a directly owned read-only Board in discovery when no editable chips remain', async () => {
+    const readOnly = {
+      ...BOARDS_FIXTURES[0],
+      permissions: { ...BOARDS_FIXTURES[0].permissions, can_edit: false },
+    }
+    vi.mocked(api.fetchBoards).mockResolvedValue([readOnly])
     await setup()
-    const card = screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })
+    expect(
+      within(screen.getByRole('region', { name: 'Boards' })).queryByRole('button', {
+        name: /^Open Board:/,
+      }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'New Board' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Public & shared Boards' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Public & shared Boards' })
+    expect(
+      within(dialog).getByRole('button', { name: `Open Board: ${readOnly.name}` }),
+    ).toBeVisible()
+  })
+  it('renews a Marker thumbnail via its own endpoint, not the image id', async () => {
+    vi.mocked(api.fetchMarker).mockResolvedValue({ ...BOARD_ITEMS[0], thumb: '/renewed.jpg' })
+    await setup()
+    const card = screen.getByRole('button', { name: 'Open Marker: Rose window' })
     const image = card.querySelector('img')
     expect(image).not.toBeNull()
     if (image) {
       fireEvent.error(image)
       await waitFor(() => expect(image).toHaveAttribute('src', '/renewed.jpg'))
     }
-    expect(api.fetchInuksuk).toHaveBeenCalledWith(7)
+    expect(api.fetchMarker).toHaveBeenCalledWith(7)
   })
   it('makes no requests and renders nothing with the flag off', async () => {
     const view = await setup(null, { enabled: false })
     expect(view.container).toBeEmptyDOMElement()
     expect(api.fetchBoards).not.toHaveBeenCalled()
   })
-  it('shows all visible Boards, a New Board tab and saved views', async () => {
+  it('shows owned Boards, a New Board tab and owned saved views', async () => {
     const view = await setup()
     expect(
       screen.getByRole('button', { name: 'Open Board: Architecture inspiration' }),
     ).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Open Board: Shared discoveries' })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' }))
-    expect(view.onOpenInuksuk).toHaveBeenCalledWith(BOARD_ITEMS[0])
+    expect(
+      screen.queryByRole('button', { name: 'Open Board: Shared discoveries' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'My Boards' })).toHaveClass('MuiTypography-h5')
+    fireEvent.click(screen.getByRole('button', { name: 'Open Marker: Rose window' }))
+    expect(view.onOpenMarker).toHaveBeenCalledWith(BOARD_ITEMS[0])
     fireEvent.click(screen.getByRole('button', { name: 'New Board' }))
     expect(screen.getByRole('dialog')).toHaveTextContent('New Board')
   })
-  it('opens a Board without hiding shared Boards or granting them drag handles', async () => {
+  it('lists others’ Boards in a separate dialog and opens the existing Board route', async () => {
     const view = await setup()
-    fireEvent.click(screen.getByRole('button', { name: 'Open Board: Architecture inspiration' }))
-    expect(view.onSelectBoard).toHaveBeenCalledWith(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Public & shared Boards' }))
+    const dialog = screen.getByRole('dialog', { name: 'Public & shared Boards' })
+    expect(
+      within(dialog).queryByRole('button', { name: 'Open Board: Architecture inspiration' }),
+    ).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open Board: Shared discoveries' })).toBeVisible()
     expect(
       screen.queryByRole('button', { name: 'Reorder Shared discoveries' }),
     ).not.toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open Board: Shared discoveries' }))
+    expect(view.onSelectBoard).toHaveBeenCalledWith(2)
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
-  it('filters favourites on the server and toggles them with the Inuksuk version', async () => {
+  it.each(['admin', 'instructor', 'staff', 'student'] as const)(
+    'scopes discovery for %s while rendering scope and manager metadata',
+    async (role) => {
+      const privateBoard = {
+        ...BOARDS_FIXTURES[2],
+        id: 20,
+        name: 'Morgan private Board',
+        visibility: 'private' as const,
+      }
+      const restrictedBoard = {
+        ...BOARDS_FIXTURES[2],
+        id: 21,
+        name: 'Studio Board',
+        visibility: 'restricted' as const,
+        program_ids: [1],
+        group_ids: [1],
+      }
+      const programBoard = {
+        ...BOARDS_FIXTURES[0],
+        id: 22,
+        name: 'Design program Board',
+        owner_program_id: 1,
+        owners: [{ user_id: null, program_id: 1, name: 'Design', role: null }],
+        permissions: { ...BOARDS_FIXTURES[0].permissions, can_edit: false },
+      }
+      const orphanBoard = { ...BOARDS_FIXTURES[2], id: 23, name: 'Orphan Board', owners: [] }
+      const coOwnedBoard = {
+        ...privateBoard,
+        id: 24,
+        name: 'Co-owned Board',
+        owners: [...privateBoard.owners, ...BOARDS_FIXTURES[0].owners],
+      }
+      const boards = [
+        BOARDS_FIXTURES[0],
+        BOARDS_FIXTURES[2],
+        privateBoard,
+        restrictedBoard,
+        programBoard,
+        orphanBoard,
+        coOwnedBoard,
+      ]
+      vi.mocked(api.fetchBoards).mockResolvedValue(boards)
+      const view = await setup(null, { currentUser: { ...BOARD_USER, role } })
+      const allButton = screen.queryByRole('button', { name: 'All Boards' })
+      expect(allButton != null).toBe(role !== 'student')
+      fireEvent.click(screen.getByRole('button', { name: 'Public & shared Boards' }))
+      const shared = screen.getByRole('dialog', { name: 'Public & shared Boards' })
+      expect(
+        within(shared).queryByRole('button', { name: `Open Board: ${privateBoard.name}` }),
+      ).not.toBeInTheDocument()
+      expect(
+        within(shared).queryByRole('button', { name: `Open Board: ${BOARDS_FIXTURES[0].name}` }),
+      ).not.toBeInTheDocument()
+      const publicTile = within(shared).getByRole('button', {
+        name: 'Open Board: Shared discoveries',
+      })
+      expect(within(publicTile).getByRole('heading', { name: 'Shared discoveries' })).toBeVisible()
+      expect(within(publicTile).getByText('Managed by Morgan')).toBeVisible()
+      expect(within(publicTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
+        'Public',
+      )
+      const restrictedTile = within(shared).getByRole('button', {
+        name: `Open Board: ${restrictedBoard.name}`,
+      })
+      expect(within(restrictedTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
+        'Restricted',
+      )
+      expect(within(shared).getByText('Managed by program Design')).toBeVisible()
+      expect(within(shared).getByText('No owner')).toBeVisible()
+      expect(within(shared).getByText('Managed by Morgan, Alex')).toBeVisible()
+      fireEvent.click(within(shared).getByRole('button', { name: 'Close' }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      if (allButton) {
+        expect(allButton).toHaveClass('MuiButton-outlined')
+        fireEvent.click(allButton)
+        const all = screen.getByRole('dialog', { name: 'All Boards' })
+        expect(within(all).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(
+          boards.length,
+        )
+        const privateTile = within(all).getByRole('button', {
+          name: `Open Board: ${privateBoard.name}`,
+        })
+        expect(within(privateTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
+          'Private',
+        )
+        expect(within(privateTile).getByText('Managed by Morgan')).toBeVisible()
+        fireEvent.click(privateTile)
+        expect(view.onSelectBoard).toHaveBeenCalledWith(privateBoard.id)
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      }
+    },
+  )
+  it('shows an empty All Boards dialog', async () => {
+    vi.mocked(api.fetchBoards).mockResolvedValue([])
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'All Boards' }))
+    expect(
+      within(screen.getByRole('dialog', { name: 'All Boards' })).getByText('No Boards available.'),
+    ).toBeVisible()
+  })
+  it('shows an empty public/shared dialog and closes without navigation', async () => {
+    vi.mocked(api.fetchBoards).mockResolvedValue([BOARDS_FIXTURES[0]])
+    const view = await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Public & shared Boards' }))
+    expect(screen.getByText('No public or shared Boards available.')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(view.onSelectBoard).not.toHaveBeenCalled()
+  })
+  it.each(['Public & shared Boards', 'All Boards'])(
+    'shows overview read errors rather than an empty %s list',
+    async (name) => {
+      vi.mocked(api.fetchBoards).mockRejectedValue(new api.ApiError(503, 'Unavailable'))
+      await setup()
+      fireEvent.click(screen.getByRole('button', { name }))
+      expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent(
+        'Unable to load Boards.',
+      )
+    },
+  )
+  it('excludes non-owned Markers even when their Board is owned', async () => {
+    vi.mocked(api.fetchMarkers).mockResolvedValue([
+      BOARD_ITEMS[0],
+      { ...BOARD_ITEMS[1], owners: BOARDS_FIXTURES[2].owners },
+    ])
+    await setup()
+    expect(screen.getByRole('button', { name: 'Open Marker: Rose window' })).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Open Marker: Stone columns' }),
+    ).not.toBeInTheDocument()
+  })
+  it('filters favourites on the server and toggles them with the Marker version', async () => {
     await setup()
     fireEvent.click(screen.getByRole('button', { name: 'Favourite' }))
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'Favourites only' }))
@@ -390,19 +885,66 @@ describe('BoardsPage', () => {
       key: 'Escape',
     })
     await waitFor(() =>
-      expect(api.fetchInuksuks).toHaveBeenCalledWith(expect.objectContaining({ favourite: true })),
+      expect(api.fetchMarkers).toHaveBeenCalledWith(expect.objectContaining({ favourite: true })),
     )
     fireEvent.click(await screen.findByRole('button', { name: 'Favourite Rose window' }))
     await waitFor(() =>
-      expect(api.updateInuksuk).toHaveBeenCalledWith(7, { version: 3, favourite: false }),
+      expect(api.updateMarker).toHaveBeenCalledWith(7, { version: 3, favourite: false }),
     )
   })
 
+  it('uses Collection scope and owner controls without a Board overflow menu', async () => {
+    vi.mocked(api.fetchBoard).mockResolvedValue({
+      ...BOARDS_FIXTURES[0],
+      permissions: { ...BOARDS_FIXTURES[0].permissions, can_transfer: true },
+      owners: [
+        ...BOARDS_FIXTURES[0].owners,
+        { user_id: 77, program_id: null, name: 'Morgan', role: 'instructor' },
+      ],
+    })
+    await setup(1)
+    const dialog = screen.getByRole('dialog', { name: 'Architecture inspiration' })
+    const scope = within(
+      within(dialog).getByRole('group', { name: 'Board scope and owners' }),
+    ).getByTestId('collection-visibility-chip')
+    expect(scope).toHaveTextContent('Private')
+    expect(scope.querySelector('svg')).not.toBeNull()
+    expect(scope.parentElement).toHaveTextContent('Managed by Alex, Morgan')
+    expect(screen.queryByRole('button', { name: 'Board options' })).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Delete Board' })).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('heading', { name: 'Architecture inspiration' })).toHaveClass(
+      'MuiTypography-h6',
+    )
+    expect(within(dialog).getByText('(6 Markers)')).toHaveClass('MuiTypography-body2')
+    const sequence = within(dialog).getByRole('button', { name: 'Create Collection' })
+    expect(sequence).toHaveClass('MuiButton-outlined')
+    expect(sequence.nextElementSibling).toBe(
+      within(dialog).getByRole('button', { name: 'Close Board' }),
+    )
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Manage owners' }))
+    expect(await screen.findByRole('dialog', { name: 'Owners' })).toBeVisible()
+  })
+  it('disables sequence creation for an empty Board and respects the feature flag', async () => {
+    vi.mocked(api.fetchBoard).mockResolvedValue(BOARDS_FIXTURES[1])
+    const view = await setup(3)
+    expect(screen.getByRole('button', { name: 'Create Collection' })).toBeDisabled()
+    view.rerender(
+      <BoardsPage
+        enabled
+        currentUser={BOARD_AUTH.currentUser}
+        collectionsEnabled={false}
+        boardId={3}
+        onSelectBoard={vi.fn()}
+        onOpenMarker={vi.fn()}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: 'Create Collection' })).not.toBeInTheDocument()
+  })
   it('hides management actions without permissions', async () => {
     vi.mocked(api.fetchBoard).mockResolvedValue(BOARDS_FIXTURES[2])
     await setup(2)
     expect(screen.queryByRole('button', { name: 'Edit Board' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Owners' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Manage owners' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete Board' })).not.toBeInTheDocument()
   })
 
@@ -410,19 +952,18 @@ describe('BoardsPage', () => {
     const extra = {
       ...BOARDS_FIXTURES[0],
       id: 4,
-      inuksuks: [{ ...BOARDS_FIXTURES[0].inuksuks[0], sort_order: 17 }],
+      markers: [{ ...BOARDS_FIXTURES[0].markers[0], sort_order: 17 }],
     }
-    vi.mocked(api.fetchInuksuk).mockResolvedValue({ ...BOARD_ITEMS[0], board_ids: [1, 4, 2] })
+    vi.mocked(api.fetchMarker).mockResolvedValue({ ...BOARD_ITEMS[0], board_ids: [1, 4, 2] })
     vi.mocked(api.fetchBoard).mockImplementation(async (id) =>
       id === 4 ? extra : (BOARDS_FIXTURES.find((board) => board.id === id) ?? BOARDS_FIXTURES[0]),
     )
     await setup(1)
-    await actions()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Move/Save to…' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Move/Save Rose window to Board' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
-      expect(api.updateInuksuk).toHaveBeenCalledWith(7, {
+      expect(api.updateMarker).toHaveBeenCalledWith(7, {
         version: 3,
         board_assignments: [
           { board_id: 1, sort_order: 0 },
@@ -434,61 +975,63 @@ describe('BoardsPage', () => {
   })
   it('moves across Boards atomically when explicitly requested', async () => {
     await setup(1)
-    await actions()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Move/Save to…' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Move/Save Rose window to Board' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
     fireEvent.click(screen.getByRole('switch', { name: 'Move: also remove from this Board' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
-      expect(api.updateInuksuk).toHaveBeenCalledWith(7, {
+      expect(api.updateMarker).toHaveBeenCalledWith(7, {
         version: 3,
         board_assignments: [{ board_id: 3 }],
       }),
     )
   })
   it('never submits a destructive partial assignment list after a membership read fails', async () => {
-    vi.mocked(api.fetchInuksuk).mockResolvedValue({ ...BOARD_ITEMS[0], board_ids: [1, 4] })
+    vi.mocked(api.fetchMarker).mockResolvedValue({ ...BOARD_ITEMS[0], board_ids: [1, 4] })
     vi.mocked(api.fetchBoard).mockImplementation(async (id) => {
       if (id === 4) throw new Error('offline')
       return BOARDS_FIXTURES.find((board) => board.id === id) ?? BOARDS_FIXTURES[0]
     })
     await setup(1)
-    await actions()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Move/Save to…' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Move/Save Rose window to Board' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(within(screen.getByRole('dialog')).getByRole('alert')).toBeInTheDocument(),
     )
-    expect(api.updateInuksuk).not.toHaveBeenCalled()
+    expect(api.updateMarker).not.toHaveBeenCalled()
   })
-  it('surfaces the last-Board removal error instead of deleting the Inuksuk', async () => {
-    vi.mocked(api.removeBoardInuksuk).mockRejectedValue(
-      new api.ApiError(422, 'An Inuksuk must belong to at least one Board'),
+  it('surfaces the last-Board removal error instead of deleting the Marker', async () => {
+    vi.mocked(api.removeBoardMarker).mockRejectedValue(
+      new api.ApiError(422, 'A Marker must belong to at least one Board'),
     )
     await setup(1)
     await actions()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from this Board' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Remove from this Board' })).toBeEnabled(),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from this Board' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
     await waitFor(() =>
       expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent(
         'at least one Board',
       ),
     )
-    expect(api.removeBoardInuksuk).toHaveBeenCalledWith(1, 7, 5)
+    expect(api.removeBoardMarker).toHaveBeenCalledWith(1, 7, 5)
   })
   it('warns about orphan deletion before deleting a Board', async () => {
     const view = await setup(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Board options' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete Board' }))
-    const dialog = screen.getByRole('dialog')
-    expect(dialog).toHaveTextContent('Inuksuks only on this Board will be permanently deleted')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Board' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit Board' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete Board' }))
+    expect(dialog).toHaveTextContent('Markers only on this Board will be permanently deleted')
+    expect(api.deleteBoard).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm Delete Board' }))
     await waitFor(() => expect(view.onSelectBoard).toHaveBeenCalledWith(null))
     expect(api.deleteBoard).toHaveBeenCalledWith(1, 5)
   })
   it('surfaces OCC conflicts with an explicit reload and no optimistic mutation', async () => {
-    vi.mocked(api.updateInuksuk).mockRejectedValueOnce(new api.ApiError(409, 'stale'))
+    vi.mocked(api.updateMarker).mockRejectedValueOnce(new api.ApiError(409, 'stale'))
     await setup()
     fireEvent.click(screen.getByRole('button', { name: 'Favourite Rose window' }))
     await screen.findByText(/Reload the latest version/)
@@ -500,9 +1043,9 @@ describe('BoardsPage', () => {
   })
   it('renders an empty overview', async () => {
     vi.mocked(api.fetchBoards).mockResolvedValue([])
-    vi.mocked(api.fetchInuksuks).mockResolvedValue([])
+    vi.mocked(api.fetchMarkers).mockResolvedValue([])
     await setup()
-    expect(screen.getByText(/No Inuksuks yet/)).toBeVisible()
+    expect(screen.getByText(/No Markers yet/)).toBeVisible()
     expect(screen.getByRole('button', { name: 'New Board' })).toBeVisible()
   })
   it('keeps navigation available when the selected Board cannot be read', async () => {
@@ -517,7 +1060,7 @@ describe('BoardsPage', () => {
 it('offers Sequence for any selection and synchronized actions only for two to four', async () => {
   await setup()
   fireEvent.click(screen.getByRole('button', { name: 'Select' }))
-  const toolbar = screen.getByRole('toolbar', { name: 'Selected Inuksuks' })
+  const toolbar = screen.getByRole('toolbar', { name: 'Selected Markers' })
   expect(within(toolbar).getByRole('button', { name: 'Create Sequence Collection' })).toBeDisabled()
   const checks = screen.getAllByRole('checkbox', { name: /^Select / })
   fireEvent.click(checks[0])
@@ -546,8 +1089,7 @@ it('creates a Sequence from the Board source and navigates to it', async () => {
     onOpenCollection: open,
     categories: [makeCategory({ id: 10, label: 'Studies' })],
   })
-  fireEvent.click(screen.getByRole('button', { name: 'Board options' }))
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Create Sequence Collection' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Create Collection' }))
   fireEvent.change(screen.getByRole('textbox', { name: 'Collection name' }), {
     target: { value: 'Board sequence' },
   })
@@ -566,7 +1108,7 @@ it('seeds selected views in displayed Board member order', async () => {
   vi.mocked(api.fetchBoard).mockResolvedValue({
     ...board,
 
-    inuksuks: [...board.inuksuks].reverse(),
+    markers: [...board.markers].reverse(),
   })
   vi.mocked(api.createCollection).mockResolvedValue(makeApiCollection({ id: 77, type: 'sequence' }))
   await setup(1, { categories: [makeCategory({ id: 10, label: 'Studies' })] })
@@ -575,7 +1117,7 @@ it('seeds selected views in displayed Board member order', async () => {
   expect(checkboxes).toHaveLength(6)
   for (const checkbox of [...checkboxes].reverse()) fireEvent.click(checkbox)
   fireEvent.click(
-    within(screen.getByRole('toolbar', { name: 'Selected Inuksuks' })).getByRole('button', {
+    within(screen.getByRole('toolbar', { name: 'Selected Markers' })).getByRole('button', {
       name: 'Create Sequence Collection',
     }),
   )
@@ -587,7 +1129,7 @@ it('seeds selected views in displayed Board member order', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Create' }))
   await waitFor(() =>
     expect(api.createCollection).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'sequence', inuksuk_ids: [12, 11, 10, 9, 8, 7] }),
+      expect.objectContaining({ type: 'sequence', marker_ids: [12, 11, 10, 9, 8, 7] }),
     ),
   )
 })

@@ -134,7 +134,7 @@ const observabilityMocks = vi.hoisted(() => ({
 }))
 
 const apiMocks = vi.hoisted(() => ({
-  fetchImageInuksuks: vi.fn(),
+  fetchImageMarkers: vi.fn(),
   fetchBoards: vi.fn().mockResolvedValue([]),
   fetchImage: vi.fn(),
   userMessage: vi.fn((_err: unknown, fallback: string) => fallback),
@@ -149,7 +149,7 @@ vi.mock('../../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api')>()
   return {
     ...actual,
-    fetchImageInuksuks: apiMocks.fetchImageInuksuks,
+    fetchImageMarkers: apiMocks.fetchImageMarkers,
     fetchBoards: apiMocks.fetchBoards,
     fetchImage: apiMocks.fetchImage,
     userMessage: apiMocks.userMessage,
@@ -384,24 +384,25 @@ vi.mock('../../src/components/CanvasOverlay', () => ({
 }))
 
 import ImageViewer from '../../src/components/ImageViewer'
-import { INUKSUK_FIXTURE } from '../../src/components/inuksukFixtures'
-import type { InuksukFormDialogProps } from '../../src/components/InuksukFormDialog'
-vi.mock('../../src/components/InuksukFormDialog', () => ({
-  default: ({ view, item, onChanged, onClose }: InuksukFormDialogProps) => (
-    <div role="dialog">
+import { MARKER_FIXTURE } from '../../src/components/markerFixtures'
+import type { MarkerFormDialogProps } from '../../src/components/MarkerFormDialog'
+const CREATED_MARKER = { ...MARKER_FIXTURE, id: 99, title: 'New saved view' }
+vi.mock('../../src/components/MarkerFormDialog', () => ({
+  default: ({ view, item, onChanged, onClose, inline }: MarkerFormDialogProps) => (
+    <div role={inline ? 'form' : 'dialog'} aria-label={inline ? 'Edit Marker' : 'Add Marker'}>
       <span>
         {JSON.stringify({ x: view.x, y: view.y, zoom: view.zoom, rotation: view.rotation })}
       </span>
-      {item && <span>Editing Inuksuk {item.id}</span>}
+      {item && <span>Editing Marker {item.id}</span>}
       {['Create', 'Edit', 'Delete'].map((action) => (
         <button
           key={action}
           onClick={async () => {
-            await onChanged()
+            await onChanged(action === 'Create' ? CREATED_MARKER : undefined)
             onClose()
           }}
         >
-          {action} Inuksuk
+          {action} Marker
         </button>
       ))}
     </div>
@@ -460,11 +461,12 @@ beforeEach(() => {
   setFullscreenElement(null)
   vi.useRealTimers()
   vi.clearAllMocks()
-  apiMocks.fetchImageInuksuks.mockReset().mockResolvedValue([])
+  apiMocks.fetchImageMarkers.mockReset().mockResolvedValue([])
 })
 
 afterEach(() => {
   cleanup()
+  vi.unstubAllGlobals()
   if (hadFullscreenElementOwnProperty && originalFullscreenElementDescriptor) {
     Object.defineProperty(document, 'fullscreenElement', originalFullscreenElementDescriptor)
   } else {
@@ -477,49 +479,179 @@ afterEach(() => {
   }
 })
 
-describe('Inuksuk viewer tool', () => {
+describe('Marker viewer tool', () => {
+  it.each([true, false])(
+    'scopes list and markers to own and instructor views, permanent panel=%s',
+    async (viewerPanel) => {
+      apiMocks.fetchImageMarkers.mockResolvedValue([
+        MARKER_FIXTURE,
+        { ...MARKER_FIXTURE, id: 8, title: 'Instructor view', source: 'instructor' },
+        { ...MARKER_FIXTURE, id: 9, title: 'Other student view', source: 'public' },
+      ])
+      const rendered = render(
+        <ImageViewer
+          tileSources="/test.dzi"
+          imageId={42}
+          markersEnabled
+          viewerPanel={viewerPanel}
+        />,
+      )
+      rendered.container.appendChild(viewer().element)
+      await waitFor(() =>
+        expect(viewer().container.querySelector('[data-marker-id="8"]')).not.toBeNull(),
+      )
+      expect(viewer().container.querySelector('[data-marker-id="9"]')).toBeNull()
+      fireEvent.click(
+        await within(viewer().container).findByRole('button', {
+          name: viewerPanel ? 'Open viewer panel' : 'Markers (2)',
+        }),
+      )
+      const list = within(await screen.findByRole('complementary'))
+      expect(list.getByRole('button', { name: 'View Marker: Rose window' })).toBeVisible()
+      expect(list.getByRole('button', { name: 'View Marker: Instructor view' })).toBeVisible()
+      expect(list.queryByText('Other student view')).not.toBeInTheDocument()
+    },
+  )
+  it('copies the live image view and rectangles from the Shared View tab', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+    render(
+      <ImageViewer
+        tileSources="/test.dzi"
+        imageId={42}
+        markersEnabled
+        initialOverlays={[{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }]}
+      />,
+    )
+    fireEvent.click(
+      await within(viewer().container).findByRole('button', { name: 'Open viewer panel' }),
+    )
+    viewer().viewport.getCenter.mockReturnValue({ x: 0.46, y: 0.29 })
+    viewer().viewport.getZoom.mockReturnValue(2.5)
+    viewer().viewport.getRotation.mockReturnValue(35)
+    fireEvent.click(screen.getByRole('button', { name: 'Show Shared View' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy current view' }))
+    await screen.findByText('Link copied to clipboard')
+    const url = new URL(writeText.mock.calls[0][0])
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({
+      image: '42',
+      zoom: '2.5000',
+      x: '0.460000',
+      y: '0.290000',
+      rotation: '35.0',
+      ov0: '0.10000000,0.20000000,0.30000000,0.40000000',
+    })
+  })
+  it('reuses the page share handler when supplied', async () => {
+    const copy = vi.fn()
+    render(<ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled onShareView={copy} />)
+    fireEvent.click(
+      await within(viewer().container).findByRole('button', { name: 'Open viewer panel' }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Show Shared View' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy current view' }))
+    expect(copy).toHaveBeenCalledTimes(1)
+  })
+  it('persists the permanent right panel across images and remounts, without dismissing on canvas presses or Escape', async () => {
+    const view = (imageId: number) => (
+      <AuthContext.Provider value={BOARD_AUTH}>
+        <ImageViewer
+          imageId={imageId}
+          tileSources="/test.dzi"
+          markersEnabled
+          canEditContent
+          sidePanelDetails={<p>Metadata</p>}
+        />
+      </AuthContext.Provider>
+    )
+    const first = render(view(42))
+    fireEvent.click(
+      await within(viewer().container).findByRole('button', { name: 'Open viewer panel' }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Show image details' }))
+    expect(viewer().container.style.width).toBe('calc(100% - 256px)')
+    const instance = viewer()
+    fireEvent.pointerDown(instance.canvas)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('complementary', { name: 'Viewer panel' })).toBeVisible()
+    expect(viewer()).toBe(instance)
+    act(() => buttonByTooltip('Canvas annotations (add shapes, text, links)').options.onClick())
+    expect(screen.getByText('canvas edit: true')).toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: 'Viewer panel' })).toBeVisible()
+    expect(viewer().container.style.width).toBe('calc(100% - 256px)')
+    fireEvent.click(screen.getByRole('button', { name: 'Overlay done' }))
+    first.rerender(view(43))
+    expect(screen.getByText('Metadata')).toBeVisible()
+    first.unmount()
+    render(view(44))
+    expect(await screen.findByRole('button', { name: 'Close viewer panel' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Show image details' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    const add = osdState.buttons.filter((button) => button.options.tooltip === 'Add Marker').at(-1)!
+    act(() => add.options.onClick())
+    act(() => viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }))
+    expect(screen.getByRole('button', { name: 'Show Markers' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('complementary', { name: 'Viewer panel' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Close viewer panel' }))
+    expect(viewer().container.style.width).toBe('100%')
+    expect(viewer().container.style.getPropertyValue('--hriv-marker-panel-right')).toBe('56px')
+  })
+
   it.each([false, true])(
     'keeps only pinned drawers open across image changes and new viewer pages, pinned=%s',
     async (pinned) => {
       const view = (imageId: number) => (
         <AuthContext.Provider value={BOARD_AUTH}>
-          <ImageViewer tileSources="/test.dzi" imageId={imageId} inuksuksEnabled />
+          <ImageViewer
+            tileSources="/test.dzi"
+            imageId={imageId}
+            markersEnabled
+            viewerPanel={false}
+          />
         </AuthContext.Provider>
       )
       const first = render(view(42))
       fireEvent.click(
-        await within(viewer().container).findByRole('button', { name: 'Inuksuks (0)' }),
+        await within(viewer().container).findByRole('button', { name: 'Markers (0)' }),
       )
       if (pinned)
-        fireEvent.click(within(viewer().container).getByRole('button', { name: 'Pin Inuksuks' }))
+        fireEvent.click(within(viewer().container).getByRole('button', { name: 'Pin Markers' }))
       first.rerender(view(43))
       const trigger = await within(viewer().container).findByRole('button', {
-        name: 'Inuksuks (0)',
+        name: 'Markers (0)',
       })
       expect(trigger).toHaveAttribute('aria-expanded', String(pinned))
       if (pinned) {
         expect(
-          within(viewer().container).getByRole('button', { name: 'Unpin Inuksuks' }),
+          within(viewer().container).getByRole('button', { name: 'Unpin Markers' }),
         ).toHaveAttribute('aria-pressed', 'true')
-        fireEvent.click(within(viewer().container).getByRole('button', { name: 'Unpin Inuksuks' }))
+        fireEvent.click(within(viewer().container).getByRole('button', { name: 'Unpin Markers' }))
         expect(trigger).toHaveAttribute('aria-expanded', 'true')
-        fireEvent.click(within(viewer().container).getByRole('button', { name: 'Pin Inuksuks' }))
+        fireEvent.click(within(viewer().container).getByRole('button', { name: 'Pin Markers' }))
       }
       first.unmount()
       render(view(44))
       expect(
-        await within(viewer().container).findByRole('button', { name: 'Inuksuks (0)' }),
+        await within(viewer().container).findByRole('button', { name: 'Markers (0)' }),
       ).toHaveAttribute('aria-expanded', String(pinned))
-      expect(localStorage.getItem('hrivpref:inuksuks-drawer:pinned:user:9')).toBe(
+      expect(localStorage.getItem('hrivpref:markers-drawer:pinned:user:9')).toBe(
         pinned ? 'true' : null,
       )
     },
   )
   it('closes the unpinned drawer on a canvas press without suppressing quick-click placement', async () => {
-    const rendered = render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
+    const rendered = render(
+      <ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled viewerPanel={false} />,
+    )
     rendered.container.appendChild(viewer().element)
-    act(() => buttonByTooltip('Add Inuksuk').options.onClick())
-    const trigger = await within(viewer().container).findByRole('button', { name: 'Inuksuks (0)' })
+    act(() => buttonByTooltip('Add Marker').options.onClick())
+    const trigger = await within(viewer().container).findByRole('button', { name: 'Markers (0)' })
     fireEvent.click(trigger)
     fireEvent.pointerDown(viewer().canvas)
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
@@ -527,12 +659,12 @@ describe('Inuksuk viewer tool', () => {
     expect(await screen.findByRole('dialog')).toHaveTextContent(
       JSON.stringify({ x: 0.3, y: 0.4, zoom: 2, rotation: 90 }),
     )
-    expect(buttonByTooltip('Add Inuksuk').element).toHaveAttribute('aria-pressed', 'true')
+    expect(buttonByTooltip('Add Marker').element).toHaveAttribute('aria-pressed', 'true')
   })
   it.each([false, true])(
     'does not consume Escape without an image or draft, flag=%s',
-    (inuksuksEnabled) => {
-      render(<ImageViewer tileSources="/test.dzi" inuksuksEnabled={inuksuksEnabled} />)
+    (markersEnabled) => {
+      render(<ImageViewer tileSources="/test.dzi" markersEnabled={markersEnabled} />)
       const onEscape = vi.fn()
       const target = document.createElement('button')
       document.body.appendChild(target)
@@ -544,42 +676,79 @@ describe('Inuksuk viewer tool', () => {
       target.remove()
     },
   )
+  it.each([false, true])(
+    'selects and focuses the created row, opening the Markers tab when needed, panelOpen=%s',
+    async (keepOpen) => {
+      apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE])
+      render(<ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled />)
+      fireEvent.click(
+        await within(viewer().container).findByRole('button', { name: 'Open viewer panel' }),
+      )
+      const previous = await screen.findByRole('button', { name: 'View Marker: Rose window' })
+      fireEvent.click(previous)
+      fireEvent.click(screen.getByRole('button', { name: 'My Markers', exact: true }))
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: keepOpen ? 'Show image details' : 'Close viewer panel',
+        }),
+      )
+      act(() => buttonByTooltip('Add Marker').options.onClick())
+      act(() => viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }))
+      apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE, CREATED_MARKER])
+      fireEvent.click(screen.getByRole('button', { name: 'Create Marker' }))
+      const created = await screen.findByRole('button', { name: 'View Marker: New saved view' })
+      await waitFor(() => expect(created).toHaveFocus())
+      expect(created).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByRole('button', { name: 'View Marker: Rose window' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
+      expect(
+        within(viewer().container).getByRole('region', { name: 'Marker information' }),
+      ).toHaveTextContent('New saved view')
+      expect(buttonByTooltip('Add Marker').element).toHaveAttribute('aria-pressed', 'true')
+    },
+  )
   it('keeps the mode armed after save, lists the draft and cancels it before Escape disarms the tool', async () => {
-    render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
-    act(() => buttonByTooltip('Add Inuksuk').options.onClick())
+    render(<ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled />)
+    act(() => buttonByTooltip('Add Marker').options.onClick())
     const event = { quick: true, position: { x: 30, y: 40 }, preventDefaultAction: false }
     act(() => viewer().fire('canvas-click', event))
     expect(event.preventDefaultAction).toBe(true)
-    fireEvent.click(await within(viewer().container).findByRole('button', { name: 'Inuksuks (0)' }))
-    expect(viewer().container).toContainElement(within(viewer().container).getByText('Unsaved'))
+    fireEvent.click(
+      await within(viewer().container).findByRole('button', { name: 'Open viewer panel' }),
+    )
+    expect(screen.getByText('Unsaved')).toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(within(viewer().container).queryByText('Unsaved')).not.toBeInTheDocument()
-    expect(buttonByTooltip('Add Inuksuk').element).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText('Unsaved')).not.toBeInTheDocument()
+    expect(buttonByTooltip('Add Marker').element).toHaveAttribute('aria-pressed', 'true')
     act(() => viewer().fire('canvas-click', event))
-    fireEvent.click(screen.getByRole('button', { name: 'Create Inuksuk' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create Marker' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(buttonByTooltip('Add Inuksuk').element).toHaveAttribute('aria-pressed', 'true')
+    expect(buttonByTooltip('Add Marker').element).toHaveAttribute('aria-pressed', 'true')
     fireEvent.keyDown(document, { key: 'Escape' })
-    expect(buttonByTooltip('Add Inuksuk').element).toHaveAttribute('aria-pressed', 'false')
+    expect(buttonByTooltip('Add Marker').element).toHaveAttribute('aria-pressed', 'false')
   })
   it('bounds viewer commits for group, per-row and Mixed visibility actions without remounting or refetching', async () => {
-    localStorage.removeItem('hriv.inuksukVisibility.9')
-    apiMocks.fetchImageInuksuks.mockResolvedValue([
-      INUKSUK_FIXTURE,
-      { ...INUKSUK_FIXTURE, id: 8, title: 'Second view' },
+    localStorage.removeItem('hriv.markerVisibility.9')
+    apiMocks.fetchImageMarkers.mockResolvedValue([
+      MARKER_FIXTURE,
+      { ...MARKER_FIXTURE, id: 8, title: 'Second view' },
     ])
     const commits = vi.fn()
     render(
       <AuthContext.Provider value={BOARD_AUTH}>
         <Profiler id="viewer" onRender={commits}>
-          <ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />
+          <ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled />
         </Profiler>
       </AuthContext.Provider>,
     )
     const instance = viewer()
-    const canvas = within(instance.container)
-    fireEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (2)' }))
+    const canvas = screen
+    fireEvent.click(
+      await within(instance.container).findByRole('button', { name: 'Open viewer panel' }),
+    )
     const drawer = within(await canvas.findByRole('complementary'))
     const click = (button: HTMLElement) => {
       commits.mockClear()
@@ -592,53 +761,55 @@ describe('Inuksuk viewer tool', () => {
         name: `${name} ${group ? 'markers' : 'marker'}`,
       })
     }
-    click(markerMenu('My Inuksuks', true))
-    expect(instance.container.querySelector('[data-inuksuk-id="7"] button')).toBeNull()
-    expect(instance.container.querySelector('[data-inuksuk-id="7"] span')).not.toBeNull()
+    click(markerMenu('My Markers', true))
+    expect(instance.container.querySelector('[data-marker-id="7"] button')).toBeNull()
+    expect(instance.container.querySelector('[data-marker-id="7"] span')).not.toBeNull()
     click(markerMenu('Rose window'))
-    expect(markerMenu('My Inuksuks', true)).toHaveAttribute('aria-checked', 'mixed')
-    click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks markers' }))
-    expect(markerMenu('My Inuksuks', true)).toHaveAttribute('aria-checked', 'true')
+    expect(markerMenu('My Markers', true)).toHaveAttribute('aria-checked', 'mixed')
+    click(canvas.getByRole('menuitemcheckbox', { name: 'My Markers markers' }))
+    expect(markerMenu('My Markers', true)).toHaveAttribute('aria-checked', 'true')
     fireEvent.keyDown(canvas.getByRole('menu'), { key: 'Escape' })
     const labels = (name: string) => {
       click(drawer.getByRole('button', { name: `${name} options` }))
       click(canvas.getByRole('menuitemcheckbox', { name: `${name} labels` }))
     }
-    labels('My Inuksuks')
-    expect(instance.container.querySelector('[data-inuksuk-id="7"] span')).toBeNull()
-    expect(instance.container.querySelector('[data-inuksuk-id="7"] button')).not.toBeNull()
+    labels('My Markers')
+    expect(instance.container.querySelector('[data-marker-id="7"] span')).toBeNull()
+    expect(instance.container.querySelector('[data-marker-id="7"] button')).not.toBeNull()
     labels('Rose window')
-    click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
-    expect(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' })).toHaveAttribute(
+    click(drawer.getByRole('button', { name: 'My Markers options' }))
+    expect(canvas.getByRole('menuitemcheckbox', { name: 'My Markers labels' })).toHaveAttribute(
       'aria-checked',
       'mixed',
     )
-    click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' }))
-    expect(instance.container.querySelector('[data-inuksuk-id="8"] span')).not.toBeNull()
+    click(canvas.getByRole('menuitemcheckbox', { name: 'My Markers labels' }))
+    expect(instance.container.querySelector('[data-marker-id="8"] span')).not.toBeNull()
     expect(osdState.viewers).toHaveLength(1)
-    expect(apiMocks.fetchImageInuksuks).toHaveBeenCalledTimes(1)
+    expect(apiMocks.fetchImageMarkers).toHaveBeenCalledTimes(1)
   })
-  it('shares one image request with the TOP_LEFT drawer, navigates, highlights and independently hides markers', async () => {
-    apiMocks.fetchImageInuksuks.mockResolvedValue([INUKSUK_FIXTURE])
+  it('shares one image request with the right viewer panel, navigates, highlights and independently hides markers', async () => {
+    apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE])
     const onOpenChange = vi.fn()
     render(
       <ImageViewer
         tileSources="/test.dzi"
         imageId={42}
-        inuksuksEnabled
-        onInuksuksDrawerOpenChange={onOpenChange}
+        markersEnabled
+        onViewerPanelWidthChange={onOpenChange}
       />,
     )
-    const canvas = within(viewer().container)
-    const trigger = await canvas.findByRole('button', { name: 'Inuksuks (1)' })
-    expect(viewer().addControl).toHaveBeenCalledWith(expect.any(HTMLDivElement), { anchor: 2 })
+    const canvas = screen
+    const trigger = await within(viewer().container).findByRole('button', {
+      name: 'Open viewer panel',
+    })
+    expect(viewer().addControl).toHaveBeenCalledWith(expect.any(HTMLDivElement), { anchor: 1 })
     fireEvent.focusIn(trigger)
     expect(viewer().setControlsEnabled).toHaveBeenLastCalledWith(true)
     fireEvent.click(trigger)
     const drawer = await canvas.findByRole('complementary')
-    expect(onOpenChange).toHaveBeenLastCalledWith(true)
+    expect(onOpenChange).toHaveBeenLastCalledWith(256)
     expect(trigger).toHaveAttribute('aria-controls', drawer.id)
-    fireEvent.click(within(drawer).getByRole('button', { name: 'View Inuksuk: Rose window' }))
+    fireEvent.click(within(drawer).getByRole('button', { name: 'View Marker: Rose window' }))
     expect(viewer().viewport.panTo).toHaveBeenCalledWith(
       expect.objectContaining({ x: 0.46, y: 0.29 }),
       false,
@@ -646,22 +817,18 @@ describe('Inuksuk viewer tool', () => {
     expect(viewer().viewport.zoomTo).toHaveBeenCalledWith(2.5, undefined, false)
     expect(
       canvas
-        .getAllByRole('button', { name: 'View Inuksuk: Rose window' })
+        .getAllByRole('button', { name: 'View Marker: Rose window' })
         .some((button) => button.getAttribute('aria-pressed') === 'true'),
     ).toBe(true)
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
     fireEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
-    fireEvent.click(
-      within(viewer().container).getByRole('menuitemcheckbox', { name: 'Rose window labels' }),
-    )
-    expect(viewer().container.querySelector('[data-inuksuk-id="7"]')).toBeEmptyDOMElement()
+    fireEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window labels' }))
+    expect(viewer().container.querySelector('[data-marker-id="7"]')).toBeEmptyDOMElement()
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
-    fireEvent.click(
-      within(viewer().container).getByRole('menuitemcheckbox', { name: 'Rose window labels' }),
-    )
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Rose window labels' }))
     expect(
-      within(drawer).getByRole('button', { name: 'View Inuksuk: Rose window (marker hidden)' }),
+      within(drawer).getByRole('button', { name: 'View Marker: Rose window (marker hidden)' }),
     ).toBeDefined()
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
     expect(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' })).toHaveAttribute(
@@ -670,35 +837,35 @@ describe('Inuksuk viewer tool', () => {
     )
     fireEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
-    fireEvent.click(within(viewer().container).getByRole('menuitem', { name: 'Edit' }))
-    expect(await screen.findByRole('dialog')).toBeInTheDocument()
-    expect(apiMocks.fetchImageInuksuks).toHaveBeenCalledTimes(1)
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Close Inuksuks' }))
-    expect(onOpenChange).toHaveBeenLastCalledWith(false)
+    fireEvent.click(canvas.getByRole('menuitem', { name: 'Edit' }))
+    expect(within(viewer().container).getByRole('form', { name: 'Edit Marker' })).toBeDefined()
+    expect(apiMocks.fetchImageMarkers).toHaveBeenCalledTimes(1)
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Close viewer panel' }))
+    expect(onOpenChange).toHaveBeenLastCalledWith(0)
   })
   it('is completely gated off, including network loading', () => {
     render(<ImageViewer tileSources="/test.dzi" imageId={42} />)
-    expect(osdState.buttons.some((button) => button.options.tooltip === 'Add Inuksuk')).toBe(false)
-    expect(apiMocks.fetchImageInuksuks).not.toHaveBeenCalled()
+    expect(osdState.buttons.some((button) => button.options.tooltip === 'Add Marker')).toBe(false)
+    expect(apiMocks.fetchImageMarkers).not.toHaveBeenCalled()
   })
   it.each([false, true])(
     'captures the same image point with flip=%s and previews it',
     async (flip) => {
-      render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
+      render(<ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled />)
       Object.defineProperty(viewer().canvas, 'clientWidth', { value: 200 })
       viewer().viewport.getFlip.mockReturnValue(flip)
       viewer().viewport.getZoom.mockReturnValue(4)
       viewer().viewport.getRotation.mockReturnValue(35)
-      act(() => buttonByTooltip('Add Inuksuk').options.onClick())
+      act(() => buttonByTooltip('Add Marker').options.onClick())
       expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
       act(() => viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }))
       expect(await screen.findByRole('dialog')).toHaveTextContent(
         JSON.stringify({ x: 0.3, y: 0.4, zoom: 4, rotation: 35 }),
       )
       expect(viewer().container).toContainElement(
-        within(viewer().container).getByRole('button', { name: 'View Inuksuk: New Inuksuk' }),
+        within(viewer().container).getByRole('button', { name: 'View Marker: New Marker' }),
       )
-      expect(viewer().container.querySelector('[data-inuksuk-id="-1"]')).toHaveStyle({
+      expect(viewer().container.querySelector('[data-marker-id="-1"]')).toHaveStyle({
         left: `${flip ? 170 : 30}px`,
         top: '40px',
       })
@@ -706,8 +873,8 @@ describe('Inuksuk viewer tool', () => {
     },
   )
   it('Escape cancels placement and a drag is never treated as a click', () => {
-    render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
-    act(() => buttonByTooltip('Add Inuksuk').options.onClick())
+    render(<ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled />)
+    act(() => buttonByTooltip('Add Marker').options.onClick())
     act(() => viewer().fire('canvas-click', { quick: false, position: { x: 30, y: 40 } }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Escape' })
@@ -716,19 +883,19 @@ describe('Inuksuk viewer tool', () => {
     expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
   })
   it('mutually excludes selection, annotation edit and placement, respecting the dirty-draft cancel flow', async () => {
-    render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled canEditContent />)
+    render(<ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled canEditContent />)
     act(() => buttonByTooltip('Draw selection rectangle').options.onClick())
-    act(() => buttonByTooltip('Add Inuksuk').options.onClick())
+    act(() => buttonByTooltip('Add Marker').options.onClick())
     act(() => tracker().options.pressHandler({ position: { x: 10, y: 10 } }))
     expect(viewer().addOverlay).not.toHaveBeenCalled()
     act(() => buttonByTooltip('Canvas annotations (add shapes, text, links)').options.onClick())
     expect(screen.getByText('canvas edit: true')).toBeInTheDocument()
     canvasOverlayMockState.cancelKeepsEditing = true
-    await act(async () => buttonByTooltip('Add Inuksuk').options.onClick())
+    await act(async () => buttonByTooltip('Add Marker').options.onClick())
     act(() => viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     canvasOverlayMockState.cancelKeepsEditing = false
-    await act(async () => buttonByTooltip('Add Inuksuk').options.onClick())
+    await act(async () => buttonByTooltip('Add Marker').options.onClick())
     expect(screen.getByText('canvas edit: false')).toBeInTheDocument()
     act(() => viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
@@ -736,23 +903,57 @@ describe('Inuksuk viewer tool', () => {
   it.each(['Create', 'Edit', 'Delete'])(
     'refetches the image endpoint after %s and opens existing marker details',
     async (action) => {
-      apiMocks.fetchImageInuksuks.mockResolvedValue([INUKSUK_FIXTURE])
-      render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
+      apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE])
+      render(<ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled />)
       const marker = await within(viewer().container).findByRole('button', {
-        name: 'View Inuksuk: Rose window',
+        name: 'View Marker: Rose window',
       })
+      const canvas = within(viewer().container)
       fireEvent.click(marker)
       expect(viewer().container).toContainElement(
-        within(viewer().container).getByRole('region', { name: 'Inuksuk information' }),
+        within(viewer().container).getByRole('region', { name: 'Marker information' }),
       )
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
       fireEvent.click(within(viewer().container).getByRole('button', { name: 'Edit Rose window' }))
-      expect(screen.getByText('Editing Inuksuk 7')).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: action + ' Inuksuk' }))
-      await waitFor(() => expect(apiMocks.fetchImageInuksuks).toHaveBeenCalledTimes(2))
-      expect(apiMocks.fetchImageInuksuks).toHaveBeenLastCalledWith(42)
+      expect(canvas.getByText('Editing Marker 7')).toBeDefined()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(canvas.getByRole('region', { name: 'Marker information' })).toContainElement(
+        canvas.getByRole('form', { name: 'Edit Marker' }),
+      )
+      fireEvent.click(canvas.getByRole('button', { name: action + ' Marker' }))
+      await waitFor(() => expect(apiMocks.fetchImageMarkers).toHaveBeenCalledTimes(2))
+      expect(apiMocks.fetchImageMarkers).toHaveBeenLastCalledWith(42)
     },
   )
+  it('dismisses marker information and selection on outside presses, and opens drawer edits in place', async () => {
+    apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE])
+    render(<ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled />)
+    const marker = await within(viewer().container).findByRole('button', {
+      name: 'View Marker: Rose window',
+    })
+    const canvas = within(viewer().container)
+    fireEvent.click(marker)
+    expect(marker).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.pointerDown(document.body)
+    expect(canvas.queryByRole('region', { name: 'Marker information' })).toBeNull()
+    expect(marker).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(within(viewer().container).getByRole('button', { name: 'Open viewer panel' }))
+    const drawer = screen.getByRole('complementary')
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }))
+    const card = canvas.getByRole('region', { name: 'Marker information' })
+    expect(card).toContainElement(canvas.getByRole('form', { name: 'Edit Marker' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(marker).toHaveAttribute('aria-pressed', 'true')
+    expect(viewer().viewport.panTo).toHaveBeenCalledWith(
+      expect.objectContaining({ x: 0.46, y: 0.29 }),
+      false,
+    )
+    fireEvent.pointerDown(document.body)
+    expect(canvas.getByRole('region', { name: 'Marker information' })).toBe(card)
+    fireEvent.click(marker)
+    expect(card).toContainElement(canvas.getByRole('form', { name: 'Edit Marker' }))
+  })
 })
 
 const setViewportAtHome = (v: MockViewer) => {

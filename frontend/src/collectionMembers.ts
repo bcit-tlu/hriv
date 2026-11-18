@@ -1,9 +1,9 @@
-import type { ApiInuksuk, CollectionMember } from './types'
+import type { ApiMarker, CollectionMember } from './types'
 import type { CollectionSlotInput } from './api'
-import { fetchCollection, fetchImage, fetchInuksuk } from './api'
+import { fetchCollection, fetchImage, fetchMarker } from './api'
 import { apiImageToItem } from './collectionUtils'
 
-export async function draftMembersFromInuksuks(items: ApiInuksuk[]): Promise<CollectionMember[]> {
+export async function draftMembersFromMarkers(items: ApiMarker[]): Promise<CollectionMember[]> {
   const images = new Map(
     await Promise.all(
       [...new Set(items.map((item) => item.image_id))].map(
@@ -13,7 +13,7 @@ export async function draftMembersFromInuksuks(items: ApiInuksuk[]): Promise<Col
   )
   return items.map((item) => ({
     ...images.get(item.image_id)!,
-    inuksukId: item.id,
+    markerId: item.id,
     slot: {
       id: -item.id,
       label: item.title,
@@ -28,9 +28,9 @@ export function memberKey(image: CollectionMember): number {
 }
 
 export function memberSlotInput(
-  image: Pick<CollectionMember, 'id' | 'slot' | 'inuksukId'>,
+  image: Pick<CollectionMember, 'id' | 'slot' | 'markerId'>,
 ): CollectionSlotInput {
-  if (image.inuksukId != null) return { image_id: image.id, inuksuk_id: image.inuksukId }
+  if (image.markerId != null) return { image_id: image.id, marker_id: image.markerId }
   return { ...(image.slot && image.slot.id > 0 ? { id: image.slot.id } : {}), image_id: image.id }
 }
 
@@ -39,8 +39,8 @@ export function memberViewport(image: CollectionMember, legacy: Record<string, u
 }
 
 export async function renewSlotThumbnail(collectionId: number, image: CollectionMember) {
-  if (image.inuksukId != null) {
-    const fresh = await fetchInuksuk(image.inuksukId)
+  if (image.markerId != null) {
+    const fresh = await fetchMarker(image.markerId)
     return { id: image.id, thumb: fresh.thumb }
   }
   const fresh = await fetchCollection(collectionId)

@@ -3,12 +3,12 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import * as api from '../../src/api'
 import SearchModal from '../../src/components/SearchModal'
 import { BOARDS_FIXTURES } from '../../src/components/boardsFixtures'
-import { INUKSUK_FIXTURE } from '../../src/components/inuksukFixtures'
+import { MARKER_FIXTURE } from '../../src/components/markerFixtures'
 
 vi.mock('../../src/api', async (original) => ({
   ...(await original<typeof api>()),
   fetchBoards: vi.fn(),
-  fetchInuksuks: vi.fn(),
+  fetchMarkers: vi.fn(),
   fetchBoard: vi.fn(),
   fetchImage: vi.fn(),
 }))
@@ -16,7 +16,7 @@ const board = { ...BOARDS_FIXTURES[0], name: 'Rose studies', description: 'Trace
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(api.fetchBoards).mockResolvedValue([board])
-  vi.mocked(api.fetchInuksuks).mockResolvedValue([INUKSUK_FIXTURE])
+  vi.mocked(api.fetchMarkers).mockResolvedValue([MARKER_FIXTURE])
   vi.mocked(api.fetchBoard).mockResolvedValue(board)
   vi.mocked(api.fetchImage).mockResolvedValue({
     id: 42,
@@ -33,8 +33,8 @@ beforeEach(() => {
     width: 100,
     height: 100,
     file_size: 100,
-    created_at: INUKSUK_FIXTURE.created_at,
-    updated_at: INUKSUK_FIXTURE.updated_at,
+    created_at: MARKER_FIXTURE.created_at,
+    updated_at: MARKER_FIXTURE.updated_at,
   })
 })
 function setup(overrides: Partial<React.ComponentProps<typeof SearchModal>> = {}) {
@@ -47,13 +47,13 @@ function setup(overrides: Partial<React.ComponentProps<typeof SearchModal>> = {}
     users: [],
     excludeHidden: true,
     suppressExtendedResults: true,
-    inuksuksEnabled: true,
+    markersEnabled: true,
     onSelectCategory: vi.fn(),
     onSelectImage: vi.fn(),
     onSelectProgram: vi.fn(),
     onSelectUser: vi.fn(),
     onSelectBoard: vi.fn(),
-    onSelectInuksuk: vi.fn(),
+    onSelectMarker: vi.fn(),
     onAddImagesToCollection: vi.fn(),
     ...overrides,
   }
@@ -78,11 +78,11 @@ it('uses server-filtered title and description results, chips, and saved-view na
     expect.anything(),
   )
   expect(screen.getByText('Boards')).toBeVisible()
-  expect(screen.getByText('Inuksuks')).toBeVisible()
+  expect(screen.getByText('Markers')).toBeVisible()
   fireEvent.click(result('Rose studies'))
   expect(props.onSelectBoard).toHaveBeenCalledWith(board.id)
   fireEvent.click(result('Rose window'))
-  expect(props.onSelectInuksuk).toHaveBeenCalledWith(INUKSUK_FIXTURE)
+  expect(props.onSelectMarker).toHaveBeenCalledWith(MARKER_FIXTURE)
   search('Tracery')
   await waitFor(() => expect(screen.getByText('Rose studies')).toBeVisible())
   fireEvent.click(screen.getByText('Boards'))
@@ -90,14 +90,14 @@ it('uses server-filtered title and description results, chips, and saved-view na
 })
 
 it('does not query or expose saved-view kinds with the flag off', async () => {
-  setup({ inuksuksEnabled: false })
+  setup({ markersEnabled: false })
   search()
   expect(screen.queryByText('Boards')).not.toBeInTheDocument()
   expect(api.fetchBoards).not.toHaveBeenCalled()
-  expect(api.fetchInuksuks).not.toHaveBeenCalled()
+  expect(api.fetchMarkers).not.toHaveBeenCalled()
 })
 
-it.each(['board', 'inuksuk'] as const)(
+it.each(['board', 'marker'] as const)(
   'stages %s saved views rather than navigating in collection-picker mode',
   async (kind) => {
     const { props } = setup({ initialSelectMode: true })
@@ -110,7 +110,7 @@ it.each(['board', 'inuksuk'] as const)(
     expect(members[0]).toEqual(
       expect.objectContaining({
         id: 42,
-        inuksukId: 7,
+        markerId: 7,
         slot: expect.objectContaining({
           id: -7,
           label: 'Rose window',
@@ -119,16 +119,16 @@ it.each(['board', 'inuksuk'] as const)(
       }),
     )
     expect(props.onSelectBoard).not.toHaveBeenCalled()
-    expect(props.onSelectInuksuk).not.toHaveBeenCalled()
+    expect(props.onSelectMarker).not.toHaveBeenCalled()
   },
 )
 
 it('keeps empty and failed searches empty and reports failures', async () => {
   vi.mocked(api.fetchBoards).mockResolvedValue([])
-  vi.mocked(api.fetchInuksuks).mockResolvedValue([])
+  vi.mocked(api.fetchMarkers).mockResolvedValue([])
   setup()
   search()
-  await waitFor(() => expect(api.fetchInuksuks).toHaveBeenCalled())
+  await waitFor(() => expect(api.fetchMarkers).toHaveBeenCalled())
   expect(screen.queryByText('Rose window')).not.toBeInTheDocument()
   vi.mocked(api.fetchBoards).mockRejectedValue(new Error('Search unavailable'))
   search('tracery')
@@ -136,7 +136,7 @@ it('keeps empty and failed searches empty and reports failures', async () => {
 })
 
 it('does not close or stage a Board that no longer has visible members', async () => {
-  vi.mocked(api.fetchBoard).mockResolvedValue({ ...board, inuksuks: [] })
+  vi.mocked(api.fetchBoard).mockResolvedValue({ ...board, markers: [] })
   const { props, rerender } = setup({ initialSelectMode: true })
   search()
   await screen.findByText('Rose studies')

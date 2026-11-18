@@ -8,7 +8,7 @@ import {
 import { parseCollectionSlotParam } from '../src/collectionUtils'
 import * as api from '../src/api'
 import { makeApiCollection, makeImage } from './helpers/fixtures'
-import { INUKSUK_FIXTURE } from '../src/components/inuksukFixtures'
+import { MARKER_FIXTURE } from '../src/components/markerFixtures'
 
 it('keeps image identity separate from persisted and draft member keys', () => {
   const image = makeImage({ id: 100 })
@@ -18,9 +18,9 @@ it('keeps image identity separate from persisted and draft member keys', () => {
   expect(memberKey({ ...image, draftKey: -1 })).toBe(-1)
   expect(memberSlotInput({ ...image, slot })).toEqual({ image_id: 100, id: 11 })
   expect(memberSlotInput({ ...image, slot: { ...slot, id: -1 } })).toEqual({ image_id: 100 })
-  expect(memberSlotInput({ ...image, slot, draftKey: -1, inuksukId: 8 })).toEqual({
+  expect(memberSlotInput({ ...image, slot, draftKey: -1, markerId: 8 })).toEqual({
     image_id: 100,
-    inuksuk_id: 8,
+    marker_id: 8,
   })
   expect(memberViewport({ ...image, slot }, { '100': { x: 0.3 } })).toEqual({ x: 0.3 })
 })
@@ -81,12 +81,12 @@ it('renews crops by slot id rather than picking the first matching source image'
   request.mockRestore()
 })
 
-it('renews an uncommitted Board crop through its source without writing the Inuksuk', async () => {
+it('renews an uncommitted Board crop through its source without writing the Marker', async () => {
   const request = vi
-    .spyOn(api, 'fetchInuksuk')
-    .mockResolvedValue({ ...INUKSUK_FIXTURE, thumb: '/source.jpg?token=new' })
+    .spyOn(api, 'fetchMarker')
+    .mockResolvedValue({ ...MARKER_FIXTURE, thumb: '/source.jpg?token=new' })
   await expect(
-    renewSlotThumbnail(7, { ...makeImage({ id: 100 }), draftKey: -1, inuksukId: 8 }),
+    renewSlotThumbnail(7, { ...makeImage({ id: 100 }), draftKey: -1, markerId: 8 }),
   ).resolves.toEqual({ id: 100, thumb: '/source.jpg?token=new' })
   expect(request).toHaveBeenCalledWith(8)
   request.mockRestore()

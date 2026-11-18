@@ -106,7 +106,7 @@ import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
 import type { CanvasDraftHandle } from '../useCanvasAnnotations'
 
 export interface CollectionsPageProps {
-  inuksuksEnabled?: boolean
+  markersEnabled?: boolean
   currentUser: User | null
   programs: Program[]
   groups: Group[]
@@ -658,7 +658,7 @@ function CollectionDetailHeader({
 }
 
 export default function CollectionsPage({
-  inuksuksEnabled = false,
+  markersEnabled = false,
   currentUser,
   programs,
   groups,
@@ -1228,7 +1228,7 @@ export default function CollectionsPage({
             />
           </Box>
           <SequenceCollectionViewer
-            inuksuksEnabled={inuksuksEnabled}
+            markersEnabled={markersEnabled}
             collection={detail}
             itemId={selectedCollectionItemId}
             slotId={selectedCollectionSlotId}
@@ -1265,7 +1265,7 @@ export default function CollectionsPage({
             />
           </Box>
           <SynchronizedCollectionViewer
-            inuksuksEnabled={inuksuksEnabled}
+            markersEnabled={markersEnabled}
             collection={detail}
             onSaveViewport={(viewportState, slotViewports) =>
               slotViewports
@@ -1914,7 +1914,7 @@ export default function CollectionsPage({
           commits them through one whole-replace PUT — only then does the
           detail behind it change. */}
       <CollectionManageDialog
-        inuksuksEnabled={inuksuksEnabled}
+        markersEnabled={markersEnabled}
         open={manageOpen}
         onClose={() => setManageOpen(false)}
         collection={detail}

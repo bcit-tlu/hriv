@@ -14,11 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app import auth, board_views
 from app.database import get_db, settings
-from app.middleware import InuksuksFeatureMiddleware
+from app.middleware import MarkersFeatureMiddleware
 from app.models import (
-    Board, BoardInuksuk, Category, Group, Image, Inuksuk, Program, User,
+    Board, BoardMarker, Category, Group, Image, Marker, Program, User,
 )
-from app.routers import boards, images, inuksuks
+from app.routers import boards, images, markers
 from app.tile_tokens import TileTokenError, validate_tile_token
 
 DB_URL = os.environ.get("TEST_DATABASE_URL", "")
@@ -27,16 +27,16 @@ DB_URL = os.environ.get("TEST_DATABASE_URL", "")
 def make_app() -> FastAPI:
     app = FastAPI()
     app.include_router(boards.router, prefix="/api")
-    app.include_router(inuksuks.router, prefix="/api")
+    app.include_router(markers.router, prefix="/api")
     app.include_router(images.router, prefix="/api")
     return app
 
 
 @pytest.mark.parametrize("path", [
-    "/api/boards", "/api/boards/1", "/api/inuksuks", "/api/inuksuks/1", "/api/images/1/inuksuks",
+    "/api/boards", "/api/boards/1", "/api/markers", "/api/markers/1", "/api/images/1/markers",
 ])
 async def test_router_dependency_flag_off_before_auth_or_database(monkeypatch, path):
-    monkeypatch.setattr(settings, "inuksuks_enabled", False)
+    monkeypatch.setattr(settings, "markers_enabled", False)
     app = make_app()
 
     def forbidden():
@@ -60,8 +60,8 @@ def test_main_registers_read_routes(tmp_path, monkeypatch):
 
     paths = set(app.openapi()["paths"])
     assert {
-        "/api/boards", "/api/boards/{board_id}", "/api/inuksuks",
-        "/api/images/{image_id}/inuksuks", "/api/inuksuks/{inuksuk_id}",
+        "/api/boards", "/api/boards/{board_id}", "/api/markers",
+        "/api/images/{image_id}/markers", "/api/markers/{marker_id}",
     } <= paths
 
 
@@ -69,7 +69,7 @@ def test_main_registers_read_routes(tmp_path, monkeypatch):
 async def world(monkeypatch):
     if not DB_URL:
         pytest.skip("TEST_DATABASE_URL not set")
-    monkeypatch.setattr(settings, "inuksuks_enabled", True)
+    monkeypatch.setattr(settings, "markers_enabled", True)
     monkeypatch.setattr(board_views.time, "time", lambda: 10000)
     engine = create_async_engine(DB_URL)
     async with engine.connect() as connection:
@@ -126,7 +126,7 @@ async def world(monkeypatch):
             items = {}
 
             def add(key, *, owner=None, image="visible", on=("public",), favourite=False, thumb=False):
-                item = Inuksuk(
+                item = Marker(
                     title=key, image=imgs[image], x=.5, y=.375, zoom=2,
                     owners=[owner] if owner is not None else [other],
                     favourite=favourite, sort_order=100,
@@ -147,10 +147,10 @@ async def world(monkeypatch):
             await db.flush()
             for item, on, thumb in items.values():
                 if thumb:
-                    item.thumb = f"/api/tiles/42/inuksuks/{item.id}.jpg"
+                    item.thumb = f"/api/tiles/42/markers/{item.id}.jpg"
                 for index, key in enumerate(on):
-                    db.add(BoardInuksuk(
-                        board_id=bs[key].id, inuksuk_id=item.id,
+                    db.add(BoardMarker(
+                        board_id=bs[key].id, marker_id=item.id,
                         sort_order=item.id % 10 + index,
                     ))
             await db.flush()
@@ -170,7 +170,7 @@ async def world(monkeypatch):
                 yield db
 
             app = make_app()
-            app.add_middleware(InuksuksFeatureMiddleware)
+            app.add_middleware(MarkersFeatureMiddleware)
             app.dependency_overrides[auth.get_current_user] = current_user
             app.dependency_overrides[get_db] = session
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -187,9 +187,9 @@ def by_title(response):
     return {row["title"]: row for row in response.json()}
 
 
-async def test_inuksuk_detail_projection_and_conditional_get(world):
+async def test_marker_detail_projection_and_conditional_get(world):
     item_id = world.items["mine"]
-    url = f"/api/inuksuks/{item_id}"
+    url = f"/api/markers/{item_id}"
     response = await world.client.get(url)
     assert response.status_code == 200, response.text
     row = response.json()
@@ -207,7 +207,7 @@ async def test_inuksuk_detail_projection_and_conditional_get(world):
 
 
 @pytest.mark.parametrize("role", ["student", "staff"])
-async def test_inuksuk_category_name_uses_eager_visible_image(world, role):
+async def test_marker_category_name_uses_eager_visible_image(world, role):
     world.caller["role"] = role
     category = Category(label="Architectural details", programs=[], groups=[])
     world.db.add(category)
@@ -217,9 +217,9 @@ async def test_inuksuk_category_name_uses_eager_visible_image(world, role):
     await world.db.flush()
     world.db.expunge_all()
     endpoints = [
-        f"/api/inuksuks/{world.items['mine']}",
-        "/api/inuksuks",
-        f"/api/images/{world.images['visible']}/inuksuks",
+        f"/api/markers/{world.items['mine']}",
+        "/api/markers",
+        f"/api/images/{world.images['visible']}/markers",
         f"/api/boards/{world.boards['public']}",
     ]
     for endpoint in endpoints:
@@ -227,20 +227,20 @@ async def test_inuksuk_category_name_uses_eager_visible_image(world, role):
         response = await world.client.get(endpoint)
         assert response.status_code == 200, response.text
         payload = response.json()
-        rows = payload if isinstance(payload, list) else payload.get("inuksuks", [payload])
+        rows = payload if isinstance(payload, list) else payload.get("markers", [payload])
         row = next(row for row in rows if row["id"] == world.items["mine"])
         assert row["category_name"] == "Architectural details"
 
 
 @pytest.mark.parametrize("key", ["image_hidden", "image_inactive", "image_program", "image_group", "private", "missing"])
-async def test_inuksuk_detail_conceals_invisible_or_missing_items(world, key):
-    response = await world.client.get(f"/api/inuksuks/{world.items.get(key, -1)}")
+async def test_marker_detail_conceals_invisible_or_missing_items(world, key):
+    response = await world.client.get(f"/api/markers/{world.items.get(key, -1)}")
     assert response.status_code == 404
-    assert response.json() == {"detail": "Inuksuk not found"}
+    assert response.json() == {"detail": "Marker not found"}
 
 
-async def test_inuksuk_detail_owner_without_visible_board_matches_list(world):
-    response = await world.client.get(f"/api/inuksuks/{world.items['owner_only']}")
+async def test_marker_detail_owner_without_visible_board_matches_list(world):
+    response = await world.client.get(f"/api/markers/{world.items['owner_only']}")
     assert response.status_code == 200
     assert response.json()["board_ids"] == []
 
@@ -257,13 +257,13 @@ async def test_board_list_visibility_and_image_gate(world, role):
     assert ids == expected
     public = next(row for row in response.json() if row["id"] == world.boards["public"])
     # Inactive/hidden/program/group image gates apply only to students.
-    assert public["inuksuk_count"] == (3 if role == "student" else 7)
+    assert public["marker_count"] == (3 if role == "student" else 7)
 
 
 async def test_invisible_board_404_and_visible_detail_order(world):
     hidden = await world.client.get(f"/api/boards/{world.boards['private']}")
     assert hidden.status_code == 404
-    filtered = await world.client.get(f"/api/inuksuks?board_id={world.boards['private']}")
+    filtered = await world.client.get(f"/api/markers?board_id={world.boards['private']}")
     assert filtered.status_code == 404
     missing = await world.client.get("/api/boards/2147483647")
     assert missing.status_code == 404
@@ -271,13 +271,13 @@ async def test_invisible_board_404_and_visible_detail_order(world):
     assert result.status_code == 200, result.text
     body = result.json()
     assert "sections" not in body
-    assert len(body["inuksuks"]) == 3
-    assert [r["sort_order"] for r in body["inuksuks"]] == sorted(r["sort_order"] for r in body["inuksuks"])
-    assert all("section_id" not in r for r in body["inuksuks"])
+    assert len(body["markers"]) == 3
+    assert [r["sort_order"] for r in body["markers"]] == sorted(r["sort_order"] for r in body["markers"])
+    assert all("section_id" not in r for r in body["markers"])
 
 
 async def test_drawer_source_precedence_and_visible_board_ids(world):
-    rows = by_title(await world.client.get(f"/api/images/{world.images['visible']}/inuksuks"))
+    rows = by_title(await world.client.get(f"/api/images/{world.images['visible']}/markers"))
     assert {key: row["source"] for key, row in rows.items()} == {
         "mine": "mine", "owner_only": "mine", "instructor": "instructor",
         "program": "instructor", "public": "public",
@@ -287,70 +287,70 @@ async def test_drawer_source_precedence_and_visible_board_ids(world):
     assert rows["public"]["board_ids"] == [world.boards["public"]]
     assert len({row["id"] for row in rows.values()}) == len(rows)
     world.caller["role"] = "staff"
-    rows = by_title(await world.client.get(f"/api/images/{world.images['visible']}/inuksuks"))
+    rows = by_title(await world.client.get(f"/api/images/{world.images['visible']}/markers"))
     assert "private" not in rows and "restricted" not in rows
     assert rows["public"]["source"] == "instructor"
     assert "owner_only" not in rows
 
 
 @pytest.mark.parametrize("key", ["inactive", "hidden", "program", "group"])
-async def test_image_restrictions_hide_owned_public_inuksuks_and_drawer(world, key):
-    rows = by_title(await world.client.get("/api/inuksuks"))
+async def test_image_restrictions_hide_owned_public_markers_and_drawer(world, key):
+    rows = by_title(await world.client.get("/api/markers"))
     assert f"image_{key}" not in rows
-    result = await world.client.get(f"/api/images/{world.images[key]}/inuksuks")
+    result = await world.client.get(f"/api/images/{world.images[key]}/markers")
     assert result.status_code == 404
 
 
 @pytest.mark.parametrize("role", ["admin", "instructor", "staff"])
-async def test_non_students_see_inactive_image_inuksuks(world, role):
+async def test_non_students_see_inactive_image_markers(world, role):
     world.caller["role"] = role
     image_id = world.images["inactive"]
-    rows = by_title(await world.client.get(f"/api/inuksuks?image_id={image_id}"))
+    rows = by_title(await world.client.get(f"/api/markers?image_id={image_id}"))
     assert set(rows) == {"image_inactive"}
-    drawer = by_title(await world.client.get(f"/api/images/{image_id}/inuksuks"))
+    drawer = by_title(await world.client.get(f"/api/images/{image_id}/markers"))
     assert set(drawer) == {"image_inactive"}
     assert drawer["image_inactive"]["source"] == "public"
     detail = await world.client.get(f"/api/boards/{world.boards['public']}")
     assert detail.status_code == 200
-    assert "image_inactive" in {row["title"] for row in detail.json()["inuksuks"]}
+    assert "image_inactive" in {row["title"] for row in detail.json()["markers"]}
 
 
-async def test_inuksuk_filters_and_unlabelled_items(world):
-    rows = by_title(await world.client.get("/api/inuksuks"))
+async def test_marker_filters_and_unlabelled_items(world):
+    rows = by_title(await world.client.get("/api/markers"))
     assert "restricted" in rows and rows["restricted"]["source"] is None
     assert "private" not in rows and rows["owner_only"]["source"] == "mine"
     for scope in ("mine", "instructor", "public"):
-        filtered = by_title(await world.client.get(f"/api/inuksuks?scope={scope}"))
+        filtered = by_title(await world.client.get(f"/api/markers?scope={scope}"))
         assert filtered and all(row["source"] == scope for row in filtered.values())
-    fav = by_title(await world.client.get("/api/inuksuks?favourite=true"))
+    fav = by_title(await world.client.get("/api/markers?favourite=true"))
     assert set(fav) == {"mine"}
-    assert by_title(await world.client.get(f"/api/inuksuks?image_id={world.images['inactive']}")) == {}
+    assert by_title(await world.client.get(f"/api/markers?image_id={world.images['inactive']}")) == {}
     world.caller["role"] = "staff"
-    rows = by_title(await world.client.get("/api/inuksuks"))
+    rows = by_title(await world.client.get("/api/markers"))
     assert rows["private"]["source"] is None
 
 
 async def test_thumbnail_scopes_are_never_full_tile_tokens(world):
-    rows = by_title(await world.client.get("/api/inuksuks"))
-    for key, iid in [("mine", world.items["mine"]), ("public", None)]:
+    rows = by_title(await world.client.get("/api/markers"))
+    for key, mid in [("mine", world.items["mine"]), ("public", None)]:
         token = parse_qs(urlsplit(rows[key]["thumb"]).query)["tile_token"][0]
         payload = jwt.decode(token, auth.auth_settings.jwt_secret, algorithms=[auth.auth_settings.jwt_algorithm])
         assert payload["purpose"] == "thumb"
-        assert payload.get("iid") == iid
-        path = f"inuksuks/{iid}.jpg" if iid else "thumbnail.jpeg"
+        assert payload.get("mid") == mid
+        path = f"markers/{mid}.jpg" if mid else "thumbnail.jpeg"
         validate_tile_token(token, 42, path)
-        for denied in ("image_files/0/0_0.jpeg", f"inuksuks/{world.items['instructor']}.jpg"):
+        for denied in ("image_files/0/0_0.jpeg", f"markers/{world.items['instructor']}.jpg"):
             with pytest.raises(TileTokenError):
                 validate_tile_token(token, 42, denied)
 
 
-@pytest.mark.parametrize("endpoint", ["boards", "board", "inuksuks", "drawer"])
+@pytest.mark.parametrize("endpoint", ["boards", "board", "markers", "drawer"])
 async def test_conditional_get_and_viewer_binding(world, endpoint):
     url = {
         "boards": "/api/boards",
         "board": f"/api/boards/{world.boards['public']}",
-        "inuksuks": "/api/inuksuks",
-        "drawer": f"/api/images/{world.images['visible']}/inuksuks",
+        "markers": "/api/markers",
+        "drawer": f"/api/images/{world.images['visible']}/markers",
     }[endpoint]
     response = await world.client.get(url)
     assert response.status_code == 200, response.text
@@ -364,15 +364,15 @@ async def test_conditional_get_and_viewer_binding(world, endpoint):
 
 
 async def test_etag_changes_after_visibility_update_and_token_epoch(world, monkeypatch):
-    first = await world.client.get("/api/inuksuks")
+    first = await world.client.get("/api/markers")
     item = await world.db.get(Image, world.images["visible"])
     item.active = False
     await world.db.flush()
-    changed = await world.client.get("/api/inuksuks", headers={"If-None-Match": first.headers["etag"]})
+    changed = await world.client.get("/api/markers", headers={"If-None-Match": first.headers["etag"]})
     assert changed.status_code == 200
     assert changed.headers["etag"] != first.headers["etag"]
     monkeypatch.setattr(board_views.time, "time", lambda: 100000)
-    renewed = await world.client.get("/api/inuksuks", headers={"If-None-Match": changed.headers["etag"]})
+    renewed = await world.client.get("/api/markers", headers={"If-None-Match": changed.headers["etag"]})
     assert renewed.status_code == 200
 
 
@@ -381,7 +381,7 @@ async def test_search_sort_pagination_and_validation(world):
     assert result.status_code == 200, result.text
     assert [b["name"] for b in result.json()] == ["Alpha public"]
     assert result.headers["x-total-count"] == "1"
-    result = await world.client.get("/api/inuksuks?q=mine&sort=title&order=asc&limit=1")
+    result = await world.client.get("/api/markers?q=mine&sort=title&order=asc&limit=1")
     assert set(by_title(result)) == {"mine"}
     result = await world.client.get("/api/boards?page=999&page_size=1")
     assert result.status_code == 200 and result.json() == []
@@ -389,9 +389,9 @@ async def test_search_sort_pagination_and_validation(world):
     for url in [
         "/api/boards?sort=bad", "/api/boards?visibility=bad",
         "/api/boards?order=bad", "/api/boards?page=1",
-        "/api/boards?limit=1&page_size=1", "/api/inuksuks?scope=bad",
-        "/api/inuksuks?sort=bad", "/api/inuksuks?limit=0",
-        "/api/inuksuks?order=asc&direction=desc",
+        "/api/boards?limit=1&page_size=1", "/api/markers?scope=bad",
+        "/api/markers?sort=bad", "/api/markers?limit=0",
+        "/api/markers?order=asc&direction=desc",
     ]:
         response = await world.client.get(url)
         assert response.status_code == 422, (url, response.text)
@@ -399,7 +399,7 @@ async def test_search_sort_pagination_and_validation(world):
 
 async def test_all_known_sort_accessors_preserve_order(world):
     for endpoint, fields in [
-        ("boards", boards._SORTS), ("inuksuks", inuksuks._SORTS),
+        ("boards", boards._SORTS), ("markers", markers._SORTS),
     ]:
         response = await world.client.get(f"/api/{endpoint}")
         assert response.status_code == 200
@@ -435,7 +435,7 @@ async def test_empty_reads_and_no_n_plus_one(world):
 
     event.listen(world.engine.sync_engine, "before_cursor_execute", count)
     try:
-        response = await world.client.get("/api/inuksuks")
+        response = await world.client.get("/api/markers")
     finally:
         event.remove(world.engine.sync_engine, "before_cursor_execute", count)
     assert response.status_code == 200, response.text
@@ -445,5 +445,5 @@ async def test_empty_reads_and_no_n_plus_one(world):
     assert " IN (" in image_selects[0]
     empty = await world.client.get(f"/api/boards/{world.boards['empty_scope']}")
     assert empty.status_code == 200
-    assert empty.json()["inuksuks"] == []
+    assert empty.json()["markers"] == []
     assert empty.json()["cover_thumb"] is None

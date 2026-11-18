@@ -1109,7 +1109,7 @@ def validate_collection_image_ids(
     against the database; this is the request-shape half of the contract.
     """
     from .database import settings
-    if not settings.inuksuks_enabled and len(set(image_ids)) != len(image_ids):
+    if not settings.markers_enabled and len(set(image_ids)) != len(image_ids):
         raise ValueError("image_ids must not contain duplicates")
     if (
         collection_type == "synchronized"
@@ -1125,7 +1125,7 @@ def validate_collection_image_ids(
 class CollectionSlotInput(BaseModel):
     id: int | None = Field(default=None, gt=0)
     image_id: int = Field(gt=0)
-    inuksuk_id: int | None = Field(default=None, gt=0)
+    marker_id: int | None = Field(default=None, gt=0)
     viewport_state: SlotViewport | None = None
     label: str | None = Field(default=None, max_length=255)
 
@@ -1133,14 +1133,14 @@ class CollectionSlotInput(BaseModel):
 class CollectionSlotSources(BaseModel):
     slots: list[CollectionSlotInput] | None = None
     source_board_id: int | None = Field(default=None, gt=0)
-    inuksuk_ids: list[int] | None = None
+    marker_ids: list[int] | None = None
 
     @model_validator(mode="after")
     def _gate_slots(self):
         from .database import settings
-        fields = {"slots", "source_board_id", "inuksuk_ids"}
-        if not settings.inuksuks_enabled and self.model_fields_set & fields:
-            raise ValueError("Collection slots require Inuksuks to be enabled")
+        fields = {"slots", "source_board_id", "marker_ids"}
+        if not settings.markers_enabled and self.model_fields_set & fields:
+            raise ValueError("Collection slots require Markers to be enabled")
         return self
 
 
@@ -1223,7 +1223,7 @@ class CollectionImagesUpdate(CollectionSlotSources):
     @model_validator(mode="after")
     def _require_legacy_images(self):
         from .database import settings
-        if not settings.inuksuks_enabled and "image_ids" not in self.model_fields_set:
+        if not settings.markers_enabled and "image_ids" not in self.model_fields_set:
             raise ValueError("image_ids is required")
         return self
 
@@ -1243,9 +1243,9 @@ class CollectionViewportUpdate(BaseModel):
     @model_validator(mode="after")
     def _gate_slot_viewports(self):
         from .database import settings
-        if not settings.inuksuks_enabled:
+        if not settings.markers_enabled:
             if "slot_viewports" in self.model_fields_set:
-                raise ValueError("Slot viewports require Inuksuks to be enabled")
+                raise ValueError("Slot viewports require Markers to be enabled")
             if "viewport_state" not in self.model_fields_set:
                 raise ValueError("viewport_state is required")
         return self
@@ -1637,7 +1637,7 @@ def validate_board_assignments(value: list[BoardAssignment]) -> list[BoardAssign
     return value
 
 
-class InuksukCreate(BaseModel):
+class MarkerCreate(BaseModel):
     image_id: int
     title: str = Field(max_length=255)
     description: str | None = None
@@ -1653,7 +1653,7 @@ class InuksukCreate(BaseModel):
     _assignments = field_validator("board_assignments")(validate_board_assignments)
 
 
-class InuksukUpdate(BaseModel):
+class MarkerUpdate(BaseModel):
     title: str | None = Field(None, max_length=255)
     description: str | None = None
     x: float | None = Field(None, allow_inf_nan=False)
@@ -1682,33 +1682,33 @@ class InuksukUpdate(BaseModel):
         return validate_board_assignments(value) if value is not None else value
 
 
-class InuksukOrderItem(BaseModel):
-    inuksuk_id: int
+class MarkerOrderItem(BaseModel):
+    marker_id: int
     version: int | None = Field(None, ge=1)
 
 
-class InuksukOrderUpdate(BaseModel):
-    items: list[InuksukOrderItem]
+class MarkerOrderUpdate(BaseModel):
+    items: list[MarkerOrderItem]
 
     @model_validator(mode="after")
-    def _unique(self) -> "InuksukOrderUpdate":
-        if len({item.inuksuk_id for item in self.items}) != len(self.items):
-            raise ValueError("Duplicate Inuksuk IDs")
+    def _unique(self) -> "MarkerOrderUpdate":
+        if len({item.marker_id for item in self.items}) != len(self.items):
+            raise ValueError("Duplicate Marker IDs")
         return self
 
 
-class BoardInuksukOrderItem(BaseModel):
-    inuksuk_id: int
+class BoardMarkerOrderItem(BaseModel):
+    marker_id: int
 
 
-class BoardInuksuksOrder(BaseModel):
-    items: list[BoardInuksukOrderItem]
+class BoardMarkersOrder(BaseModel):
+    items: list[BoardMarkerOrderItem]
     version: int | None = Field(None, ge=1)
 
     @model_validator(mode="after")
-    def _unique(self) -> "BoardInuksuksOrder":
-        if len({item.inuksuk_id for item in self.items}) != len(self.items):
-            raise ValueError("Duplicate Inuksuk IDs")
+    def _unique(self) -> "BoardMarkersOrder":
+        if len({item.marker_id for item in self.items}) != len(self.items):
+            raise ValueError("Duplicate Marker IDs")
         return self
 
 
@@ -1719,12 +1719,12 @@ class BoardPermissionsOut(BaseModel):
     can_transfer: bool
 
 
-class InuksukPermissionsOut(BaseModel):
+class MarkerPermissionsOut(BaseModel):
     can_edit: bool
     can_delete: bool
 
 
-class InuksukOut(BaseModel):
+class MarkerOut(BaseModel):
     id: int
     image_id: int
     category_name: str | None = None
@@ -1741,7 +1741,7 @@ class InuksukOut(BaseModel):
     owners: list[CollectionOwnerOut]
     board_ids: list[int]
     source: Literal["mine", "instructor", "public"] | None = None
-    permissions: InuksukPermissionsOut
+    permissions: MarkerPermissionsOut
     created_at: datetime
     updated_at: datetime
 
@@ -1755,7 +1755,7 @@ class BoardSummaryOut(BaseModel):
     owner_program_id: int | None = None
     program_ids: list[int]
     group_ids: list[int]
-    inuksuk_count: int
+    marker_count: int
     cover_thumb: str | None = None
     sort_order: int
     version: int
@@ -1765,7 +1765,7 @@ class BoardSummaryOut(BaseModel):
 
 
 class BoardOut(BoardSummaryOut):
-    inuksuks: list[InuksukOut]
+    markers: list[MarkerOut]
 
 
 class FeaturesOut(BaseModel):
@@ -1775,7 +1775,7 @@ class FeaturesOut(BaseModel):
     """
 
     collections: bool
-    inuksuks: bool
+    markers: bool
     collections_student_access: bool
     collections_home_shelf: bool
     # Always true; kept for one release so SPAs built before the gate's

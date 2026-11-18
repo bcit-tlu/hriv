@@ -139,7 +139,7 @@ export const Synchronized: Story = {
 
 export const SavedViewSlots: Story = {
   args: {
-    inuksuksEnabled: true,
+    markersEnabled: true,
     collection: makeCollection(
       [1, 2].map((id) => ({
         ...makeImage(101, 'Architectural study'),

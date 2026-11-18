@@ -20,10 +20,10 @@ import * as SearchModalStories from './SearchModal.stories'
 
 ## Saved-view search
 
-When `inuksuksEnabled` is true, Boards and Inuksuks use the existing backend
+When `markersEnabled` is true, Boards and Markers use the existing backend
 `q` search endpoints, including server-side visibility checks, rather than a
 client-only index. Title and description matches have their own type chips.
-Board results navigate to Boards; Inuksuks reuse saved-coordinate navigation.
+Board results navigate to Boards; Markers reuse saved-coordinate navigation.
 In collection-picker mode, choosing either stages its saved views into the draft
 in displayed Board order. An empty Board or a failed request leaves the picker open.
 
@@ -47,7 +47,7 @@ already access-filtered).
 ## Implementation guidance
 
 - **Result kinds.** `ResultKind` covers `category`, `image`, `program`, `user`, `guide`,
-  `collection`, `board` and `inuksuk` (the last two are flag-gated).
+  `collection`, `board` and `marker` (the last two are flag-gated).
   Each kind has a type chip; a chip scopes matches to the kind's primary
   fields (`PRIMARY_FIELDS_BY_KIND`) unless explicit Field chips override. Collections match
   **Name** and **Description**; their rows show the collection type, image count, and owner,
@@ -59,7 +59,7 @@ already access-filtered).
   the modal as a collection-image picker (the Manage Collection dialog's **Add** flow) with
   `onAddImagesToCollection` provided — normal search shows no Select affordance. The picker
   offers **Categories** and **Images** chips, pre-applied and toggleable, plus
-  **Boards** and **Inuksuks** when enabled. No Field chips render in picker mode.
+  **Boards** and **Markers** when enabled. No Field chips render in picker mode.
   Saved-view results stage immediately as described above; the checkbox behavior is unchanged.
   Image rows
   become labelled checkboxes (`Select {image name}`) and category rows checkable too — a checked

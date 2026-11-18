@@ -94,7 +94,7 @@ export interface Group {
  * the surface rather than rendering it against a 404 API.
  */
 export interface Features {
-  inuksuks: boolean
+  markers: boolean
   /** Collections tab + ``?collection=`` deep links (epic #1409). */
   collections: boolean
   collectionsStudentAccess: boolean
@@ -103,7 +103,7 @@ export interface Features {
 }
 
 export const DEFAULT_FEATURES: Features = {
-  inuksuks: false,
+  markers: false,
   collections: false,
   collectionsStudentAccess: true,
   collectionsHomeShelf: false,
@@ -111,15 +111,15 @@ export const DEFAULT_FEATURES: Features = {
 
 // ── Collections (docs/collections.md) ─────────────────────
 
-export type InuksukSource = 'mine' | 'instructor' | 'public'
+export type MarkerSource = 'mine' | 'instructor' | 'public'
 export type BoardVisibility = 'private' | 'restricted' | 'public'
-export interface InuksukView {
+export interface MarkerView {
   x: number
   y: number
   zoom: number
   rotation: number
 }
-export interface ApiInuksuk extends InuksukView {
+export interface ApiMarker extends MarkerView {
   id: number
   image_id: number
   category_name?: string | null
@@ -131,7 +131,7 @@ export interface ApiInuksuk extends InuksukView {
   version: number
   owners: { user_id: number | null; program_id: number | null; name: string; role: Role | null }[]
   board_ids: number[]
-  source: InuksukSource | null
+  source: MarkerSource | null
   permissions: { can_edit: boolean; can_delete: boolean }
   created_at: string
   updated_at: string
@@ -141,11 +141,11 @@ export interface ApiBoardSummary {
   name: string
   description: string | null
   visibility: BoardVisibility
-  owners: ApiInuksuk['owners']
+  owners: ApiMarker['owners']
   owner_program_id: number | null
   program_ids: number[]
   group_ids: number[]
-  inuksuk_count: number
+  marker_count: number
   cover_thumb: string | null
   sort_order: number
   version: number
@@ -159,7 +159,7 @@ export interface ApiBoardSummary {
   updated_at: string
 }
 export interface ApiBoard extends ApiBoardSummary {
-  inuksuks: ApiInuksuk[]
+  markers: ApiMarker[]
 }
 export interface BoardAssignment {
   board_id: number
@@ -253,5 +253,5 @@ export interface CollectionSlot {
 export interface CollectionMember extends ImageItem {
   slot?: CollectionSlot | null
   draftKey?: number
-  inuksukId?: number
+  markerId?: number
 }

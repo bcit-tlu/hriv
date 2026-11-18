@@ -75,7 +75,7 @@ from .rebuild_locks import (
     find_active_rebuild,
 )
 from .tile_order import INITIAL_SCOPE_REVISION
-from .snapshot_files import snapshot_files
+from .snapshot_files import snapshot_files, snapshot_relative_target
 from .worker import TaskQueueUnavailableError, enqueue_admin_task
 
 logger = logging.getLogger(__name__)
@@ -507,7 +507,7 @@ def _swap_imported_entries(
         ]
         archived_tiles = extracted_dir / tiles_basename
         entries.extend(
-            (path, Path(tiles_dir) / path.relative_to(archived_tiles))
+            (path, Path(tiles_dir) / snapshot_relative_target(path.relative_to(archived_tiles)))
             for path in snapshot_files(archived_tiles)
         )
         for entry, target in entries:

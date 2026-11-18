@@ -298,35 +298,55 @@ Notes: <…>
 
 `components/BoardsPage.tsx` owns a separate `DragDropProvider`. Browse's
 `SortableTileGrid` detectors, zones, priorities and activation logic are untouched.
-The Boards provider has two typed surfaces, all using drag handles:
+The Boards provider has two typed surfaces. Board chips and Markers both use
+their surfaces for dragging without a separate grip icon. Clicking still opens them:
 
 - `board-card` / `board:{id}`: editable owned Board tabs reorder within the row;
-  non-owned/read-only tabs have no handles. Filters hide Board handles so a
+  non-owned/read-only tabs cannot drag. Filters disable Board dragging so a
   subset cannot replace the complete owned order. That order and per-Board
   versions go to `PUT /boards/order`.
+  Board sortable roots are direct siblings in the horizontal row, with chip width
+  constraints on those roots. Optimistic sorting must not reparent them into
+  separate per-chip wrappers. Keyboard reorder stories verify sibling structure
+  and horizontal, non-overlapping geometry after the order is saved.
 - `board-member` / `item:{id}`: members sort in one flat Board group. The
   request contains every visible member exactly once, leaving hidden members to
   the backend.
 
-Overview cards use separate `useDraggable` handles, not sortable targets.
+Overview cards use `useDraggable` card surfaces, not sortable targets.
 `save:{boardId}` bins on editable Board tabs accept owned/editable
-overview Inuksuks and add a link without removing the source, with target outline
+overview Markers and add a link without removing the source, with target outline
 feedback and a success snackbar. Non-owner Board editors
 can reorder/move members within their Board but cannot use cross-Board save.
 The explicit Move/Save dialog supports atomic cross-Board moves and is also the
 accessible alternative.
 Drop regions expose accessible names: `Save to {Board}`.
-Read-only owned Boards share the row but are omitted from reorder writes and
-cannot be drop targets. The Board dialog retains sortable member handles in its
+Read-only owned Boards move to Public & shared Boards rather than the chip row, for
+every role, and cannot accept saves. The Board dialog retains sortable member card surfaces in its
 independently scrolling collage, without involving Browse's collision machinery.
+All visible Board chips register typed drop receivers, including already-linked
+Boards, so rejected drops can explain themselves without writing. Only eligible targets
+show the outline; rejected targets remain unhighlighted. Dropping on an existing
+membership shows `Already in {Board name}`; a read-only destination shows
+`You can't add Markers to {Board name}` in the existing page snackbar
+if permissions become stale or another target remains reachable.
+Chip eligibility always uses the API edit permission, without role exemptions.
+Item permissions, stale/missing Board or Marker data, and busy/conflict guards also
+explain rejected drops. Cancelled drags remain silent and make no request.
+
+Drop notifications use the app's filled MUI Alert inside a bottom-centre Snackbar:
+successful saves are green/success, duplicate membership is info, and other refusals
+are warning. The close control and timeout dismiss it; click-away does not.
 
 Sensors follow the existing policy: Pointer distance 8px, touch hold 250ms with
-5px tolerance, plus KeyboardSensor. Only the drag handle activates sorting, so
-card clicks, favourite buttons and menus retain their normal behavior. Cancelled
+5px tolerance, plus KeyboardSensor. Board chip surfaces activate Board sorting;
+member card surfaces activate member dragging. Clicks and icon actions below the
+activation threshold retain their normal behavior. Move/Save and the editor are
+the explicit alternatives to dragging. Cancelled
 drags make no request. Same-surface ordering reuses `resolveReorderedKeys` and
 the dnd-kit projected source index. No Browse near/far-half split applies here.
 Failures retain the server-rendered order and 409s require explicit reload.
 
 Verify Board/member reorder,
-cross-Board save, keyboard handles, and touch scroll on the new surface before
+cross-Board save, keyboard surface activation, and touch scroll on the new surface before
 merge. The Browse feel-test contract above remains unchanged.

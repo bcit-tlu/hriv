@@ -167,7 +167,7 @@ export const Basic: Story = {
 }
 
 export const SavedViews: Story = {
-  args: { inuksuksEnabled: true },
+  args: { markersEnabled: true },
   beforeEach: () =>
     installBoardsFetch('ready', undefined, [{ ...BOARDS_FIXTURES[0], name: 'Rose studies' }]),
   play: async ({ canvasElement }) => {
@@ -176,7 +176,7 @@ export const SavedViews: Story = {
     await expect(await body.findByText('Rose studies')).toBeVisible()
     await expect(await body.findByText('Rose window')).toBeVisible()
     await expect(body.getByText('Boards')).toBeVisible()
-    await expect(body.getByText('Inuksuks')).toBeVisible()
+    await expect(body.getByText('Markers')).toBeVisible()
   },
 }
 

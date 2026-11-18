@@ -1,0 +1,18 @@
+import { Meta, Primary, Stories } from '@storybook/addon-docs/blocks'
+import * as StoriesModule from './ViewerImageDetails.stories'
+
+<Meta of={StoriesModule} />
+
+# Viewer image details
+
+Loads source information only while mounted in the selected Details tab, and
+renders the shared legacy metadata fields without a second drawer or footer.
+The surrounding ViewerSidePanel owns the title, scrolling and Viewer controls.
+
+Basic includes original-file information; MetadataOnly covers absent source
+information; Empty covers images with no displayable metadata. Request failures
+retain the image metadata, as covered by the component tests. Light and dark
+Chromatic modes share these states.
+
+<Primary />
+<Stories />

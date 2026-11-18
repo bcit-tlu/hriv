@@ -1033,7 +1033,7 @@ async def test_run_db_export_task_not_found() -> None:
 
 @pytest.mark.parametrize("slots_enabled", [False, True])
 async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> None:
-    monkeypatch.setattr(settings, "inuksuks_enabled", slots_enabled)
+    monkeypatch.setattr(settings, "markers_enabled", slots_enabled)
     now = datetime.now(timezone.utc)
     task = SimpleNamespace(
         id=1, task_type="db_export", status="pending", progress=0, log="",
@@ -1307,7 +1307,7 @@ async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> No
     export_path = os.path.join(tasks_dir, task.result_filename)
     with open(export_path) as f:
         dump = json.load(f)
-    assert all(name in dump for name in ("boards", "inuksuks", "board_owners", "board_programs", "board_groups", "inuksuk_owners", "board_inuksuks"))
+    assert all(name in dump for name in ("boards", "markers", "board_owners", "board_programs", "board_groups", "marker_owners", "board_markers"))
     for user_entry in dump["users"]:
         assert "oidc_subject" not in user_entry, "oidc_subject is PII and must not appear in exports"
         assert "password_hash" not in user_entry, "password_hash must not appear in exports"
@@ -1664,7 +1664,7 @@ def _full_dump() -> dict:
 @pytest.mark.parametrize("slots_enabled, slot_dump", [(False, False), (True, False), (False, True), (True, True)])
 async def test_run_db_import_happy_path(tmp_path, monkeypatch, slots_enabled, slot_dump) -> None:
     """Full import drives all flush/commit calls and marks the task completed."""
-    monkeypatch.setattr(settings, "inuksuks_enabled", slots_enabled)
+    monkeypatch.setattr(settings, "markers_enabled", slots_enabled)
     input_file = tmp_path / "dump.json"
     dump = _full_dump()
     if slot_dump:

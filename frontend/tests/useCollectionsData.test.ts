@@ -1890,7 +1890,7 @@ describe('useCollectionsData', () => {
       saveCollectionViewportMock.mockResolvedValueOnce(
         makeApiCollection({ id: 1, version: 7, images: [...images].reverse() }),
       )
-      const { result } = renderData({ selectedCollectionId: 1, inuksuksEnabled: true })
+      const { result } = renderData({ selectedCollectionId: 1, markersEnabled: true })
       await waitFor(() => expect(result.current.detail?.images.length).toBe(2))
       const members = [...result.current.detail!.images].reverse()
       await act(async () => {

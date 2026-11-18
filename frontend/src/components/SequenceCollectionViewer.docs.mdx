@@ -100,8 +100,19 @@ browser history.
 
 ## Collection saved views
 
-With `features.inuksuks`, collection members have independent slot identities.
+With `features.markers`, collection members have independent slot identities.
 Several slots can show one source image without sharing selection, drag order,
 or viewport state. The new saved-view story exercises this feature; legacy stories
 keep the feature disabled. Slot crops and labels are snapshots, not editable links
-to the original Inuksuks.
+to the original Markers.
+
+## Markers-enabled viewer panel
+
+The feature-on Sequence viewer uses the permanent right-side ViewerSidePanel.
+Its open/tab preference follows the user between steps. OSD's container and the
+external edge-arrow region reserve the same 256px, keeping the minimap, toolbar
+and arrows visible. Feature-off Details behavior is unchanged; Synchronized panes
+continue to use their independent legacy controls.
+Only My and Instructor Markers appear in viewer lists and markers. Shared View,
+between Markers and Details, copies the live image viewport and selection boxes
+as a standalone image link rather than changing the collection's saved slot.

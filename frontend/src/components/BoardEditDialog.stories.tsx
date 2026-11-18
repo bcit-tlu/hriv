@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { fn } from 'storybook/test'
+import { expect, fn, within } from 'storybook/test'
 import { AuthContext } from '../authContextValue'
 import BoardEditDialog from './BoardEditDialog'
 import {
@@ -26,6 +26,17 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 export const Basic: Story = {}
+export const DeleteConfirmation: Story = {
+  args: { board: BOARDS_FIXTURES[0], onDeleted: fn() },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement.ownerDocument.body)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Delete Board' }))
+    await expect(canvas.getByRole('button', { name: 'Confirm Delete Board' })).toBeVisible()
+    await expect(
+      canvas.getByText(/Markers only on this Board will be permanently deleted/),
+    ).toBeVisible()
+  },
+}
 export const Restricted: Story = {
   args: {
     board: { ...BOARDS_FIXTURES[0], visibility: 'restricted', program_ids: [1], group_ids: [1] },

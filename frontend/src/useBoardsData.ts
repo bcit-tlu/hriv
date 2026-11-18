@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchBoard, fetchBoards, fetchInuksuks, userMessage } from './api'
-import type { ApiBoard, ApiBoardSummary, ApiInuksuk } from './types'
+import { fetchBoard, fetchBoards, fetchMarkers, userMessage } from './api'
+import type { ApiBoard, ApiBoardSummary, ApiMarker } from './types'
 
 export function useBoardsData(boardId: number | null, favourites: boolean, enabled = true) {
   const generation = useRef({ value: 0 })
@@ -9,7 +9,7 @@ export function useBoardsData(boardId: number | null, favourites: boolean, enabl
   const [state, setState] = useState<{
     key: string
     boards: ApiBoardSummary[]
-    recent: ApiInuksuk[]
+    recent: ApiMarker[]
     error: string | null
   } | null>(null)
   const [detail, setDetail] = useState<{
@@ -36,10 +36,10 @@ export function useBoardsData(boardId: number | null, favourites: boolean, enabl
           if (batch.length < 200 || token !== generation.current.value) return rows
         }
       }
-      const allInuksuks = async () => {
-        const rows: ApiInuksuk[] = []
+      const allMarkers = async () => {
+        const rows: ApiMarker[] = []
         for (let page = 1; ; page++) {
-          const batch = await fetchInuksuks({
+          const batch = await fetchMarkers({
             sort: 'updated_at',
             order: 'desc',
             favourite: favourites || undefined,
@@ -50,7 +50,7 @@ export function useBoardsData(boardId: number | null, favourites: boolean, enabl
           if (batch.length < 200 || token !== generation.current.value) return rows
         }
       }
-      const [boards, recent] = await Promise.all([allBoards(), allInuksuks()])
+      const [boards, recent] = await Promise.all([allBoards(), allMarkers()])
       if (token === generation.current.value) setState({ key, boards, recent, error: null })
     } catch (error) {
       if (token === generation.current.value)

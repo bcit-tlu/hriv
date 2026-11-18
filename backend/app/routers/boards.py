@@ -19,12 +19,12 @@ from ..database import get_db
 from ..board_writes import (
     board_projection, bump_board, cleanup_thumbnails, commit_write,
     delete_orphans, editable_board, enforce_cap, expected_version,
-    lock_boards, lock_inuksuks, owner_targets, touch_inuksuks,
+    lock_boards, lock_markers, owner_targets, touch_markers,
 )
-from ..inuksuks import require_inuksuks_enabled
+from ..markers import require_markers_enabled
 from ..models import Board, Program, User
 from ..schemas import (
-    BoardCreate, BoardInuksuksOrder, BoardOrderUpdate, BoardOut,
+    BoardCreate, BoardMarkersOrder, BoardOrderUpdate, BoardOut,
     BoardOwnersUpdate,
     BoardSummaryOut, BoardTransfer, BoardUpdate,
 )
@@ -32,11 +32,11 @@ from .collections import _require_restricted_authority, _resolve_groups, _resolv
 
 router = APIRouter(
     prefix="/boards", tags=["boards"],
-    dependencies=[Depends(require_inuksuks_enabled)],
+    dependencies=[Depends(require_markers_enabled)],
 )
 
 _SORTS = {
-    "id", "name", "description", "visibility", "owner", "inuksuk_count",
+    "id", "name", "description", "visibility", "owner", "marker_count",
     "sort_order", "created_at", "updated_at",
 }
 
@@ -125,7 +125,7 @@ async def get_board(
 ) -> BoardOut | Response:
     ctx = await BoardViewerContext.build(db, user)
     board = await get_visible_board(db, ctx, board_id)
-    memberships = await load_memberships(db, (link.inuksuk_id for link in board.inuksuk_links))
+    memberships = await load_memberships(db, (link.marker_id for link in board.marker_links))
     return read_response(request, response, user, board_out(ctx, board, memberships))
 
 
@@ -183,9 +183,9 @@ async def delete_board(
     if not can_delete_board(user, board):
         raise HTTPException(403, "You may not delete this Board")
     await bump_board(db, ctx, board, expected_version(request))
-    items = await lock_inuksuks(db, (link.inuksuk_id for link in board.inuksuk_links))
+    items = await lock_markers(db, (link.marker_id for link in board.marker_links))
     await db.execute(delete(Board).where(Board.id == board_id).execution_options(synchronize_session=False))
-    await touch_inuksuks(db, (item.id for item in items))
+    await touch_markers(db, (item.id for item in items))
     targets = await delete_orphans(db, items)
     await commit_write(db, user, "board.deleted", board_id)
     await cleanup_thumbnails(targets)
@@ -248,52 +248,52 @@ async def transfer_board(
     return result
 
 
-@router.put("/{board_id}/inuksuks/order", response_model=BoardOut)
-async def reorder_board_inuksuks(
-    board_id: int, body: BoardInuksuksOrder, request: Request, response: Response,
+@router.put("/{board_id}/markers/order", response_model=BoardOut)
+async def reorder_board_markers(
+    board_id: int, body: BoardMarkersOrder, request: Request, response: Response,
     user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ) -> BoardOut:
     ctx = await BoardViewerContext.build(db, user)
     board = editable_board(ctx, await lock_boards(db, [board_id]), board_id)
     await bump_board(db, ctx, board, expected_version(request, body.version))
-    visible = {link.inuksuk_id: link for link in board.inuksuk_links if ctx.can_view_image(link.inuksuk.image)}
-    if {item.inuksuk_id for item in body.items} != set(visible):
+    visible = {link.marker_id: link for link in board.marker_links if ctx.can_view_image(link.marker.image)}
+    if {item.marker_id for item in body.items} != set(visible):
         raise HTTPException(422, "items must contain every visible Board member exactly once")
-    await lock_inuksuks(db, (link.inuksuk_id for link in board.inuksuk_links))
-    await touch_inuksuks(db, (link.inuksuk_id for link in board.inuksuk_links))
+    await lock_markers(db, (link.marker_id for link in board.marker_links))
+    await touch_markers(db, (link.marker_id for link in board.marker_links))
     for position, item in enumerate(body.items):
-        visible[item.inuksuk_id].sort_order = position
-    hidden = [link for link in board.inuksuk_links if link.inuksuk_id not in visible]
+        visible[item.marker_id].sort_order = position
+    hidden = [link for link in board.marker_links if link.marker_id not in visible]
     for position, link in enumerate(hidden, start=len(visible)):
         link.sort_order = position
-    await commit_write(db, user, "board.inuksuks_reordered", board_id)
+    await commit_write(db, user, "board.markers_reordered", board_id)
     result = await board_projection(db, ctx, board_id)
     response.headers["ETag"] = f'"{result.version}"'
     return result
 
 
-@router.delete("/{board_id}/inuksuks/{inuksuk_id}", response_model=BoardOut)
-async def remove_board_inuksuk(
-    board_id: int, inuksuk_id: int, request: Request, response: Response,
+@router.delete("/{board_id}/markers/{marker_id}", response_model=BoardOut)
+async def remove_board_marker(
+    board_id: int, marker_id: int, request: Request, response: Response,
     user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ) -> BoardOut:
     ctx = await BoardViewerContext.build(db, user)
     board = editable_board(ctx, await lock_boards(db, [board_id]), board_id)
-    items = await lock_inuksuks(db, [inuksuk_id])
+    items = await lock_markers(db, [marker_id])
     if not items or not ctx.can_view_image(items[0].image):
-        raise HTTPException(404, "Inuksuk not found")
-    links = (await load_memberships(db, [inuksuk_id])).get(inuksuk_id, [])
+        raise HTTPException(404, "Marker not found")
+    links = (await load_memberships(db, [marker_id])).get(marker_id, [])
     link = next((link for link in links if link.board_id == board_id), None)
     if link is None:
-        raise HTTPException(404, "Inuksuk not found on this Board")
+        raise HTTPException(404, "Marker not found on this Board")
     if len(links) <= 1:
-        raise HTTPException(422, "An Inuksuk must belong to at least one Board")
+        raise HTTPException(422, "A Marker must belong to at least one Board")
     await bump_board(db, ctx, board, expected_version(request))
-    await touch_inuksuks(db, [inuksuk_id])
+    await touch_markers(db, [marker_id])
     await db.delete(link)
-    await commit_write(db, user, "board.inuksuk_removed", board_id)
+    await commit_write(db, user, "board.marker_removed", board_id)
     result = await board_projection(db, ctx, board_id)
     response.headers["ETag"] = f'"{result.version}"'
     return result

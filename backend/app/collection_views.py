@@ -139,7 +139,7 @@ class _ViewerContext:
             for link in collection.image_links
             if link.image is not None and self.can_view_image(link.image)
         ]
-        if not settings.inuksuks_enabled:
+        if not settings.markers_enabled:
             return list({image.id: image for image in images}.values())
         return images
 
@@ -275,7 +275,7 @@ def collection_out(ctx: _ViewerContext, collection: Collection) -> CollectionOut
         )
         for img in images
     ]
-    if settings.inuksuks_enabled:
+    if settings.markers_enabled:
         links = [
             link for link in collection.image_links
             if link.image is not None and ctx.can_view_image(link.image)
@@ -298,7 +298,7 @@ def collection_out(ctx: _ViewerContext, collection: Collection) -> CollectionOut
         # enough to signal "hidden members exist" (the restricted-members
         # message deliberately reveals that much) without leaking the total.
         member_count=(
-            len(images) if settings.inuksuks_enabled else legacy_member_count
+            len(images) if settings.markers_enabled else legacy_member_count
         ),
     )
 
