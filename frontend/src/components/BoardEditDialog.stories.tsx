@@ -33,7 +33,7 @@ export const DeleteConfirmation: Story = {
     await userEvent.click(await canvas.findByRole('button', { name: 'Delete Board' }))
     await expect(canvas.getByRole('button', { name: 'Confirm Delete Board' })).toBeVisible()
     await expect(
-      canvas.getByText(/Inuksuks only on this Board will be permanently deleted/),
+      canvas.getByText(/Markers only on this Board will be permanently deleted/),
     ).toBeVisible()
   },
 }

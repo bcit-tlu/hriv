@@ -45,9 +45,7 @@ describe('BoardEditDialog', () => {
     setup(BOARDS_FIXTURES[0])
     fireEvent.click(screen.getByRole('button', { name: 'Delete Board' }))
     expect(api.deleteBoard).not.toHaveBeenCalled()
-    expect(
-      screen.getByText(/Inuksuks only on this Board will be permanently deleted/),
-    ).toBeVisible()
+    expect(screen.getByText(/Markers only on this Board will be permanently deleted/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Delete Board' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('before deleting')
     expect(screen.getByRole('button', { name: 'Confirm Delete Board' })).toBeDisabled()
@@ -103,7 +101,7 @@ describe('BoardEditDialog', () => {
       ...BOARDS_FIXTURES[0],
       permissions: { ...BOARDS_FIXTURES[0].permissions, can_change_scope: false },
     })
-    expect(screen.queryByLabelText('Visibility')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup', { name: 'Visibility' })).not.toBeInTheDocument()
   })
   it('does not submit scope fields when only metadata editing is allowed', async () => {
     setup({

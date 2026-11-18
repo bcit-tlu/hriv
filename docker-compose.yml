@@ -107,7 +107,7 @@ services:
       - TILES_DIR=/data/tiles
       - SECURE_COOKIES=false
       - COLLECTIONS_ENABLED=${COLLECTIONS_ENABLED:-true}
-      - INUKSUKS_ENABLED=${INUKSUKS_ENABLED:-true}
+      - MARKERS_ENABLED=${MARKERS_ENABLED:-true}
       - COLLECTIONS_HOME_SHELF=${COLLECTIONS_HOME_SHELF:-true}
       # Object counting is always on; the dedicated worker stays profiled
       # off (heavy CPU-torch image) — jobs 503 without it:

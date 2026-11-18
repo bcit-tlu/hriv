@@ -162,9 +162,9 @@ missed deliveries — it is not the rollout path.
   `<ver>` charts, so every chart change reaches production when the
   component is next released.
 - **Long-running features ship dark behind a chart flag, not on a branch.**
-  Inuksuks and Boards similarly use `inuksuks.enabled` →
-  `INUKSUKS_ENABLED` (default false); see
-  [Inuksuks and Boards](inuksuks-and-boards.md).
+  Markers and Boards similarly use `markers.enabled` →
+  `MARKERS_ENABLED` (default false); see
+  [Markers and Boards](markers-and-boards.md).
   Work that spans more than one release (e.g. the collections epic,
   `collections.enabled` → `COLLECTIONS_ENABLED`, see
   [collections.md](collections.md)) merges to `main` in small PRs behind a

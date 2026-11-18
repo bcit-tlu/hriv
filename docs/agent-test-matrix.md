@@ -17,15 +17,15 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 
 ## Matrix
 
-### Changed Inuksuk/Board schema or feature gating
+### Changed Marker/Board schema or feature gating
 
-- Backend: `poetry run pytest tests/test_inuksuks.py tests/test_inuksuks_db.py tests/test_main.py tests/test_router_users.py tests/test_migrations_bootstrap.py`.
-- `tests/test_inuksuks_db.py` requires `TEST_DATABASE_URL` pointing to a
+- Backend: `poetry run pytest tests/test_markers.py tests/test_markers_db.py tests/test_main.py tests/test_router_users.py tests/test_migrations_bootstrap.py`.
+- `tests/test_markers_db.py` requires `TEST_DATABASE_URL` pointing to a
   migrated PostgreSQL database. Verify fresh bootstrap, upgrade/downgrade,
   and autogenerate drift when changing the schema.
-- `INUKSUKS_ENABLED` (default false) / Helm `inuksuks.enabled`:
+- `MARKERS_ENABLED` (default false) / Helm `markers.enabled`:
   `helm lint charts/backend` and `bash scripts/test-helm-chart-regressions.sh`.
-- See [Inuksuks and Boards](inuksuks-and-boards.md).
+- See [Markers and Boards](markers-and-boards.md).
 
 ### Changed category visibility or program restrictions
 
@@ -115,7 +115,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 
 ### Changed Boards page (#1771)
 
-- Frontend: `npm test -- boardUtils useBoardsData BoardsPage BoardEditDialog BoardOwnersDialog CollectionOwnersDialog inuksukApi useShareableImageState useNavigationHistory App.test AppShell`
+- Frontend: `npm test -- boardUtils useBoardsData BoardsPage BoardEditDialog BoardOwnersDialog CollectionOwnersDialog markerApi useShareableImageState useNavigationHistory App.test AppShell`
 - Browser stories: `npm run test:storybook -- --run src/components/BoardsPage.stories.tsx src/components/BoardEditDialog.stories.tsx src/components/BoardOwnersDialog.stories.tsx`
 - Cover owned/shared lists, restricted attach authority, OCC reload,
   full membership order, failed membership-read safety, last-Board removal,
@@ -256,24 +256,24 @@ ImageViewer` (from `frontend/`).
 
 ## Notes
 
-### Inuksuk viewer (#1772)
+### Marker viewer (#1772)
 
-- Feature/API/hooks: `npm test -- inuksukApi useImageInuksuks useFeatures`.
-- Placement, modes, markers and form: `npm test -- ImageViewer Inuksuk`.
+- Feature/API/hooks: `npm test -- markerApi useImageMarkers useFeatures`.
+- Placement, modes, markers and form: `npm test -- ImageViewer Marker`.
 - App/collection viewer propagation: `npm test -- App.test CollectionsPage SequenceCollectionViewer SynchronizedCollectionViewer`.
 - Full frontend: `npm test`, `npm run build`, `npm run lint`,
   `npm run format:check`, `npm run build-storybook`.
 - Visually verify constant CSS sizing while zooming/rotating, independent
   marker/label visibility and create/edit in the viewer. See
-  [Inuksuks and Boards](inuksuks-and-boards.md#imageviewer-frontend-1772).
+  [Markers and Boards](markers-and-boards.md#imageviewer-frontend-1772).
 
-### Inuksuks drawer (#1773)
+### Markers drawer (#1773)
 
 - Preferences, groups, independent eyes/switches, remount/storage events:
-  `npm test -- useInuksukVisibilityPrefs ImageInuksuksDrawer`.
+  `npm test -- useMarkerVisibilityPrefs ImageMarkersDrawer`.
 - OSD control portal, gating, navigation, single-fetch integration and embeds:
   `npm test -- ImageViewer SequenceCollectionViewer SynchronizedCollectionViewer`.
-- Browser stories: `npm run test:storybook -- --run src/components/ImageInuksuksDrawer.stories.tsx`.
+- Browser stories: `npm run test:storybook -- --run src/components/ImageMarkersDrawer.stories.tsx`.
 - Visually check open groups, label-only and collapsed Public, plus collection
   pane placement and full-page behavior. Run the full frontend/build/lint/format
   and Storybook checks listed above.
@@ -307,7 +307,7 @@ saved-coordinate snapshots.
   collectionMembers and guideSearch tests. Cover feature-off requests/chips,
   title/description search, Board/saved-view navigation, Board and individual-view
   draft staging, empty results and request failures. Preview the SearchModal
-  SavedViews story and capture its Board/Inuksuk results.
+  SavedViews story and capture its Board/Marker results.
 - Run backend admin_ops, router_admin, collection_slots, snapshot_files and
   processing tests. Exercise all saved-view table links and timestamps with the
   flag off/on, old archives, selective JPEG restore and swap rollback, and retention

@@ -9,7 +9,9 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
-  MenuItem,
+  FormControlLabel,
+  Radio,
+  RadioGroup,
   Stack,
   TextField,
   Typography,
@@ -28,6 +30,159 @@ export interface BoardEditDialogProps {
   onDeleted?: () => void
 }
 
+export interface BoardFieldsProps {
+  name: string
+  onNameChange: (value: string) => void
+  description: string
+  onDescriptionChange: (value: string) => void
+  visibility: BoardVisibility
+  onVisibilityChange: (value: BoardVisibility) => void
+  programIds: number[]
+  onProgramIdsChange: (value: number[]) => void
+  groupIds: number[]
+  onGroupIdsChange: (value: number[]) => void
+  baseline?: ApiBoardSummary | null
+  programs?: Program[]
+  groups?: Group[]
+  disabled?: boolean
+}
+
+/** The editable Board fields shared by BoardEditDialog and MarkerFormDialog's
+ *  slide-in Add Board pane: name, description and, when scope changes are
+ *  allowed, visibility plus restricted Program/Group chips. */
+export function BoardFields({
+  name,
+  onNameChange,
+  description,
+  onDescriptionChange,
+  visibility,
+  onVisibilityChange,
+  programIds,
+  onProgramIdsChange,
+  groupIds,
+  onGroupIdsChange,
+  baseline = null,
+  programs = [],
+  groups = [],
+  disabled = false,
+}: BoardFieldsProps) {
+  const user = useContext(AuthContext)?.currentUser ?? null
+  const canChangeScope = baseline == null || baseline.permissions.can_change_scope
+  const canRestrict = user?.role === 'instructor' || user?.role === 'admin'
+  const attachable = getAttachableProgramIds(user)
+  const toggle = (ids: number[], id: number) =>
+    ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id]
+  return (
+    <>
+      <TextField
+        label="Name"
+        required
+        autoFocus
+        value={name}
+        onChange={(e) => onNameChange(e.target.value)}
+        disabled={disabled}
+      />
+      <TextField
+        label="Description"
+        multiline
+        minRows={2}
+        value={description}
+        onChange={(e) => onDescriptionChange(e.target.value)}
+        disabled={disabled}
+      />
+      {canChangeScope && (
+        <Box>
+          <Typography variant="subtitle2" component="p" gutterBottom>
+            Visible to
+          </Typography>
+          <RadioGroup
+            aria-label="Visibility"
+            value={visibility}
+            onChange={(e) => {
+              const value = e.target.value
+              if (value === 'private' || value === 'public' || value === 'restricted')
+                onVisibilityChange(value)
+            }}
+          >
+            <FormControlLabel
+              value="private"
+              control={<Radio size="small" />}
+              label="Private — only you"
+              disabled={disabled}
+            />
+            <FormControlLabel
+              value="public"
+              control={<Radio size="small" />}
+              label="Public — everyone who can sign in"
+              disabled={disabled}
+            />
+            {(canRestrict || visibility === 'restricted') && (
+              <FormControlLabel
+                value="restricted"
+                control={<Radio size="small" />}
+                label="Restricted — specific programs and/or groups"
+                disabled={disabled}
+              />
+            )}
+          </RadioGroup>
+        </Box>
+      )}
+      {visibility === 'restricted' && canChangeScope && canRestrict && (
+        <>
+          <Typography variant="subtitle2" component="p">
+            Programs
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {programs
+              .filter(
+                (p) =>
+                  attachable == null ||
+                  attachable.includes(p.id) ||
+                  baseline?.program_ids.includes(p.id),
+              )
+              .map((p) => (
+                <Chip
+                  key={p.id}
+                  label={p.name}
+                  variant={programIds.includes(p.id) ? 'filled' : 'outlined'}
+                  color={programIds.includes(p.id) ? 'primary' : 'default'}
+                  onClick={() => onProgramIdsChange(toggle(programIds, p.id))}
+                  disabled={disabled}
+                />
+              ))}
+          </Box>
+          <Typography variant="subtitle2" component="p">
+            Groups
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {groups
+              .filter(
+                (g) =>
+                  user?.role === 'admin' ||
+                  g.instructorIds.includes(user?.id ?? -1) ||
+                  baseline?.group_ids.includes(g.id),
+              )
+              .map((g) => (
+                <Chip
+                  key={g.id}
+                  label={g.name}
+                  variant={groupIds.includes(g.id) ? 'filled' : 'outlined'}
+                  color={groupIds.includes(g.id) ? 'secondary' : 'default'}
+                  onClick={() => onGroupIdsChange(toggle(groupIds, g.id))}
+                  disabled={disabled}
+                />
+              ))}
+          </Box>
+          <Typography variant="caption">
+            At least one Program or Group is required. Instructors may add only their own Programs
+            and managed Groups; existing attachments may be removed.
+          </Typography>
+        </>
+      )}
+    </>
+  )
+}
+
 export default function BoardEditDialog({
   board = null,
   programs = [],
@@ -36,7 +191,6 @@ export default function BoardEditDialog({
   onSaved,
   onDeleted,
 }: BoardEditDialogProps) {
-  const user = useContext(AuthContext)?.currentUser ?? null
   const [baseline, setBaseline] = useState(board)
   const [name, setName] = useState(board?.name ?? '')
   const [description, setDescription] = useState(board?.description ?? '')
@@ -48,10 +202,6 @@ export default function BoardEditDialog({
   const [conflict, setConflict] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const canChangeScope = baseline == null || baseline.permissions.can_change_scope
-  const canRestrict = user?.role === 'instructor' || user?.role === 'admin'
-  const attachable = getAttachableProgramIds(user)
-  const toggle = (ids: number[], id: number) =>
-    ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id]
   const reload = async () => {
     if (!baseline) return
     setBusy(true)
@@ -151,93 +301,22 @@ export default function BoardEditDialog({
               {error}
             </Alert>
           )}
-          <TextField
-            label="Name"
-            required
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+          <BoardFields
+            name={name}
+            onNameChange={setName}
+            description={description}
+            onDescriptionChange={setDescription}
+            visibility={visibility}
+            onVisibilityChange={setVisibility}
+            programIds={programIds}
+            onProgramIdsChange={setProgramIds}
+            groupIds={groupIds}
+            onGroupIdsChange={setGroupIds}
+            baseline={baseline}
+            programs={programs}
+            groups={groups}
             disabled={busy || !editable}
           />
-          <TextField
-            label="Description"
-            multiline
-            minRows={2}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            disabled={busy || !editable}
-          />
-          {canChangeScope && (
-            <TextField
-              select
-              label="Visibility"
-              value={visibility}
-              onChange={(e) => {
-                const value = e.target.value
-                if (value === 'private' || value === 'public' || value === 'restricted')
-                  setVisibility(value)
-              }}
-              disabled={busy || !editable}
-            >
-              <MenuItem value="private">Private</MenuItem>
-              <MenuItem value="public">Public</MenuItem>
-              {(canRestrict || visibility === 'restricted') && (
-                <MenuItem value="restricted">Restricted</MenuItem>
-              )}
-            </TextField>
-          )}
-          {visibility === 'restricted' && canChangeScope && canRestrict && (
-            <>
-              <Typography variant="subtitle2" component="p">
-                Programs
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                {programs
-                  .filter(
-                    (p) =>
-                      attachable == null ||
-                      attachable.includes(p.id) ||
-                      baseline?.program_ids.includes(p.id),
-                  )
-                  .map((p) => (
-                    <Chip
-                      key={p.id}
-                      label={p.name}
-                      variant={programIds.includes(p.id) ? 'filled' : 'outlined'}
-                      color={programIds.includes(p.id) ? 'primary' : 'default'}
-                      onClick={() => setProgramIds(toggle(programIds, p.id))}
-                      disabled={busy || !editable}
-                    />
-                  ))}
-              </Box>
-              <Typography variant="subtitle2" component="p">
-                Groups
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                {groups
-                  .filter(
-                    (g) =>
-                      user?.role === 'admin' ||
-                      g.instructorIds.includes(user?.id ?? -1) ||
-                      baseline?.group_ids.includes(g.id),
-                  )
-                  .map((g) => (
-                    <Chip
-                      key={g.id}
-                      label={g.name}
-                      variant={groupIds.includes(g.id) ? 'filled' : 'outlined'}
-                      color={groupIds.includes(g.id) ? 'secondary' : 'default'}
-                      onClick={() => setGroupIds(toggle(groupIds, g.id))}
-                      disabled={busy || !editable}
-                    />
-                  ))}
-              </Box>
-              <Typography variant="caption">
-                At least one Program or Group is required. Instructors may add only their own
-                Programs and managed Groups; existing attachments may be removed.
-              </Typography>
-            </>
-          )}
           {baseline?.permissions.can_delete && onDeleted && (
             <>
               <Divider sx={{ my: 2 }} />
@@ -257,7 +336,7 @@ export default function BoardEditDialog({
                     color="error"
                     sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
                   >
-                    Delete “{baseline.name}”? Its links will be removed. Inuksuks only on this Board
+                    Delete “{baseline.name}”? Its links will be removed. Markers only on this Board
                     will be permanently deleted. This action cannot be undone.
                   </Typography>
                 )}

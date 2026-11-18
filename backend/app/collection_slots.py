@@ -15,12 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .board_views import (
     BoardViewerContext,
     board_load_options,
-    inuksuk_load_options,
+    marker_load_options,
     load_memberships,
 )
 from .collection_views import _ViewerContext
 from .database import settings
-from .inuksuk_thumbs import generate_viewport_thumbnail, local_tile_root
+from .marker_thumbs import generate_viewport_thumbnail, local_tile_root
 from .models import (
     STUDENT_SEQUENCE_MAX_IMAGES,
     SYNCHRONIZED_COLLECTION_MAX_IMAGES,
@@ -28,7 +28,7 @@ from .models import (
     Collection,
     CollectionImage,
     Image,
-    Inuksuk,
+    Marker,
     User,
 )
 from .schemas import CollectionSlotInput, CollectionSlotSources
@@ -113,10 +113,10 @@ def snapshot_thumbnail(
     if root is None or not slot.viewport_state:
         return None
     match = re.fullmatch(
-        r"/api/tiles/([0-9]+)/inuksuks/([1-9][0-9]*)\.jpg", source or ""
+        r"/api/tiles/([0-9]+)/markers/([1-9][0-9]*)\.jpg", source or ""
     )
     if match and match[1] == root.name:
-        original = root / "inuksuks" / f"{match[2]}.jpg"
+        original = root / "markers" / f"{match[2]}.jpg"
         directory = root / "collection_slots"
         if directory.is_symlink():
             raise ValueError("Slot thumbnail directory must not be a symlink")
@@ -155,11 +155,11 @@ async def write_slot_thumbs(
         )).scalars().one_or_none()
         if image is not None and slot is not None and slot.viewport_state == viewport:
             match = re.fullmatch(
-                r"/api/tiles/[0-9]+/inuksuks/([1-9][0-9]*)\.jpg", source or ""
+                r"/api/tiles/[0-9]+/markers/([1-9][0-9]*)\.jpg", source or ""
             )
             if match:
                 item = (await db.execute(
-                    select(Inuksuk).where(Inuksuk.id == int(match[1]))
+                    select(Marker).where(Marker.id == int(match[1]))
                     .with_for_update().execution_options(populate_existing=True)
                 )).scalars().one_or_none()
                 if item is None or item.thumb != source or item.image_id != image_id or {
@@ -202,17 +202,17 @@ async def resolve_slots(
     plans: list[SlotPlan] = []
     board_ctx = await BoardViewerContext.build(db, ctx.user)
 
-    async def visible_inuksuk(item_id: int, explicit: bool = True) -> Inuksuk | None:
+    async def visible_marker(item_id: int, explicit: bool = True) -> Marker | None:
         item = (await db.execute(
-            select(Inuksuk).where(Inuksuk.id == item_id)
-            .options(*inuksuk_load_options())
+            select(Marker).where(Marker.id == item_id)
+            .options(*marker_load_options())
         )).scalars().unique().one_or_none()
         if item is not None:
             memberships = (await load_memberships(db, [item.id])).get(item.id, [])
-            if board_ctx.can_view_inuksuk(item, board_ctx.visible_boards(memberships)):
+            if board_ctx.can_view_marker(item, board_ctx.visible_boards(memberships)):
                 return item
         if explicit:
-            raise HTTPException(404, "Inuksuk not found")
+            raise HTTPException(404, "Marker not found")
         return None
 
     async def add(entry: CollectionSlotInput, legacy: bool = False) -> None:
@@ -228,8 +228,8 @@ async def resolve_slots(
             ), None)
         image = await db.get(Image, entry.image_id, with_for_update=True)
         item = (
-            await visible_inuksuk(entry.inuksuk_id)
-            if entry.inuksuk_id is not None else None
+            await visible_marker(entry.marker_id)
+            if entry.marker_id is not None else None
         )
         if image is None or not ctx.can_view_image(image):
             raise HTTPException(422, "Invalid image IDs")
@@ -240,7 +240,7 @@ async def resolve_slots(
         plan = SlotPlan(link, link.viewport_state, link.label)
         if item is not None:
             if item.image_id != image.id:
-                raise HTTPException(422, "Inuksuk does not match slot image")
+                raise HTTPException(422, "Marker does not match slot image")
             plan.viewport = {
                 "x": item.x, "y": item.y,
                 "zoom": item.zoom, "rotation": item.rotation,
@@ -267,14 +267,14 @@ async def resolve_slots(
         )).scalars().unique().one_or_none()
         if board is None or not board_ctx.can_view_board(board):
             raise HTTPException(404, "Board not found")
-        links = sorted(board.inuksuk_links, key=lambda row: (row.sort_order, row.inuksuk_id))
+        links = sorted(board.marker_links, key=lambda row: (row.sort_order, row.marker_id))
         for link in links:
-            item = await visible_inuksuk(link.inuksuk_id, explicit=False)
+            item = await visible_marker(link.marker_id, explicit=False)
             if item is not None:
-                await add(CollectionSlotInput(image_id=item.image_id, inuksuk_id=item.id))
-    for item_id in body.inuksuk_ids or []:
-        item = await visible_inuksuk(item_id)
-        await add(CollectionSlotInput(image_id=item.image_id, inuksuk_id=item.id))
+                await add(CollectionSlotInput(image_id=item.image_id, marker_id=item.id))
+    for item_id in body.marker_ids or []:
+        item = await visible_marker(item_id)
+        await add(CollectionSlotInput(image_id=item.image_id, marker_id=item.id))
     for link in existing:
         if not ctx.can_view_image(link.image):
             plans.append(SlotPlan(link, link.viewport_state, link.label))

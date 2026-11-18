@@ -277,7 +277,7 @@ describe('CollectionManageDialog', () => {
       slot: { id: 11, viewport_state: null, thumb: null, label: null },
     }
     const { props } = renderDialog({
-      inuksuksEnabled: true,
+      markersEnabled: true,
       collection: manageCollection({ images: [image] }),
     })
     fireEvent.click(screen.getByRole('button', { name: 'Choose images' }))
@@ -292,8 +292,8 @@ describe('CollectionManageDialog', () => {
       expect(stageAdd([makeImage({ id: 200 })])).toEqual({ status: 'already' })
       expect(
         stageAdd([
-          { ...makeImage({ id: 100 }), inuksukId: 88 },
-          { ...makeImage({ id: 100 }), inuksukId: 89 },
+          { ...makeImage({ id: 100 }), markerId: 88 },
+          { ...makeImage({ id: 100 }), markerId: 89 },
         ]),
       ).toEqual({ status: 'added', addedCount: 2 })
     })
@@ -689,7 +689,7 @@ it('reorders same-image slots independently and keeps their ids when saving', as
     slot: { id, viewport_state: null, thumb: null, label: 'View ' + id },
   }))
   const { props } = renderDialog({
-    inuksuksEnabled: true,
+    markersEnabled: true,
     collection: manageCollection({ images }),
   })
   act(() =>
@@ -714,7 +714,7 @@ it('merges a concurrent slot removal without removing another view of the same i
     slot: { id, viewport_state: null, thumb: null, label: 'View ' + id },
   }))
   const { props, rerender } = renderDialog({
-    inuksuksEnabled: true,
+    markersEnabled: true,
     collection: manageCollection({ images }),
   })
   act(() =>

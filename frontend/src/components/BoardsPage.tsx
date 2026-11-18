@@ -7,11 +7,7 @@ import {
   createCollectionFromSources,
   useEditableCollections,
 } from '../useAddToCollection'
-import {
-  apiCollectionOwnerToOwner,
-  describeCollectionOwners,
-  studentTypesAtCap,
-} from '../collectionUtils'
+import { studentTypesAtCap } from '../collectionUtils'
 import type { Category, CollectionType } from '../types'
 import type { CollectionSources } from '../api'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -50,7 +46,7 @@ import {
   Tooltip,
 } from '@mui/material'
 import SpaceDashboardOutlined from '@mui/icons-material/SpaceDashboardOutlined'
-import CompassCalibration from '@mui/icons-material/CompassCalibration'
+import Room from '@mui/icons-material/Room'
 import DragIndicator from '@mui/icons-material/DragIndicator'
 import Star from '@mui/icons-material/Star'
 import StarBorder from '@mui/icons-material/StarBorder'
@@ -83,19 +79,19 @@ import { CollisionPriority } from '@dnd-kit/abstract'
 import {
   ApiError,
   fetchBoard,
-  fetchInuksuk,
-  fetchInuksuks,
-  removeBoardInuksuk,
-  reorderBoardInuksuks,
+  fetchMarker,
+  fetchMarkers,
+  removeBoardMarker,
+  reorderBoardMarkers,
   reorderBoards,
-  updateInuksuk,
+  updateMarker,
   userMessage,
 } from '../api'
-import { moveBoardMember, ownsBoard } from '../boardUtils'
+import { boardManagerText, moveBoardMember, ownsBoard } from '../boardUtils'
 import type {
   ApiBoard,
   ApiBoardSummary,
-  ApiInuksuk,
+  ApiMarker,
   BoardAssignment,
   Group,
   Program,
@@ -104,7 +100,7 @@ import type {
 import { useBoardsData } from '../useBoardsData'
 import BoardEditDialog from './BoardEditDialog'
 import BoardOwnersDialog from './BoardOwnersDialog'
-import InuksukFormDialog from './InuksukFormDialog'
+import MarkerFormDialog from './MarkerFormDialog'
 import RenewingThumbnail from './RenewingThumbnail'
 import { resolveReorderedKeys } from './columnVisibilityUtils'
 
@@ -118,20 +114,7 @@ interface BoardsPageProps {
   groups?: Group[]
   boardId: number | null
   onSelectBoard: (boardId: number | null) => void
-  onOpenInuksuk: (item: ApiInuksuk) => void
-}
-
-function boardManagerText(board: ApiBoardSummary) {
-  const owners = board.owners.flatMap((owner) => {
-    const mapped = apiCollectionOwnerToOwner(owner)
-    return mapped ? [mapped] : []
-  })
-  const programOwner = owners.find((owner) => owner.kind === 'program')
-  return programOwner
-    ? `Managed by program ${programOwner.name}`
-    : owners.length
-      ? `Managed by ${describeCollectionOwners(owners)}`
-      : 'No owner'
+  onOpenMarker: (item: ApiMarker) => void
 }
 
 type SortableFrameProps = {
@@ -264,11 +247,11 @@ function DropArea({
 }
 
 function BoardCover({ board }: { board: ApiBoardSummary }) {
-  const [state, setState] = useState<{ id: number; items: ApiInuksuk[] } | null>(null)
+  const [state, setState] = useState<{ id: number; items: ApiMarker[] } | null>(null)
   const key = `${board.id}:${board.version}`
   useEffect(() => {
     let active = true
-    void fetchInuksuks({ board_id: board.id, limit: 4 }).then(
+    void fetchMarkers({ board_id: board.id, limit: 4 }).then(
       (items) => {
         if (active) setState({ id: board.id, items })
       },
@@ -287,8 +270,8 @@ function BoardCover({ board }: { board: ApiBoardSummary }) {
   return (
     <Box
       sx={{
-        width: 48,
-        height: 48,
+        width: 64,
+        height: 64,
         flexShrink: 0,
         bgcolor: 'action.hover',
         display: 'grid',
@@ -309,7 +292,7 @@ function BoardCover({ board }: { board: ApiBoardSummary }) {
       ) : item ? (
         <RenewingThumbnail
           image={{ id: item.id, thumb: item.thumb ?? '' }}
-          renewThumb={fetchInuksuk}
+          renewThumb={fetchMarker}
           alt=""
           sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
@@ -320,13 +303,13 @@ function BoardCover({ board }: { board: ApiBoardSummary }) {
   )
 }
 
-async function saveToBoard(item: ApiInuksuk, targetId: number, sourceId: number | null) {
-  const fresh = await fetchInuksuk(item.id)
+async function saveToBoard(item: ApiMarker, targetId: number, sourceId: number | null) {
+  const fresh = await fetchMarker(item.id)
   const boards = await Promise.all(fresh.board_ids.map((fetchBoardId) => fetchBoard(fetchBoardId)))
   const assignments: BoardAssignment[] = []
   for (const board of boards) {
     if (!board.permissions.can_edit || board.id === sourceId || board.id === targetId) continue
-    const link = board.inuksuks.find((member) => member.id === fresh.id)
+    const link = board.markers.find((member) => member.id === fresh.id)
     if (!link) throw new Error('Board membership changed. Reload before saving.')
     assignments.push({
       board_id: board.id,
@@ -334,7 +317,7 @@ async function saveToBoard(item: ApiInuksuk, targetId: number, sourceId: number 
     })
   }
   assignments.push({ board_id: targetId })
-  await updateInuksuk(fresh.id, { version: fresh.version, board_assignments: assignments })
+  await updateMarker(fresh.id, { version: fresh.version, board_assignments: assignments })
 }
 
 function SaveToDialog({
@@ -348,7 +331,7 @@ function SaveToDialog({
   conflict,
   onReload,
 }: {
-  item: ApiInuksuk
+  item: ApiMarker
   boards: ApiBoardSummary[]
   source: ApiBoard | null
   onClose: () => void
@@ -465,7 +448,7 @@ export default function BoardsPage({
   groups = [],
   boardId,
   onSelectBoard,
-  onOpenInuksuk,
+  onOpenMarker,
 }: BoardsPageProps) {
   const [view, setView] = useState<'cards' | 'table'>('cards')
   const [selecting, setSelecting] = useState(false)
@@ -476,7 +459,7 @@ export default function BoardsPage({
   const selectedIds = selection.boardId === boardId ? selection.ids : []
   const [collectionSource, setCollectionSource] = useState<{
     sources: CollectionSources
-    items: ApiInuksuk[]
+    items: ApiMarker[]
     type: CollectionType
     add: boolean
   } | null>(null)
@@ -484,10 +467,10 @@ export default function BoardsPage({
     enabled && collectionsEnabled && collectionSource != null,
   )
   const beginCollection = (
-    items: ApiInuksuk[],
+    items: ApiMarker[],
     type: CollectionType,
     add = false,
-    sources: CollectionSources = { inuksuk_ids: items.map((item) => item.id) },
+    sources: CollectionSources = { marker_ids: items.map((item) => item.id) },
   ) => {
     setError(null)
     setCollectionSource({ items, type, add, sources })
@@ -508,7 +491,8 @@ export default function BoardsPage({
   const [query, setQuery] = useState('')
   const [scopes, setScopes] = useState<string[]>([])
   const [owner, setOwner] = useState('any')
-  const [discovery, setDiscovery] = useState<'shared' | 'all' | null>(null)
+  const [discovery, setDiscovery] = useState<'all' | null>(null)
+  const [discoveryFilters, setDiscoveryFilters] = useState<('shared' | 'instructor')[]>([])
   const [notice, setNotice] = useState<{
     message: string
     severity: 'success' | 'info' | 'warning'
@@ -520,10 +504,10 @@ export default function BoardsPage({
   const board = data.board
   const [edit, setEdit] = useState<'new' | 'edit' | null>(null)
   const [owners, setOwners] = useState(false)
-  const [savingItem, setSavingItem] = useState<ApiInuksuk | null>(null)
-  const [removingItem, setRemovingItem] = useState<ApiInuksuk | null>(null)
-  const [editingItem, setEditingItem] = useState<ApiInuksuk | null>(null)
-  const [activeItem, setActiveItem] = useState<ApiInuksuk | null>(null)
+  const [savingItem, setSavingItem] = useState<ApiMarker | null>(null)
+  const [removingItem, setRemovingItem] = useState<ApiMarker | null>(null)
+  const [editingItem, setEditingItem] = useState<ApiMarker | null>(null)
+  const [activeItem, setActiveItem] = useState<ApiMarker | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState(false)
@@ -544,17 +528,24 @@ export default function BoardsPage({
     setConflict(false)
   }
   const own = data.boards.filter((row) => ownsBoard(row, currentUser))
-  const publicBoards = data.boards.filter(
-    (row) =>
-      (!ownsBoard(row, currentUser) || !row.permissions.can_edit) &&
-      (row.visibility !== 'private' || ownsBoard(row, currentUser)),
-  )
+  const isSharedBoard = (row: ApiBoardSummary) =>
+    (!ownsBoard(row, currentUser) || !row.permissions.can_edit) &&
+    (row.visibility !== 'private' || ownsBoard(row, currentUser))
+  const isInstructorBoard = (row: ApiBoardSummary) =>
+    row.owner_program_id != null ||
+    row.owners.some((owner) => owner.role === 'admin' || owner.role === 'instructor')
   const canBrowseAllBoards =
     currentUser != null && ['admin', 'instructor', 'staff'].includes(currentUser.role)
-  const discoveryBoards = discovery === 'all' && canBrowseAllBoards ? data.boards : publicBoards
+  const discoveryBoards = data.boards.filter(
+    (row) =>
+      discoveryFilters.length === 0 ||
+      discoveryFilters.some((filter) =>
+        filter === 'shared' ? isSharedBoard(row) : isInstructorBoard(row),
+      ),
+  )
   const reorderableBoards = own.filter((row) => row.permissions.can_edit)
   const needle = query.trim().toLocaleLowerCase()
-  const ownerMatches = (item: ApiBoardSummary | ApiInuksuk) =>
+  const ownerMatches = (item: ApiBoardSummary | ApiMarker) =>
     owner === 'any' ||
     (owner === 'mine'
       ? 'owner_program_id' in item
@@ -638,7 +629,7 @@ export default function BoardsPage({
       setConflict(stale)
       setError(
         stale
-          ? 'This Board or Inuksuk changed. Reload the latest version before continuing.'
+          ? 'This Board or Marker changed. Reload the latest version before continuing.'
           : userMessage(err, 'Unable to save changes.'),
       )
       return false
@@ -654,7 +645,7 @@ export default function BoardsPage({
       if (source.type === 'board-member' && target)
         notify(
           conflict
-            ? 'Reload latest changes before dropping Inuksuks.'
+            ? 'Reload latest changes before dropping Markers.'
             : 'Wait for the current change to finish.',
         )
       return
@@ -674,9 +665,9 @@ export default function BoardsPage({
           ),
         )
     } else if (source.type === 'board-member' && target) {
-      const item = (board?.inuksuks ?? data.recent).find((row) => `item:${row.id}` === source.id)
+      const item = (board?.markers ?? data.recent).find((row) => `item:${row.id}` === source.id)
       if (!item) {
-        notify('This Inuksuk is no longer available. Reload before saving.')
+        notify('This Marker is no longer available. Reload before saving.')
         return
       }
       const key = String(target.id)
@@ -687,7 +678,7 @@ export default function BoardsPage({
           return
         }
         if (!destination.permissions.can_edit) {
-          notify(`You can't add Inuksuks to ${destination.name}`)
+          notify(`You can't add Markers to ${destination.name}`)
           return
         }
         if (item.board_ids.includes(destination.id)) {
@@ -695,40 +686,33 @@ export default function BoardsPage({
           return
         }
         if (!item.permissions.can_edit) {
-          notify(`You can't add this Inuksuk to ${destination.name}`)
+          notify(`You can't add this Marker to ${destination.name}`)
           return
         }
         void run(() => saveToBoard(item, destination.id, null)).then((ok) => {
           if (ok) notify(`Saved to ${destination.name}`, 'success')
         })
       } else if (board && canEdit) {
-        const targetItem = board.inuksuks.find((row) => `item:${row.id}` === target.id)
+        const targetItem = board.markers.find((row) => `item:${row.id}` === target.id)
         if (!targetItem) {
           notify('This drop target is no longer available. Reload before reordering.')
           return
         }
-        const index = isSortable(source) ? source.index : board.inuksuks.indexOf(targetItem)
+        const index = isSortable(source) ? source.index : board.markers.indexOf(targetItem)
         void run(() =>
-          reorderBoardInuksuks(board.id, {
+          reorderBoardMarkers(board.id, {
             version: board.version,
             items: moveBoardMember(board, item.id, index),
           }),
         )
       } else if (board) {
-        notify(`You can't reorder Inuksuks in ${board.name}`)
+        notify(`You can't reorder Markers in ${board.name}`)
       }
     }
   }
-  const itemBoards = (item: ApiInuksuk) =>
+  const itemBoards = (item: ApiMarker) =>
     data.boards.filter((row) => item.board_ids.includes(row.id))
-  const scopePills = (item: ApiInuksuk) => (
-    <Stack direction="row" gap={0.5} flexWrap="wrap">
-      {[...new Set(itemBoards(item).map((row) => row.visibility))].map((visibility) => (
-        <CollectionVisibilityChip key={visibility} visibility={visibility} />
-      ))}
-    </Stack>
-  )
-  const favouriteAction = (item: ApiInuksuk) => {
+  const favouriteAction = (item: ApiMarker) => {
     if (!item.permissions.can_edit)
       return item.favourite ? (
         <Box
@@ -754,7 +738,7 @@ export default function BoardsPage({
           disabled={busy || conflict}
           onClick={() =>
             void run(() =>
-              updateInuksuk(item.id, { version: item.version, favourite: !item.favourite }),
+              updateMarker(item.id, { version: item.version, favourite: !item.favourite }),
             )
           }
         >
@@ -767,12 +751,12 @@ export default function BoardsPage({
       </Tooltip>
     )
   }
-  const editAction = (item: ApiInuksuk) =>
+  const editAction = (item: ApiMarker) =>
     (item.permissions.can_edit || board?.permissions.can_edit) && (
-      <Tooltip title="Edit Inuksuk">
+      <Tooltip title="Edit Marker">
         <IconButton
           size="small"
-          aria-label={`Edit Inuksuk: ${item.title}`}
+          aria-label={`Edit Marker: ${item.title}`}
           disabled={busy || conflict}
           onClick={() => {
             setError(null)
@@ -783,7 +767,7 @@ export default function BoardsPage({
         </IconButton>
       </Tooltip>
     )
-  const moveAction = (item: ApiInuksuk) =>
+  const moveAction = (item: ApiMarker) =>
     item.permissions.can_edit && (
       <Tooltip title="Move/Save to Board">
         <IconButton
@@ -799,7 +783,7 @@ export default function BoardsPage({
         </IconButton>
       </Tooltip>
     )
-  const selectionAction = (item: ApiInuksuk) =>
+  const selectionAction = (item: ApiMarker) =>
     selecting && (
       <Checkbox
         size="small"
@@ -808,7 +792,7 @@ export default function BoardsPage({
         inputProps={{ 'aria-label': `Select ${item.title}` }}
       />
     )
-  const memberCard = (item: ApiInuksuk, index: number, inBoard = false) => (
+  const memberCard = (item: ApiMarker, index: number, inBoard = false) => (
     <SortableFrame
       key={item.id}
       id={`${!inBoard && boardId != null ? 'backdrop' : 'item'}:${item.id}`}
@@ -820,16 +804,16 @@ export default function BoardsPage({
       sortable={inBoard}
       label={item.title}
     >
-      <Card elevation={2} data-testid="inuksuk-card" sx={{ position: 'relative', height: '100%' }}>
+      <Card elevation={2} data-testid="marker-card" sx={{ position: 'relative', height: '100%' }}>
         <Box sx={{ position: 'relative' }}>
           <CardActionArea
-            onClick={() => (selecting ? toggleSelected(item.id) : onOpenInuksuk(item))}
-            aria-label={`Open Inuksuk: ${item.title}`}
+            onClick={() => (selecting ? toggleSelected(item.id) : onOpenMarker(item))}
+            aria-label={`Open Marker: ${item.title}`}
           >
             {item.thumb ? (
               <RenewingThumbnail
                 image={{ id: item.id, thumb: item.thumb }}
-                renewThumb={fetchInuksuk}
+                renewThumb={fetchMarker}
                 alt=""
                 sx={{ width: '100%', height: 96, display: 'block', objectFit: 'cover' }}
               />
@@ -843,7 +827,7 @@ export default function BoardsPage({
                   color: 'primary.contrastText',
                 }}
               >
-                <CompassCalibration sx={{ fontSize: 48 }} />
+                <Room sx={{ fontSize: 48 }} />
               </Box>
             )}
           </CardActionArea>
@@ -867,9 +851,9 @@ export default function BoardsPage({
         </Box>
         <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
           <Stack direction="row" alignItems="flex-start" gap={0.5}>
-            <CompassCalibration color="primary" sx={{ fontSize: 24, flexShrink: 0 }} />
+            <Room color="primary" sx={{ fontSize: 24, flexShrink: 0 }} />
             <Button
-              onClick={() => (selecting ? toggleSelected(item.id) : onOpenInuksuk(item))}
+              onClick={() => (selecting ? toggleSelected(item.id) : onOpenMarker(item))}
               title={item.title}
               sx={{
                 p: 0,
@@ -904,15 +888,14 @@ export default function BoardsPage({
           >
             {item.category_name ?? 'Uncategorized'}
           </Typography>
-          <Box sx={{ mt: 0.5 }}>{scopePills(item)}</Box>
           {selectionAction(item)}
         </CardContent>
       </Card>
     </SortableFrame>
   )
-  const memberTable = (items: ApiInuksuk[]) => (
+  const memberTable = (items: ApiMarker[]) => (
     <TableContainer component={Paper} variant="outlined">
-      <Table size="small" aria-label="Inuksuks">
+      <Table size="small" aria-label="Markers">
         <TableHead
           sx={{
             '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme), fontWeight: 600 },
@@ -920,7 +903,7 @@ export default function BoardsPage({
         >
           <TableRow>
             {selecting && <TableCell>Select</TableCell>}
-            {['Title', 'Category', 'Scope', 'Boards', 'Favourite', 'Actions'].map((label) => (
+            {['Title', 'Category', 'Boards', 'Favourite', 'Actions'].map((label) => (
               <TableCell key={label}>{label}</TableCell>
             ))}
           </TableRow>
@@ -932,14 +915,14 @@ export default function BoardsPage({
               hover
               tabIndex={0}
               sx={{ cursor: 'pointer' }}
-              onClick={() => onOpenInuksuk(item)}
+              onClick={() => onOpenMarker(item)}
               onKeyDown={(event) => {
                 if (
                   event.target === event.currentTarget &&
                   (event.key === 'Enter' || event.key === ' ')
                 ) {
                   event.preventDefault()
-                  onOpenInuksuk(item)
+                  onOpenMarker(item)
                 }
               }}
             >
@@ -950,7 +933,6 @@ export default function BoardsPage({
               )}
               <TableCell>{item.title}</TableCell>
               <TableCell>{item.category_name ?? 'Uncategorized'}</TableCell>
-              <TableCell>{scopePills(item)}</TableCell>
               <TableCell onClick={(event) => event.stopPropagation()}>
                 {itemBoards(item).map((row) => (
                   <Button
@@ -990,6 +972,43 @@ export default function BoardsPage({
       {selecting ? 'Cancel selection' : 'Select'}
     </Button>
   )
+  const selectionButtons = collectionsEnabled && selecting && (
+    <Box
+      role="toolbar"
+      aria-label="Selected Markers"
+      sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}
+    >
+      <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
+        {selectedIds.length} selected
+      </Typography>
+      {(['sequence', 'synchronized'] as const).map((type) => {
+        const items = (board ? board.markers : filteredItems).filter((item) =>
+          selectedIds.includes(item.id),
+        )
+        const valid =
+          items.length > 0 && (type === 'sequence' || (items.length >= 2 && items.length <= 4))
+        const label = type === 'sequence' ? 'Sequence' : 'Synchronized'
+        return (
+          <Box key={type} sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              variant="contained"
+              disabled={!valid}
+              onClick={() => beginCollection(items, type)}
+            >
+              Create {label} Collection
+            </Button>
+            <Button
+              variant="outlined"
+              disabled={!valid}
+              onClick={() => beginCollection(items, type, true)}
+            >
+              Add to {label} Collection
+            </Button>
+          </Box>
+        )
+      })}
+    </Box>
+  )
   const collageToolbar = (title: string) => (
     <Box sx={{ mb: 2 }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
@@ -997,12 +1016,12 @@ export default function BoardsPage({
           {title}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-          {title === 'My Inuksuks' && (
+          {title === 'My Markers' && (
             <ToggleButtonGroup
               size="small"
               exclusive
               value={view}
-              aria-label="Inuksuks view"
+              aria-label="Markers view"
               sx={[
                 ...(Array.isArray(graphToggleSx) ? graphToggleSx : [graphToggleSx]),
                 {
@@ -1027,47 +1046,14 @@ export default function BoardsPage({
               </ToggleButton>
             </ToggleButtonGroup>
           )}
-          {boardId != null && selectAction}
+          {boardId != null && (
+            <>
+              {selectionButtons}
+              {selectAction}
+            </>
+          )}
         </Box>
       </Stack>
-      {collectionsEnabled && selecting && (
-        <Stack
-          role="toolbar"
-          aria-label="Selected Inuksuks"
-          direction="row"
-          spacing={1}
-          flexWrap="wrap"
-          useFlexGap
-        >
-          <Typography sx={{ alignSelf: 'center' }}>{selectedIds.length} selected</Typography>
-          {(['sequence', 'synchronized'] as const).map((type) => {
-            const items = (board ? board.inuksuks : filteredItems).filter((item) =>
-              selectedIds.includes(item.id),
-            )
-            const valid =
-              items.length > 0 && (type === 'sequence' || (items.length >= 2 && items.length <= 4))
-            const label = type === 'sequence' ? 'Sequence' : 'Synchronized'
-            return (
-              <Box key={type} sx={{ display: 'flex', gap: 1 }}>
-                <Button
-                  variant="contained"
-                  disabled={!valid}
-                  onClick={() => beginCollection(items, type)}
-                >
-                  Create {label} Collection
-                </Button>
-                <Button
-                  variant="outlined"
-                  disabled={!valid}
-                  onClick={() => beginCollection(items, type, true)}
-                >
-                  Add to {label} Collection
-                </Button>
-              </Box>
-            )
-          })}
-        </Stack>
-      )}
     </Box>
   )
   if (!enabled) return null
@@ -1088,18 +1074,21 @@ export default function BoardsPage({
           My Boards
         </Typography>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 1 }}>
-          <Button variant="outlined" onClick={() => setDiscovery('shared')}>
-            Public &amp; shared Boards
-          </Button>
           {canBrowseAllBoards && (
-            <Button variant="outlined" onClick={() => setDiscovery('all')}>
+            <Button
+              variant="outlined"
+              onClick={() => {
+                setDiscoveryFilters([])
+                setDiscovery('all')
+              }}
+            >
               All Boards
             </Button>
           )}
         </Box>
       </Box>
       {boardId != null && !board && (
-        <Button onClick={() => onSelectBoard(null)}>All Inuksuks</Button>
+        <Button onClick={() => onSelectBoard(null)}>All Markers</Button>
       )}
       {(error || data.error) && (
         <Alert
@@ -1161,7 +1150,7 @@ export default function BoardsPage({
         onDragStart={(event) => {
           const id = event.operation.source?.id
           setActiveItem(
-            (board?.inuksuks ?? data.recent).find((item) => `item:${item.id}` === id) ?? null,
+            (board?.markers ?? data.recent).find((item) => `item:${item.id}` === id) ?? null,
           )
         }}
         onDragEnd={dragEnd}
@@ -1189,8 +1178,8 @@ export default function BoardsPage({
             >
               <Box
                 sx={{
-                  width: 48,
-                  height: 48,
+                  width: 64,
+                  height: 64,
                   display: 'grid',
                   placeItems: 'center',
                   bgcolor: 'action.hover',
@@ -1231,22 +1220,29 @@ export default function BoardsPage({
                   <CardActionArea
                     onClick={() => onSelectBoard(row.id)}
                     aria-label={`Open Board: ${row.name}`}
-                    sx={{ display: 'flex', justifyContent: 'flex-start', gap: 1 }}
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'flex-start',
+                      alignItems: 'stretch',
+                      gap: 1,
+                    }}
                   >
                     <BoardCover board={row} />
-                    <Typography
-                      variant="body2"
-                      component="p"
-                      noWrap
-                      fontWeight={600}
-                      sx={{
-                        px: 1,
-                        py: 0.75,
-                      }}
-                      title={row.name}
+                    <Stack
+                      sx={{ justifyContent: 'center', gap: 0.5, px: 1, py: 0.5, minWidth: 0 }}
+                      alignItems="flex-start"
                     >
-                      {row.name}
-                    </Typography>
+                      <Typography
+                        variant="body2"
+                        component="p"
+                        noWrap
+                        fontWeight={600}
+                        title={row.name}
+                      >
+                        {row.name}
+                      </Typography>
+                      <CollectionVisibilityChip visibility={row.visibility} />
+                    </Stack>
                   </CardActionArea>
                 </Card>
               </DropArea>
@@ -1255,23 +1251,36 @@ export default function BoardsPage({
         </Box>
 
         <Dialog
-          open={discovery === 'shared' || (discovery === 'all' && canBrowseAllBoards)}
+          open={discovery === 'all' && canBrowseAllBoards}
           onClose={() => setDiscovery(null)}
           fullWidth
-          maxWidth="sm"
-          aria-labelledby="public-boards-title"
+          maxWidth="lg"
+          aria-labelledby="all-boards-title"
         >
-          <DialogTitle id="public-boards-title">
-            {discovery === 'all' ? 'All Boards' : 'Public & shared Boards'}
-          </DialogTitle>
+          <DialogTitle id="all-boards-title">All Boards</DialogTitle>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', px: 3, pb: 1 }}>
+            {(['shared', 'instructor'] as const).map((filter) => {
+              const active = discoveryFilters.includes(filter)
+              const toggle = () =>
+                setDiscoveryFilters((current) =>
+                  active ? current.filter((value) => value !== filter) : [...current, filter],
+                )
+              return (
+                <Chip
+                  key={filter}
+                  size="small"
+                  label={filter === 'shared' ? 'Public & Shared' : 'Instructor Boards'}
+                  variant={active ? 'filled' : 'outlined'}
+                  color={active ? 'primary' : 'default'}
+                  aria-pressed={active}
+                  onClick={toggle}
+                />
+              )
+            })}
+          </Box>
           <DialogContent>
             {data.loading ? (
-              <CircularProgress
-                aria-label={
-                  discovery === 'all' ? 'Loading all Boards' : 'Loading public and shared Boards'
-                }
-                size={24}
-              />
+              <CircularProgress aria-label="Loading all Boards" size={24} />
             ) : data.error ? (
               <Alert severity="error">{data.error}</Alert>
             ) : discoveryBoards.length ? (
@@ -1319,9 +1328,7 @@ export default function BoardsPage({
               </Box>
             ) : (
               <Typography color="text.secondary">
-                {discovery === 'all'
-                  ? 'No Boards available.'
-                  : 'No public or shared Boards available.'}
+                {discoveryFilters.length ? 'No matching Boards.' : 'No Boards available.'}
               </Typography>
             )}
           </DialogContent>
@@ -1329,10 +1336,17 @@ export default function BoardsPage({
             <Button onClick={() => setDiscovery(null)}>Close</Button>
           </DialogActions>
         </Dialog>
-        {!boardId && collageToolbar('My Inuksuks')}
+        {!boardId && collageToolbar('My Markers')}
         <FilterBar
-          ariaLabel="Filter Boards and Inuksuks"
-          actions={boardId == null ? selectAction : undefined}
+          ariaLabel="Filter Boards and Markers"
+          actions={
+            boardId == null ? (
+              <>
+                {selectionButtons}
+                {selectAction}
+              </>
+            ) : undefined
+          }
           clearAction={
             !mobile && filtered ? (
               <Button
@@ -1401,7 +1415,7 @@ export default function BoardsPage({
               value={query}
               onChange={setQuery}
               placeholder="Filter by title or description"
-              ariaLabel="Filter Boards and Inuksuks by title"
+              ariaLabel="Filter Boards and Markers by title"
             />
           </FilterPopoverButton>
           <FilterPopoverButton
@@ -1462,8 +1476,8 @@ export default function BoardsPage({
             {!filteredItems.length && (
               <Typography color="text.secondary">
                 {filtered
-                  ? 'No matching Inuksuks.'
-                  : 'No Inuksuks yet. Save a view from an image to start your collection.'}
+                  ? 'No matching Markers.'
+                  : 'No Markers yet. Save a view from an image to start your collection.'}
               </Typography>
             )}
           </>
@@ -1499,7 +1513,7 @@ export default function BoardsPage({
                     color="text.secondary"
                     sx={{ ml: 0.5 }}
                   >
-                    ({board.inuksuk_count} Inuksuks)
+                    ({board.marker_count} Markers)
                   </Typography>
                 )}
                 {board?.permissions.can_edit && (
@@ -1518,9 +1532,9 @@ export default function BoardsPage({
                   variant="outlined"
                   size="small"
                   startIcon={<ViewCarousel />}
-                  disabled={!board.inuksuks.length || busy || conflict}
+                  disabled={!board.markers.length || busy || conflict}
                   onClick={() =>
-                    beginCollection(board.inuksuks, 'sequence', false, {
+                    beginCollection(board.markers, 'sequence', false, {
                       source_board_id: board.id,
                     })
                   }
@@ -1596,11 +1610,11 @@ export default function BoardsPage({
                 <Box
                   sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 234px)', gap: 2 }}
                 >
-                  {board.inuksuks.map((item, index) => memberCard(item, index, true))}
+                  {board.markers.map((item, index) => memberCard(item, index, true))}
                 </Box>
-                {!board.inuksuks.length && (
+                {!board.markers.length && (
                   <Typography color="text.secondary">
-                    No Inuksuks yet. Save a view from an image.
+                    No Markers yet. Save a view from an image.
                   </Typography>
                 )}
               </>
@@ -1663,7 +1677,7 @@ export default function BoardsPage({
         />
       )}
       {editingItem && (
-        <InuksukFormDialog
+        <MarkerFormDialog
           item={editingItem}
           imageId={editingItem.image_id}
           view={editingItem}
@@ -1702,7 +1716,7 @@ export default function BoardsPage({
           <DialogTitle>Remove from this Board?</DialogTitle>
           <DialogContent>
             {error && <Alert severity="error">{error}</Alert>}Remove “{removingItem.title}” from “
-            {board.name}”? An Inuksuk must remain on at least one Board.
+            {board.name}”? A Marker must remain on at least one Board.
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setRemovingItem(null)} disabled={busy}>
@@ -1711,7 +1725,7 @@ export default function BoardsPage({
             <Button
               disabled={busy || conflict}
               onClick={() => {
-                void run(() => removeBoardInuksuk(board.id, removingItem.id, board.version)).then(
+                void run(() => removeBoardMarker(board.id, removingItem.id, board.version)).then(
                   (ok) => {
                     if (ok) setRemovingItem(null)
                   },

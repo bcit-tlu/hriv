@@ -33,7 +33,7 @@ export const GUIDE_PAGES: GuidePageDef[] = [
   { slug: 'images', title: 'Managing Images' },
   { slug: 'groups', title: 'Managing Groups' },
   { slug: 'collections', title: 'Collections' },
-  { slug: 'inuksuks-and-boards', title: 'Inuksuks & Boards' },
+  { slug: 'markers-and-boards', title: 'Markers & Boards' },
   { slug: 'announcements', title: 'Announcements' },
   { slug: 'help', title: 'Getting Help' },
 ]

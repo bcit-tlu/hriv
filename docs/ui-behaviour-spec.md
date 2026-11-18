@@ -1429,49 +1429,61 @@ selection MouseTracker ignores their presses.
   after create directs the admin back to Edit Person. Credentials remain local
   to the mounted dialog and same-user mint serialization is retained.
 
-## Board and Inuksuk search (#1775)
+## Board and Marker search (#1775)
 
-### Boards & Inuksuks overview and Board dialog
+### Boards & Markers overview and Board dialog
 
 - The My Boards page title uses Collections' h5/h1 and unpadded flex header exactly.
-  The Boards & Inuksuks navigation/tab label is unchanged.
+  The Boards & Markers navigation/tab label is unchanged.
 - One short horizontally scrolling owned-Board row begins with New Board. Rounded,
-  outlined chips have a flush-left square cover/placeholder and single-line name.
+  outlined chips have a flush-left square cover/placeholder, a single-line name and
+  the shared scope pill below it on a taller tile.
   Editable chips reorder by surface drag without grip icons; clicking still opens a Board. Read-only
-  owned/program Boards are available in Public & shared Boards, not the chip row, for every role.
+  owned/program Boards are discoverable through the All Boards dialog's Public & Shared
+  filter, not the chip row, for every role.
   The chip row requires edit permission as well as ownership, with no instructor/admin exemption.
-- Public & shared Boards is an outlined, right-aligned button in the title row. For every
-  role its dialog lists API-returned public, program/group-restricted or co-owned/program-member
-  Boards outside the chip row; other users' private Boards are excluded.
-  Admins, instructors and staff have a second outlined All Boards button listing every
-  API-returned Board, including others' private and already-chipped Boards. Students never see it.
-  Both dialogs use tiles with title, shared scope pill and Collections-style Managed by
-  owner/program names (No owner for orphans). Lists are independent of overview filters;
+- All Boards is an outlined, right-aligned button in the title row for admins,
+  instructors and staff; students never see it. Its large dialog lists every
+  API-returned Board, including others' private and already-chipped Boards.
+  A horizontal row of filter chips sits directly beneath the dialog title, above
+  the content: Public & Shared keeps API-returned public,
+  program/group-restricted or co-owned/program-member Boards outside the chip
+  row (other users' private Boards stay excluded for every role), and Instructor
+  Boards keeps program-owned Boards or Boards owned by admin/instructor users.
+  Chips toggle independently and combine; no active chip restores the full
+  list, a filter that excludes everything reports “No matching Boards.”, and an
+  empty list reports “No Boards available.”.
+  Tiles carry title, shared scope pill and Collections-style Managed by
+  owner/program names (No owner for orphans). The list is independent of overview filters;
   choosing a tile closes discovery and opens the existing Board dialog. UX filtering
   does not change backend visibility or establish a security boundary.
-- My Inuksuks has Collections-style Cards/Table controls (no Graph), then the filter bar.
-  Outlined Select is right-aligned on that Filter by row in both overview views.
+- My Markers has Collections-style Cards/Table controls (no Graph), then the filter bar.
+  Outlined Select is right-aligned on that Filter by row in both overview views,
+  and every selection action — including Cancel Selection — renders on the same
+  row so starting selection never pushes Cancel Selection downward.
   The fully paginated overview is case-insensitive title ascending, then numeric ID;
   favourite/membership updates do not affect order. Filled stars use the primary accent.
-  Both views show only personally owned Inuksuks, fetched in pages of 200. Cards
+  Both views show only personally owned Markers, fetched in pages of 200. Cards
   show the image's parent category below the title, or Uncategorized when absent.
   Cards are 234px wide with proportionally scaled 96px covers, including in Board dialogs.
-  Compass, title-row edit pencil and reused Collections scope pills follow Collection cards.
+  Marker cards carry no scope pill — the reused Collections scope pill lives on
+  Board tiles instead, leaving Marker tiles correspondingly shorter.
+  Pin and title-row edit pencil follow Collection cards.
   Top-right Star/StarBorder favourite takes Collections' cover-picker position, beside Move/Save.
   The pencil opens the existing editor; Delete and Remove from this Board remain there.
   Card click opens the saved view; no card overflow or drag-handle icon remains.
-  Table columns are Title, Category, Scope, Boards, Favourite and Actions. Board names
-  navigate; actions and filters work in both views. Multiple Board scopes render distinct pills.
+  Table columns are Title, Category, Boards, Favourite and Actions. Board names
+  navigate; actions and filters work in both views.
   Program-owned Boards retain program-membership ownership semantics in the main row.
 - The Collections filter bar components provide title/description search,
   Private/Restricted/Public scope, owner/Mine and Favourite facets on both the
   Board row and overview collage. Scope uses any visible Board membership;
-  Favourite Boards are those holding a favourite Inuksuk. Active chips can be
+  Favourite Boards are those holding a favourite Marker. Active chips can be
   removed, and Clear filters resets all facets.
-- Dragging editable overview Inuksuk cards saves onto editable Board chips,
+- Dragging editable overview Marker cards saves onto editable Board chips,
   preserving existing memberships. Targets highlight and success shows a snackbar.
   Rejected drops stay unhighlighted but show a snackbar: Already in {Board name},
-  or You can't add Inuksuks to {Board name}; no mutation is sent.
+  or You can't add Markers to {Board name}; no mutation is sent.
   The bottom-centre Snackbar contains the app's filled Alert, using success for
   saves, info for duplicates and warning for other refusals.
   Filled favourite stars are white in Cards and Table, with contrasting backgrounds
@@ -1483,33 +1495,34 @@ selection MouseTracker ignores their presses.
   transfer icon. The title uses Collections-style h6 typography; its count uses
   smaller secondary body2 text. Create Collection is a right-aligned outlined button
   immediately left of Close, disabled for empty Boards. There is no Board overflow.
-  Delete is in Edit Board, with a second confirmation and orphan-Inuksuk warning;
+  Delete is in Edit Board, with a second confirmation and orphan-Marker warning;
   version conflicts block mutations until an explicit reload. Its ordered collage
   scrolls independently and does not inherit overview filters. Editable Boards
-  retain member reorder. Select sits at the right of each collage toolbar.
+  retain member reorder. Select sits at the right of each collage toolbar and
+  keeps every selection action, including Cancel Selection, on the same row.
 - Board URL/history state is retained: Back closes the Board dialog; opening an
   image at its saved view and returning restores that dialog. Flag-off behavior
-  makes no Board/Inuksuk requests.
+  makes no Board/Marker requests.
 - Mutations refresh silently without unmounting the collage or flashing a page
   loader. Refresh failures retain loaded cards. Board dialog navigation preserves
   the overview and fetches only Board detail; opening editors does not reload it.
 
 ### Viewer saved-view interactions
 
-- Add Inuksuk is a persistent mode, with normal drag/scroll/pinch navigation;
+- Add Marker is a persistent mode, with normal drag/scroll/pinch navigation;
   only quick clicks/taps place. Save does not disarm it. Escape cancels an open
   draft first, then disarms placement on the next press; the toolbar also disarms it.
 - Placement uses a compact non-modal top-right panel: selected Title, required
-  remembered Board picker and inline private-Board creation, titled Add Inuksuk.
+  remembered Board picker and a slide-in Add Board pane, titled Add Marker.
   Description starts under collapsed More options. Favourite is a tooltip-labelled
   outlined/filled title-row star with aria-pressed, not a checkbox. Cancel removes the draft marker;
-  the draft also appears as Unsaved in My Inuksuks. One draft is edited at a time.
+  the draft also appears in a leading Unsaved drawer group. One draft is edited at a time.
 - Marker clicks open a top-right information card showing title, optional description,
   visible Board names and favourite state, without a close X. Outside pointer presses
   deselect/close it; another marker selects instead. Escape also closes it. The authorized-only
   pencil replaces its contents with the shared inline edit form, not a central dialog;
-  drawer Edit selects/focuses/pans to the same Inuksuk and opens this editor.
-  Both modes keep the Inuksuk icon left of the title, with the view-mode pencil
+  drawer Edit selects/focuses/pans to the same Marker and opens this editor.
+  Both modes keep the Marker icon left of the title, with the view-mode pencil
   immediately beside the title. Authorized users can toggle the view-mode star
   through the versioned API; conflicts require Reload current before retrying.
   The inline form includes title, Boards, star, Save/Cancel and permitted Delete.
@@ -1520,38 +1533,63 @@ selection MouseTracker ignores their presses.
   OCC/error/reload behavior is shared with the existing form; BoardsPage retains its modal editor.
 - The Boards menu has checkbox options sorted case-insensitively by name with ID ties,
   and no selection chips. Closed text shows the first two names then +N, including the
-  remembered last-used Board before opening it. The separate + Create new board link
-  below the menu opens an inline name field and Create Board action. Creation makes
-  and selects a private, name-only Board; empty names disable creation.
+  remembered last-used Board before opening it. A pinned + Add Board row sits at the
+  bottom of the fixed-height menu while options scroll above it. It slides a New Board
+  pane in from the right over the form, reusing the Boards & Markers Add Board field
+  set (name, description, visibility and restricted Program/Group chips); a top-left
+  back arrow or Escape returns with the draft preserved. Creation selects the new
+  Board; empty names and incomplete restricted scopes disable creation.
 - The title-only drawer leaves the bottom toolbar visible. Drawer and panel lists
-  omit the redundant Inuksuks total heading; slightly larger body2 group headings
-  show saved-view counts in parentheses beside their names, excluding drafts. Menus
-  put Show/Hide marker(s) first, then the independent label action. Row menus
-  expose Edit/Delete only when permitted. Hide/Show label(s) use LabelOff/Label icons
-  for rows and groups. Default/override/Mixed and localStorage
+  omit the redundant Markers total heading. Rows group under their associated
+  Boards — a Marker on several Boards lists under each — resolved from the
+  Board summaries the markers hook now fetches. The viewer's own Boards head
+  the list, then instructor- or program-owned Boards; every other visible
+  Board sits inside a collapsed Public & Shared section that expands on click
+  or when a shared row is focused, its header carrying the same batch eye/label
+  icons. Markers with no visible Board fall under a trailing Other group and a
+  draft sits in a leading Unsaved
+  group. Group headings are body2 titles, never collapsible and carry no
+  counts; Board headings render as a link that opens the Board dialog in place
+  over the viewer — the viewer and its URL stay on the image — with an
+  “Open in Boards & Markers” action reaching the full management surface.
+  Group headings carry inline eye and label icon buttons (aria-pressed, Mixed
+  states included) instead of an ellipsis menu; the label icon disables while
+  every group marker is hidden. Row menus put Show/Hide marker first, then the
+  label action (disabled while its marker is hidden), then Edit/Delete only when
+  permitted. Hide/Show label(s) use LabelOff/Label icons. A hidden marker always
+  hides its label; a shown marker's label toggles independently. Public-source
+  markers default to canvas-hidden (labels enabled but inert while hidden);
+  other default/override/Mixed and localStorage
   semantics remain unchanged.
+- Selecting a marker — a drawer row, canvas glyph, edit/delete intent, or an
+  external `?marker=` navigation from Boards & Markers or search — writes a
+  `markerVisible` override when the marker is canvas-hidden, so selection
+  never lands on an invisible marker. Marker navigation serializes
+  `?image=&marker=&x=&y=&zoom=&rotation=`; refresh and Browser Back/Forward
+  restore the focused marker alongside the viewport.
 - Hidden-marker row titles use text.disabled (text.secondary in light mode for
   AA contrast on the still-navigable row) and an accessible “marker hidden”
-  suffix; group Mixed → Show markers shows all and clears overrides as before.
+  suffix; group Mixed → Show markers writes a shown override on every row in
+  that group in one batched update.
 - Drawer row hover backgrounds span the full width, including the separate
   options button; it does not nest inside the row action.
 - Pin/Unpin matches My collections (filled selected pin, no pinned close action,
   unpin does not close). The shared state hook persists
-  `hrivpref:inuksuks-drawer:pinned:user:<id>`; pinning survives image/sequence
+  `hrivpref:markers-drawer:pinned:user:<id>`; pinning survives image/sequence
   navigation and new viewer pages. Unpinned drawers close on outside presses/clicks,
   including OSD, without consuming placement. Menu portal content is inside;
   its stable container prevents leftover modal backdrops. Pinned drawers ignore
   outside presses and Escape.
 - Markers are upright constant-size 27px white discs with blue glyphs and a subtle
-  contrast ring/shadow, using the shared inuksuk-marker.svg asset. Labels retain
-  their existing styling. The top-left compass has no badge and matches the adjacent
+  contrast ring/shadow, rendered as MUI `Room` icons. Labels retain
+  their existing styling. The top-left pin has no badge and matches the adjacent
   white-on-dark OSD controls; the placement tool shares all normal toolbar states.
 
-- With `features.inuksuks`, Search adds Boards (dashboard icon) and Inuksuks
-  (compass icon) chips and title/description matches. Saved-view requests are
+- With `features.markers`, Search adds Boards (dashboard icon) and Markers
+  (pin icon) chips and title/description matches. Saved-view requests are
   debounced, cancellable and visibility-filtered by the API; an older query's
   results must not replace a newer query. Other search kinds remain local.
-- Choosing a Board opens `?page=boards&board=<id>`. Choosing an Inuksuk uses the
+- Choosing a Board opens `?page=boards&board=<id>`. Choosing a Marker uses the
   existing source-image/saved-coordinate navigation, preserving x/y/zoom/rotation.
 - In Manage Collection's picker, these results instead stage saved-view slots.
   Board expansion follows the displayed member order.
@@ -1560,15 +1598,15 @@ selection MouseTracker ignores their presses.
   A request failure or an empty Board keeps the picker open with a visible error.
 - The flag-off search UI and collection write payloads remain unchanged.
 
-## Permanent image/Sequence side panel (Inuksuks flag)
+## Permanent image/Sequence side panel (Markers flag)
 
-- With `features.inuksuks`, image and Sequence viewers replace the old Details
-  and top-left Inuksuks controls with one top-right Open/Close viewer panel toggle.
+- With `features.markers`, image and Sequence viewers replace the old Details
+  and top-left Markers controls with one top-right Open/Close viewer panel toggle.
   Flag-off and Synchronized per-pane interfaces retain their previous behavior.
-- The panel starts closed with Inuksuks selected; open state and selected content
+- The panel starts closed with Markers selected; open state and selected content
   persist per signed-in user across images, Sequence steps and reloads. Corrupt or
   blocked storage falls back safely; anonymous previews never write user preferences.
-- The open header places exclusive Inuksuks/Shared View/Details content buttons left and the
+- The open header places exclusive Markers/Shared View/Details content buttons left and the
   close toggle right. Selection uses MUI rounded-square action states and exposes
   `aria-pressed`; toggle controls expose expanded state and their panel id.
 - At sm+ the 256px permanent panel narrows OSD's image container; navigator, toolbar
@@ -1580,22 +1618,26 @@ selection MouseTracker ignores their presses.
   is unchanged.
 - Existing grouped row/visibility menus, dimmed hidden titles and stable menu portal
   behavior are reused without per-item metadata. Placement floats beside the image
-  and switches an open Details panel to Inuksuks. Closed-panel floating cards leave
+  and switches an open Details panel to Markers. Closed-panel floating cards leave
   room for the toggle. Details retains its metadata and Viewer controls help text.
 - Single-image, Sequence and Synchronized viewers show only My and Instructor
-  Inuksuks in lists and markers, using the endpoint's existing ownership grouping.
-  Other users' public/shared views remain discoverable through Public & shared Boards;
+  Markers in lists and markers, using the endpoint's existing ownership grouping.
+  Other users' public/shared views remain discoverable through the All Boards
+  dialog's Public & Shared filter;
   this display scope does not change backend visibility.
-- The link icon between compass and info selects Shared View. Copy current view
+- The link icon between pin and info selects Shared View. Copy current view
   reuses the image page clipboard action; the old header Share View is hidden only
   with the panel enabled. Sequence copies a standalone image view with live viewport
   and selection rectangles. Flag-off and Synchronized sharing controls are unchanged.
 
-### Viewer Inuksuk polish
+### Viewer Marker polish
 
-- Successful creation selects the returned Inuksuk, opens its info card and moves
+- Successful creation selects the returned Marker, re-orients the viewport onto
+  it (matching row Edit and marker-click navigation), opens its info card and moves
   keyboard focus to its list row, expanding and scrolling the group as necessary.
-  Saving opens Inuksuks if the panel was closed or on Details. Later reloads do
+  Drawer Delete opens the shared confirmation dialog alone — never the
+  information card or editor.
+  Saving opens Markers if the panel was closed or on Details. Later reloads do
   not steal focus. Failed saves preserve the draft and previous selection.
 - The card's favourite star is a named, tooltip-equipped read-only indicator
   immediately left of Close, without a visible status sentence.

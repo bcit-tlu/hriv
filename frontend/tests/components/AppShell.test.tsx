@@ -52,16 +52,16 @@ describe('AppShell', () => {
       canEditContent: false,
       canManageUsers: false,
       canViewPeople: false,
-      inuksuksEnabled: true,
+      markersEnabled: true,
     })
     props.currentUser = { ...props.currentUser, role: 'student' }
     const { rerender } = render(<AppShell {...props} />)
     expect(screen.getAllByRole('tab')).toHaveLength(2)
     expect(screen.queryAllByRole('tab', { selected: true })).toHaveLength(0)
-    fireEvent.click(screen.getByRole('button', { name: 'Boards & Inuksuks' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Boards & Markers' }))
     expect(props.onTabChange).toHaveBeenCalledWith('boards')
-    rerender(<AppShell {...props} inuksuksEnabled={false} />)
-    expect(screen.queryByRole('button', { name: 'Boards & Inuksuks' })).not.toBeInTheDocument()
+    rerender(<AppShell {...props} markersEnabled={false} />)
+    expect(screen.queryByRole('button', { name: 'Boards & Markers' })).not.toBeInTheDocument()
   })
   describe('password menu', () => {
     it.each([

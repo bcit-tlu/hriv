@@ -17,7 +17,6 @@ const writes = fn()
 function Example({
   initialBoardId = null,
   state = 'ready',
-  readOnlyOwned = false,
   role = BOARD_USER.role,
 }: {
   initialBoardId?: number | null
@@ -29,7 +28,7 @@ function Example({
   const [selection, setSelection] = useState<{ boardId: number | null }>({
     boardId: initialBoardId,
   })
-  const currentUser = { ...BOARD_USER, role: readOnlyOwned ? ('student' as const) : role }
+  const currentUser = { ...BOARD_USER, role }
   return (
     <AuthContext.Provider value={{ ...BOARD_AUTH, currentUser }}>
       <BoardsPage
@@ -40,7 +39,7 @@ function Example({
         groups={BOARD_GROUPS}
         {...selection}
         onSelectBoard={(boardId) => setSelection({ boardId })}
-        onOpenInuksuk={fn()}
+        onOpenMarker={fn()}
       />
     </AuthContext.Provider>
   )
@@ -90,11 +89,11 @@ export const Basic: Story = {
       await canvas.findByRole('button', { name: 'Open Board: Architecture inspiration' }),
     ).toBeVisible()
     await expect(
-      await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' }),
+      await canvas.findByRole('button', { name: 'Open Marker: Rose window' }),
     ).toBeVisible()
     const card = canvas
-      .getByRole('button', { name: 'Open Inuksuk: Rose window' })
-      .closest<HTMLElement>('[data-testid="inuksuk-card"]')!
+      .getByRole('button', { name: 'Open Marker: Rose window' })
+      .closest<HTMLElement>('[data-testid="marker-card"]')!
     await expect(card.getBoundingClientRect().width).toBe(234)
     await expect(
       within(card).getByRole('button', { name: 'Favourite Rose window' }).querySelector('svg'),
@@ -102,8 +101,8 @@ export const Basic: Story = {
     await expect(card.querySelector('img')!.getBoundingClientRect().height).toBe(96)
     await expect(
       canvas
-        .getAllByRole('button', { name: /^Open Inuksuk:/ })
-        .map((el) => el.getAttribute('aria-label')?.replace('Open Inuksuk: ', '')),
+        .getAllByRole('button', { name: /^Open Marker:/ })
+        .map((el) => el.getAttribute('aria-label')?.replace('Open Marker: ', '')),
     ).toEqual([
       'A study in geometry',
       'Light through glass',
@@ -117,15 +116,15 @@ export const Basic: Story = {
 export const Table: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' })
+    await canvas.findByRole('button', { name: 'Open Marker: Rose window' })
     await userEvent.click(canvas.getByRole('button', { name: 'Table view' }))
-    await expect(canvas.getByRole('table', { name: 'Inuksuks' })).toBeVisible()
+    await expect(canvas.getByRole('table', { name: 'Markers' })).toBeVisible()
     await expect(
       canvas.getByRole('button', { name: 'Favourite Rose window' }).querySelector('svg'),
     ).toHaveStyle({ color: 'rgb(255, 255, 255)' })
     await expect(canvas.getByRole('columnheader', { name: 'Boards' })).toBeVisible()
     await expect(
-      within(canvas.getByRole('region', { name: 'Filter Boards and Inuksuks' })).getByRole(
+      within(canvas.getByRole('region', { name: 'Filter Boards and Markers' })).getByRole(
         'button',
         { name: 'Select' },
       ),
@@ -159,18 +158,18 @@ export const SelectedBoard: Story = {
       'MuiButton-outlined',
     )
     const title = within(dialog).getByRole('heading', { name: 'Architecture inspiration' })
-    const count = within(dialog).getByText('(6 Inuksuks)')
+    const count = within(dialog).getByText('(6 Markers)')
     await expect(parseFloat(getComputedStyle(title).fontSize)).toBeGreaterThan(
       parseFloat(getComputedStyle(count).fontSize),
     )
     await waitFor(() =>
       expect(
-        within(dialog).getByRole('button', { name: 'Open Inuksuk: Rose window' }),
+        within(dialog).getByRole('button', { name: 'Open Marker: Rose window' }),
       ).toBeVisible(),
     )
     await waitFor(() =>
       expect(
-        within(dialog).getByRole('button', { name: 'Open Inuksuk: Light through glass' }),
+        within(dialog).getByRole('button', { name: 'Open Marker: Light through glass' }),
       ).toBeVisible(),
     )
   },
@@ -204,7 +203,7 @@ export const NewlyCreatedBoard: Story = {
 export const Favourites: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' })
+    await canvas.findByRole('button', { name: 'Open Marker: Rose window' })
     await userEvent.click(canvas.getByRole('button', { name: 'Favourite' }))
     await userEvent.click(
       within(canvasElement.ownerDocument.body).getByRole('menuitemradio', {
@@ -214,7 +213,7 @@ export const Favourites: Story = {
     await userEvent.click(canvas.getByRole('heading', { name: 'My Boards' }))
     await expect(canvas.getByText('Favourites', { exact: true })).toBeVisible()
     await expect(
-      canvas.queryByRole('button', { name: 'Open Inuksuk: Stone columns' }),
+      canvas.queryByRole('button', { name: 'Open Marker: Stone columns' }),
     ).not.toBeInTheDocument()
   },
 }
@@ -232,17 +231,21 @@ export const ScopeFilter: Story = {
     await expect(
       canvas.queryByRole('button', { name: 'Open Board: Shared discoveries' }),
     ).not.toBeInTheDocument()
-    await expect(canvas.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBeVisible()
+    await expect(canvas.getByRole('button', { name: 'Open Marker: Rose window' })).toBeVisible()
   },
 }
 export const PublicSharedBoards: Story = {
   args: { role: 'admin', discoveryFixtures: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(await canvas.findByRole('button', { name: 'Public & shared Boards' }))
+    await expect(
+      canvas.queryByRole('button', { name: 'Public & shared Boards' }),
+    ).not.toBeInTheDocument()
+    await userEvent.click(await canvas.findByRole('button', { name: 'All Boards' }))
     const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
-      name: 'Public & shared Boards',
+      name: 'All Boards',
     })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Public & Shared' }))
     await waitFor(() =>
       expect(
         within(dialog).getByRole('button', { name: 'Open Board: Shared discoveries' }),
@@ -255,19 +258,14 @@ export const PublicSharedBoards: Story = {
     ).not.toBeInTheDocument()
   },
 }
-export const StudentPublicSharedBoards: Story = {
+export const StudentNoDiscovery: Story = {
   args: { role: 'student', discoveryFixtures: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
+    await canvas.findByRole('button', { name: 'Open Board: Architecture inspiration' })
     await expect(canvas.queryByRole('button', { name: 'All Boards' })).not.toBeInTheDocument()
-    await userEvent.click(await canvas.findByRole('button', { name: 'Public & shared Boards' }))
-    const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
-      name: 'Public & shared Boards',
-    })
-    await waitFor(() => expect(within(dialog).getByText('Managed by Morgan')).toBeVisible())
-    await expect(within(dialog).getByText('Managed by program Engineering')).toBeVisible()
     await expect(
-      within(dialog).queryByRole('button', { name: 'Open Board: Morgan’s private studies' }),
+      canvas.queryByRole('button', { name: 'Public & shared Boards' }),
     ).not.toBeInTheDocument()
   },
 }
@@ -279,6 +277,14 @@ export const AllBoards: Story = {
     const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
       name: 'All Boards',
     })
+    await expect(within(dialog).getByRole('button', { name: 'Public & Shared' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    await expect(within(dialog).getByRole('button', { name: 'Instructor Boards' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
     await waitFor(() =>
       expect(
         within(dialog).getByRole('button', { name: 'Open Board: Morgan’s private studies' }),
@@ -358,10 +364,11 @@ export const ReadOnlyOwnedBoard: Story = {
     )
     await expect(within(readOnly).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(2)
     await expectHorizontalBoardChips(readOnly)
-    await userEvent.click(canvas.getByRole('button', { name: 'Public & shared Boards' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'All Boards' }))
     const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
-      name: 'Public & shared Boards',
+      name: 'All Boards',
     })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Public & Shared' }))
     await waitFor(() =>
       expect(
         within(dialog).getByRole('button', { name: 'Open Board: Next studio project' }),
@@ -374,8 +381,8 @@ function rejectedDrop(name: string, message: string): NonNullable<Story['play']>
   return async ({ canvasElement, userEvent: user }) => {
     const canvas = within(canvasElement)
     const source = (
-      await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' })
-    ).closest('[data-testid="inuksuk-card"]')!.parentElement!
+      await canvas.findByRole('button', { name: 'Open Marker: Rose window' })
+    ).closest('[data-testid="marker-card"]')!.parentElement!
     const target = canvas.getByRole('region', { name: `Save to ${name}` })
     const s = source.getBoundingClientRect()
     const t = target.getBoundingClientRect()
@@ -408,7 +415,7 @@ export const CollectionSelection: Story = {
     const checkboxes = await canvas.findAllByRole('checkbox', { name: /^Select / })
     await userEvent.click(checkboxes[0])
     await userEvent.click(checkboxes[1])
-    const toolbar = canvas.getByRole('toolbar', { name: 'Selected Inuksuks' })
+    const toolbar = canvas.getByRole('toolbar', { name: 'Selected Markers' })
     await expect(
       within(toolbar).getByRole('button', { name: 'Create Sequence Collection' }),
     ).toBeEnabled()
@@ -423,8 +430,8 @@ export const SaveToBoard: Story = {
     const user = userEvent.setup()
     const canvas = within(canvasElement)
     const handle = (
-      await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' })
-    ).closest('[data-testid="inuksuk-card"]')!.parentElement!
+      await canvas.findByRole('button', { name: 'Open Marker: Rose window' })
+    ).closest('[data-testid="marker-card"]')!.parentElement!
     const target = canvas.getByRole('region', { name: 'Save to Next studio project' })
     const sourceRect = handle.getBoundingClientRect()
     const targetRect = target.getBoundingClientRect()
@@ -450,7 +457,7 @@ export const SaveToBoard: Story = {
         writes,
         within(canvasElement.ownerDocument.body).queryByRole('alert')?.textContent ??
           'No page error',
-      ).toHaveBeenCalledWith('/api/inuksuks/7', {
+      ).toHaveBeenCalledWith('/api/markers/7', {
         version: 3,
         board_assignments: [{ board_id: 1, sort_order: 0 }, { board_id: 3 }],
       }),

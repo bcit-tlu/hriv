@@ -3,17 +3,18 @@ import Box from '@mui/material/Box'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import ViewerSidePanel, { ViewerPanelToggle } from './ViewerSidePanel'
-import { ImageInuksuksList } from './ImageInuksuksDrawer'
+import { ImageMarkersList } from './ImageMarkersDrawer'
 import { ImageDetailsContent } from './ImageDetailsDrawer'
-import { INUKSUK_FIXTURE } from './inuksukFixtures'
-import { useInuksukVisibilityPrefs } from '../useInuksukVisibilityPrefs'
+import { BOARD_FIXTURE, MARKER_FIXTURE } from './markerFixtures'
+import { BOARD_USER } from './boardsFixtures'
+import { useMarkerVisibilityPrefs } from '../useMarkerVisibilityPrefs'
 import type { ViewerPanelTab } from '../useViewerPanelState'
 
 const copyView = fn()
 
 function Example({
   initialOpen = false,
-  initialTab = 'inuksuks',
+  initialTab = 'markers',
   saved = false,
 }: {
   initialOpen?: boolean
@@ -22,10 +23,10 @@ function Example({
 }) {
   const [open, setOpen] = useState(initialOpen)
   const [tab, setTab] = useState<ViewerPanelTab>(initialTab)
-  const prefs = useInuksukVisibilityPrefs()
+  const prefs = useMarkerVisibilityPrefs()
   const items = saved
-    ? [INUKSUK_FIXTURE, { ...INUKSUK_FIXTURE, id: 8, title: 'New saved view' }]
-    : [INUKSUK_FIXTURE]
+    ? [MARKER_FIXTURE, { ...MARKER_FIXTURE, id: 8, title: 'New saved view' }]
+    : [MARKER_FIXTURE]
   return (
     <Box
       sx={{ height: 560, position: 'relative', overflow: 'hidden', bgcolor: 'background.default' }}
@@ -52,9 +53,11 @@ function Example({
         onClose={() => setOpen(false)}
         panelId="example-panel"
         onShareView={copyView}
-        inuksuks={
-          <ImageInuksuksList
+        markers={
+          <ImageMarkersList
             items={items}
+            boards={[BOARD_FIXTURE]}
+            currentUser={BOARD_USER}
             selectedId={saved ? 8 : null}
             focusId={saved ? 8 : null}
             drawerId="example-list"
@@ -91,7 +94,7 @@ export const Basic: Story = {
     )
   },
 }
-export const Inuksuks: Story = {
+export const Markers: Story = {
   args: { initialOpen: true },
   parameters: {
     chromatic: {
@@ -138,10 +141,10 @@ export const NewlySaved: Story = {
   args: { initialOpen: true, saved: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const row = canvas.getByRole('button', { name: 'View Inuksuk: New saved view' })
+    const row = canvas.getByRole('button', { name: 'View Marker: New saved view' })
     await expect(row).toHaveFocus()
     await expect(row).toHaveAttribute('aria-pressed', 'true')
-    await expect(canvas.getByRole('button', { name: 'View Inuksuk: Rose window' })).toHaveAttribute(
+    await expect(canvas.getByRole('button', { name: 'View Marker: Rose window' })).toHaveAttribute(
       'aria-pressed',
       'false',
     )

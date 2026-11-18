@@ -11,9 +11,9 @@ beforeEach(() => {
 })
 afterEach(() => vi.restoreAllMocks())
 
-it('defaults closed on Inuksuks and restores both preferences after remounting', () => {
+it('defaults closed on Markers and restores both preferences after remounting', () => {
   const first = renderHook(() => useViewerPanelState(userId))
-  expect(first.result.current).toMatchObject({ open: false, tab: 'inuksuks' })
+  expect(first.result.current).toMatchObject({ open: false, tab: 'markers' })
   act(() => {
     first.result.current.setOpen(true)
     first.result.current.setTab('details')
@@ -32,7 +32,7 @@ it('isolates users without writing the previous users preference to the new key'
     initialProps: { user: userId },
   })
   rerender({ user: userId + 1000 })
-  expect(result.current).toMatchObject({ open: false, tab: 'inuksuks' })
+  expect(result.current).toMatchObject({ open: false, tab: 'markers' })
   expect(JSON.parse(localStorage.getItem(key)!)).toEqual({ open: true, tab: 'details' })
   rerender({ user: userId })
   expect(result.current).toMatchObject({ open: true, tab: 'details' })
@@ -51,7 +51,7 @@ it.each(['{bad json', 'null', '{"open":"yes","tab":"bad"}'])(
     localStorage.setItem(key, value)
     expect(renderHook(() => useViewerPanelState(userId)).result.current).toMatchObject({
       open: false,
-      tab: 'inuksuks',
+      tab: 'markers',
     })
   },
 )
@@ -89,7 +89,7 @@ it.each(['reads and writes', 'writes'])(
     unmount()
     expect(renderHook(() => useViewerPanelState(userId + 1000)).result.current).toMatchObject({
       open: false,
-      tab: 'inuksuks',
+      tab: 'markers',
     })
     expect(renderHook(() => useViewerPanelState(userId)).result.current).toMatchObject({
       open: true,
@@ -97,7 +97,7 @@ it.each(['reads and writes', 'writes'])(
     })
     expect(renderHook(() => useViewerPanelState(userId, false)).result.current).toMatchObject({
       open: false,
-      tab: 'inuksuks',
+      tab: 'markers',
     })
   },
 )

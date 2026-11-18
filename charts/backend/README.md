@@ -207,14 +207,14 @@ Heartbeat and child timeout values must remain shorter than the lease, and the
 pump cadence must be a whole-minute interval. Retry eligibility is stored in
 PostgreSQL and the retry base must not exceed the cap.
 
-## Inuksuks and Boards feature flag (`inuksuks.enabled`)
+## Markers and Boards feature flag (`markers.enabled`)
 
-`inuksuks.enabled` defaults to `false` and renders `INUKSUKS_ENABLED` on
-the API pod. While disabled, `/api/boards` and `/api/inuksuks` and their
+`markers.enabled` defaults to `false` and renders `MARKERS_ENABLED` on
+the API pod. While disabled, `/api/boards` and `/api/markers` and their
 descendants return 404 before body parsing; maintenance still returns 503.
-`GET /api/features` exposes `inuksuks`. Local Docker Compose enables the
+`GET /api/features` exposes `markers`. Local Docker Compose enables the
 flag by default. The schema is additive and remains present when disabled.
-See [Inuksuks and Boards](../../docs/inuksuks-and-boards.md).
+See [Markers and Boards](../../docs/markers-and-boards.md).
 
 ## Collections feature flag (`collections.enabled`)
 
