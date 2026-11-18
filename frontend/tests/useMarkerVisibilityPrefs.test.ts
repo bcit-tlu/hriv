@@ -67,6 +67,19 @@ describe('useMarkerVisibilityPrefs', () => {
     act(() => result.current.setItems([item], 'markerVisible', true))
     expect(result.current.visibilityFor(item).markerVisible).toBe(true)
   })
+  it('setItems discards the other dimension when a row changed source', () => {
+    const moved = { id: 8, source: 'instructor' as const }
+    const { result } = renderHook(() => useMarkerVisibilityPrefs(9))
+    // Override belongs to (id, source) — a source change must not revive it.
+    act(() => result.current.setItem({ id: 8, source: 'public' }, 'labelVisible', false))
+    act(() => result.current.setItems([moved], 'markerVisible', false))
+    expect(result.current.visibilityFor(moved)).toEqual({
+      markerVisible: false,
+      labelVisible: true,
+    })
+    const stored = JSON.parse(localStorage.getItem('hriv.markerVisibility.9')!)
+    expect(stored.items).toEqual([{ id: 8, source: 'instructor', markerVisible: false }])
+  })
   it('isolates user changes immediately, syncs mounted panes, and consumes storage events', () => {
     const a = renderHook(({ id }) => useMarkerVisibilityPrefs(id), { initialProps: { id: 9 } })
     const b = renderHook(() => useMarkerVisibilityPrefs(9))

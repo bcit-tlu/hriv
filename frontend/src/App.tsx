@@ -286,15 +286,31 @@ export default function App() {
   )
   // Marker the viewer should select and reveal after external navigation
   // (Boards & Markers list or a `?marker=` link). Seeded from the URL so
-  // deep links and history entries carry the target marker.
-  const [markerFocus, setMarkerFocus] = useState<{ id: number; imageId: number } | null>(() => {
+  // deep links and history entries carry the target marker. `navigate`
+  // re-centres on the marker's saved view — skipped when the URL carries
+  // explicit viewport coords (a shared current view wins over the marker's).
+  const [markerFocus, setMarkerFocus] = useState<{
+    id: number
+    imageId: number
+    navigate?: boolean
+  } | null>(() => {
     const parsed = parseShareableUrlParams()
     return parsed.markerId != null && parsed.imageId != null
-      ? { id: parsed.markerId, imageId: parsed.imageId }
+      ? { id: parsed.markerId, imageId: parsed.imageId, navigate: parsed.viewport == null }
       : null
   })
   // Board opened from a viewer drawer heading — stays on the current image.
   const [boardDialogId, setBoardDialogId] = useState<number | null>(null)
+  // Bumped when the in-place Board dialog mutates Marker/Board data so the
+  // mounted viewer reloads its marker list and Board summaries.
+  const [markersReloadTick, setMarkersReloadTick] = useState(0)
+  // Container of the viewer that opened the in-place Board dialog — the
+  // dialog portals into it so it stays visible in full-page viewer mode.
+  const [boardDialogContainer, setBoardDialogContainer] = useState<HTMLElement | null>(null)
+  const handleOpenBoardDialog = (id: number, container?: HTMLElement | null) => {
+    setBoardDialogId(id)
+    setBoardDialogContainer(container ?? null)
+  }
   const [page, setPage] = useState<Page>(() => {
     if (parseCollectionIdParam(window.location.search) != null) return 'collections'
     const p = new URLSearchParams(window.location.search).get('page')
@@ -1154,7 +1170,9 @@ export default function App() {
       const popped = parseShareableUrlParams()
       setViewportState(popped.viewport)
       setMarkerFocus(
-        popped.markerId != null && imageId != null ? { id: popped.markerId, imageId } : null,
+        popped.markerId != null && imageId != null
+          ? { id: popped.markerId, imageId, navigate: popped.viewport == null }
+          : null,
       )
       setOverlays([])
       return true
@@ -2502,7 +2520,7 @@ export default function App() {
             setPath([])
             setSelectedCollectionId(null)
             setCollectionFromBrowse(false)
-            setMarkerFocus({ id: item.id, imageId: item.image_id })
+            setMarkerFocus({ id: item.id, imageId: item.image_id, navigate: true })
             setPage('browse')
             pushNavState('browse', [], item.image_id, markerViewParams(item))
           })
@@ -2727,6 +2745,7 @@ export default function App() {
               onOpenCollection={handleOpenCollection}
               onCloseCollection={handleCloseCollection}
               onOpenImage={handleOpenCollectionImage}
+              onOpenBoard={handleOpenBoardDialog}
               onOpenImageById={handleOpenGraphImage}
               selectedCollectionItemId={selectedCollectionItemId}
               selectedCollectionSlotId={features?.markers ? selectedCollectionSlotId : null}
@@ -3112,7 +3131,8 @@ export default function App() {
                 <ImageViewer
                   markersEnabled={features?.markers === true}
                   onShareView={copyShareLink}
-                  onOpenBoard={setBoardDialogId}
+                  onOpenBoard={handleOpenBoardDialog}
+                  markersReloadSignal={markersReloadTick}
                   markerFocus={
                     markerFocus && markerFocus.imageId === selectedImage.id ? markerFocus : null
                   }
@@ -4073,7 +4093,9 @@ export default function App() {
         currentUser={currentUser}
         programs={programs}
         groups={groups}
+        container={boardDialogContainer}
         onClose={() => setBoardDialogId(null)}
+        onChanged={() => setMarkersReloadTick((tick) => tick + 1)}
         onOpenMarker={(item) => {
           setBoardDialogId(null)
           handleOpenBoardMarker(item)

@@ -157,13 +157,15 @@ export function useMarkerVisibilityPrefs(userId?: number, enabled = true) {
         next.items.filter((entry) => ids.has(entry.id)).map((entry) => [entry.id, entry]),
       )
       next.items = next.items.filter((entry) => !ids.has(entry.id))
-      for (const item of eligible)
+      for (const item of eligible) {
+        const prior = previous.get(item.id)
         next.items.push({
-          ...previous.get(item.id),
+          ...(prior?.source === item.source ? prior : {}),
           id: item.id,
           source: item.source,
           [kind]: visible,
         })
+      }
       next.items = next.items.slice(-MAX_MARKER_VISIBILITY_ENTRIES)
       write(key, persist, next)
     },

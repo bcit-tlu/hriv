@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../../src/api'
+import { ApiError } from '../../src/api'
 import { AuthContext } from '../../src/authContextValue'
 import BoardDialog from '../../src/components/BoardDialog'
 import { BOARD_AUTH, BOARDS_FIXTURES, BOARD_USER } from '../../src/components/boardsFixtures'
@@ -107,14 +108,34 @@ describe('BoardDialog', () => {
     await waitFor(() => expect(api.fetchBoards).toHaveBeenCalled())
   })
 
-  it('toggles a marker favourite and reloads the Board', async () => {
-    setup()
+  it('toggles a marker favourite, reloads the Board and reports the change', async () => {
+    const onChanged = vi.fn()
+    setup(1, { onChanged })
     await screen.findByRole('heading', { name: 'Architecture inspiration' })
     fireEvent.click(screen.getByRole('button', { name: 'Favourite Stone columns' }))
     await waitFor(() =>
       expect(api.updateMarker).toHaveBeenCalledWith(8, { version: 3, favourite: true }),
     )
     await waitFor(() => expect(api.fetchBoard).toHaveBeenCalledTimes(2))
+    expect(onChanged).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears a 409 block only after a successful reload', async () => {
+    setup()
+    await screen.findByRole('heading', { name: 'Architecture inspiration' })
+    vi.mocked(api.updateMarker).mockRejectedValueOnce(new ApiError(409, 'version conflict'))
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite Stone columns' }))
+    await screen.findByRole('alert')
+    expect(screen.getByRole('button', { name: 'Favourite Stone columns' })).toBeDisabled()
+    // A failed reload keeps the block in place.
+    vi.mocked(api.fetchBoard).mockRejectedValueOnce(new Error('still offline'))
+    fireEvent.click(screen.getByRole('button', { name: 'Reload latest' }))
+    await waitFor(() => expect(api.fetchBoard).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    // A successful fetch clears the error and re-enables the actions.
+    fireEvent.click(screen.getByRole('button', { name: 'Reload latest' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Favourite Stone columns' })).toBeEnabled()
   })
 
   it('surfaces load failures with a reload action', async () => {

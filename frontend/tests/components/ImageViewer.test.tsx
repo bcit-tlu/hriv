@@ -582,7 +582,7 @@ describe('Marker viewer tool', () => {
       fireEvent.click(
         await list.findByRole('button', { name: 'Open Board: Architecture inspiration' }),
       )
-      expect(onOpenBoard).toHaveBeenCalledWith(1)
+      expect(onOpenBoard).toHaveBeenCalledWith(1, viewer().container)
     },
   )
   it.each([true, false])(
@@ -653,6 +653,59 @@ describe('Marker viewer tool', () => {
       )
     },
   )
+  it('selects and reveals a focused marker without re-centring when navigate=false', async () => {
+    apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE])
+    const rendered = render(
+      <AuthContext.Provider value={BOARD_AUTH}>
+        <ImageViewer
+          tileSources="/test.dzi"
+          imageId={42}
+          markersEnabled
+          markerFocus={{ id: 7, imageId: 42, navigate: false }}
+        />
+      </AuthContext.Provider>,
+    )
+    rendered.container.appendChild(viewer().element)
+    // The marker is still selected and the drawer reports focus…
+    await waitFor(() =>
+      expect(viewer().container.querySelector('[data-marker-id="7"] button')).not.toBeNull(),
+    )
+    fireEvent.click(
+      await within(viewer().container).findByRole('button', { name: 'Open viewer panel' }),
+    )
+    const list = within(await screen.findByRole('complementary'))
+    expect(list.getByRole('button', { name: 'View Marker: Rose window' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    // …but the shared viewport is left untouched.
+    expect(viewer().viewport.panTo).not.toHaveBeenCalled()
+    expect(viewer().viewport.zoomTo).not.toHaveBeenCalled()
+  })
+  it('reloads markers when markersReloadSignal changes', async () => {
+    apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE])
+    const rendered = render(
+      <AuthContext.Provider value={BOARD_AUTH}>
+        <ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled markersReloadSignal={1} />
+      </AuthContext.Provider>,
+    )
+    rendered.container.appendChild(viewer().element)
+    await waitFor(() => expect(apiMocks.fetchImageMarkers).toHaveBeenCalledTimes(1))
+    rendered.rerender(
+      <AuthContext.Provider value={BOARD_AUTH}>
+        <ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled markersReloadSignal={2} />
+      </AuthContext.Provider>,
+    )
+    await waitFor(() => expect(apiMocks.fetchImageMarkers).toHaveBeenCalledTimes(2))
+    // A rerender with the same signal does not reload again.
+    rendered.rerender(
+      <AuthContext.Provider value={BOARD_AUTH}>
+        <ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled markersReloadSignal={2} />
+      </AuthContext.Provider>,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(apiMocks.fetchImageMarkers).toHaveBeenCalledTimes(2)
+  })
   it.each([true, false])(
     'reveals a canvas-hidden marker when its drawer row is selected, panel=%s',
     async (viewerPanel) => {

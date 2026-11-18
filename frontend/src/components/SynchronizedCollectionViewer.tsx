@@ -56,6 +56,9 @@ export interface SynchronizedCollectionViewerProps {
   onOpenImage: (image: ImageItem) => void
   /** Refresh a member's tokenized URLs after the viewer's tile-token renewal. */
   onImageRenewed: (image: ApiImage) => void
+  /** Opens the Board dialog for a drawer group heading; carries the
+   * viewer's container so the dialog stays visible in full-page mode. */
+  onOpenBoard?: (boardId: number, container?: HTMLElement | null) => void
   onError: (message: string) => void
   /**
    * Program/group display names per member image id for the details drawer
@@ -129,6 +132,7 @@ export default function SynchronizedCollectionViewer({
   onSaveViewport,
   onOpenImage,
   onImageRenewed,
+  onOpenBoard,
   onError,
   memberInfoNames,
   actionsContainer,
@@ -665,6 +669,7 @@ export default function SynchronizedCollectionViewer({
                   >
                     <ImageViewer
                       markersEnabled={markersEnabled}
+                      onOpenBoard={onOpenBoard}
                       tileSources={image.tileSources}
                       imageId={image.id}
                       categoryId={image.categoryId ?? undefined}

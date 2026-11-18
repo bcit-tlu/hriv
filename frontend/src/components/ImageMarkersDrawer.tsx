@@ -156,8 +156,9 @@ export default function ImageMarkersDrawer({
   const instructorOwned = (board: ApiBoardSummary) =>
     board.owner_program_id != null ||
     board.owners.some((owner) => owner.role === 'admin' || owner.role === 'instructor')
-  const prominentBoards = (boards ?? []).filter(
-    (board) => ownsBoard(board, currentUser) || instructorOwned(board),
+  const ownBoards = (boards ?? []).filter((board) => ownsBoard(board, currentUser))
+  const instructorBoards = (boards ?? []).filter(
+    (board) => !ownsBoard(board, currentUser) && instructorOwned(board),
   )
   const sharedBoards = (boards ?? []).filter(
     (board) => !ownsBoard(board, currentUser) && !instructorOwned(board),
@@ -168,7 +169,9 @@ export default function ImageMarkersDrawer({
     boardId: board.id,
     rows: items.filter((item) => item.board_ids.includes(board.id)),
   })
-  const prominentGroups = prominentBoards.map(boardGroup).filter((group) => group.rows.length > 0)
+  const prominentGroups = [...ownBoards, ...instructorBoards]
+    .map(boardGroup)
+    .filter((group) => group.rows.length > 0)
   const sharedGroups = sharedBoards.map(boardGroup).filter((group) => group.rows.length > 0)
   const sharedRows = [
     ...new Map(sharedGroups.flatMap((group) => group.rows).map((row) => [row.id, row])).values(),

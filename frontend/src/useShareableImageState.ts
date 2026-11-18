@@ -190,9 +190,9 @@ export interface UseShareableImageStateDeps {
   /**
    * Marker navigated to from Boards or a `?marker=` link — written as
    * `?marker={id}` while its image is open so refresh/back restores the
-   * selection and reveals the marker.
+   * selection and reveals the marker. `navigate` is in-memory only.
    */
-  focusedMarker?: { id: number; imageId: number } | null
+  focusedMarker?: { id: number; imageId: number; navigate?: boolean } | null
   /** Current category path — changes trigger URL sync (`?cat=`). */
   path: Category[]
   /**

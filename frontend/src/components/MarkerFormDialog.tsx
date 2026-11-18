@@ -542,7 +542,7 @@ export default function MarkerFormDialog({
               onChange={(_event, value) => chooseBoards(value)}
               slots={{ paper: boardsListPaper }}
               slotProps={{
-                popper: { container: container ?? undefined, disablePortal: container == null },
+                popper: { container: container ?? undefined },
                 listbox: {
                   sx: { flex: '0 1 auto', minHeight: 0, overflowY: 'auto', maxHeight: 'unset' },
                 },

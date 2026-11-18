@@ -98,14 +98,18 @@ const isViewportAtHome = (viewer: OpenSeadragon.Viewer) => {
 interface ImageViewerProps {
   markersEnabled?: boolean
   onMarkersDrawerOpenChange?: (open: boolean) => void
-  /** Opens the Board dialog for a drawer group heading. */
-  onOpenBoard?: (boardId: number) => void
+  /** Opens the Board dialog for a drawer group heading; carries this
+   * viewer's container so the dialog stays visible in full-page mode. */
+  onOpenBoard?: (boardId: number, container?: HTMLElement | null) => void
   /**
    * Marker an external flow wants selected and revealed (e.g. a Boards &
    * Markers list click or a `?marker=` link). A fresh object re-triggers the
-   * focus even for the same marker id.
+   * focus even for the same marker id. `navigate` re-centres on the marker's
+   * saved view — omitted when an explicit shared viewport should win.
    */
-  markerFocus?: { id: number; imageId: number } | null
+  markerFocus?: { id: number; imageId: number; navigate?: boolean } | null
+  /** Bumped when Marker/Board data mutates elsewhere (in-place Board dialog) — reloads markers. */
+  markersReloadSignal?: number
   tileSources: OpenSeadragon.TileSourceOptions | string
   /** Id of the image being viewed; emitted as a structured telemetry field. */
   imageId?: number
@@ -178,6 +182,7 @@ export default function ImageViewer({
   onMarkersDrawerOpenChange,
   onOpenBoard,
   markerFocus,
+  markersReloadSignal,
   tileSources,
   imageId,
   categoryId,
@@ -324,11 +329,25 @@ export default function ImageViewer({
     const item = markers.items.find((value) => value.id === appliedFocus.id)
     if (!item) return
     navigatedFocus.current = appliedFocus
-    navigateToMarker(viewerInstance, item)
+    if (appliedFocus.navigate !== false) navigateToMarker(viewerInstance, item)
     if (visibilityPrefs.visibilityFor(item).markerVisible === false)
       visibilityPrefs.setItem(item, 'markerVisible', true)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- visibilityPrefs churns identity; only marker identity matters
   }, [appliedFocus, markers.items, viewerInstance])
+  // Marker/Board data can mutate elsewhere while the viewer stays mounted
+  // (in-place Board dialog favourites, edits, deletes) — reload on the bump.
+  const seenReloadSignal = useRef(markersReloadSignal)
+  useEffect(() => {
+    if (markersReloadSignal == null || markersReloadSignal === seenReloadSignal.current) return
+    seenReloadSignal.current = markersReloadSignal
+    void markers.reload()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload identity churns; only the signal matters
+  }, [markersReloadSignal])
+  // Drawer headings report only the Board id — attach this viewer's
+  // container so the dialog can portal inside full-page mode.
+  const handleOpenBoard = onOpenBoard
+    ? (id: number) => onOpenBoard(id, viewerInstance?.container ?? null)
+    : undefined
   const clearDelete = () => {
     setDeletingMarker(null)
     setDeleteError(null)
@@ -2166,7 +2185,7 @@ export default function ImageViewer({
                       selectedId={selectedMarkerId}
                       focusId={focusMarkerId}
                       error={markers.error}
-                      onOpenBoard={onOpenBoard}
+                      onOpenBoard={handleOpenBoard}
                       onSelect={(item) => {
                         if (editingMarker) return
                         navigateToMarker(viewerInstance, item)
@@ -2203,7 +2222,7 @@ export default function ImageViewer({
                   selectedId={selectedMarkerId}
                   focusId={focusMarkerId}
                   error={markers.error}
-                  onOpenBoard={onOpenBoard}
+                  onOpenBoard={handleOpenBoard}
                   onSelect={(item) => {
                     if (editingMarker) return
                     navigateToMarker(viewerInstance, item)

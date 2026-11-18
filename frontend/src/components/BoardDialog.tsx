@@ -39,11 +39,16 @@ export interface BoardDialogProps {
   currentUser: User | null
   programs?: Program[]
   groups?: Group[]
+  /** Portal host — the opening viewer's container keeps the dialog
+   * visible in full-page mode; defaults to the body portal. */
+  container?: HTMLElement | null
   onClose: () => void
   /** Navigates to the marker's saved view — the parent closes this dialog. */
   onOpenMarker: (item: ApiMarker) => void
   /** Opens the full management surface on Boards & Markers. */
   onManage?: (boardId: number) => void
+  /** Board or Marker data changed — lets the mounted viewer refresh its rows. */
+  onChanged?: () => void
 }
 
 /**
@@ -58,9 +63,11 @@ export default function BoardDialog({
   currentUser,
   programs,
   groups,
+  container,
   onClose,
   onOpenMarker,
   onManage,
+  onChanged,
 }: BoardDialogProps) {
   const theme = useTheme()
   const mobile = useMediaQuery(theme.breakpoints.down('sm'))
@@ -79,10 +86,11 @@ export default function BoardDialog({
 
   const load = useCallback(async () => {
     const token = ++generation.current
-    if (boardId == null) return
+    if (boardId == null) return false
     try {
       const board = await fetchBoard(boardId)
       if (token === generation.current) setState({ id: boardId, board, error: null })
+      return true
     } catch (err) {
       if (token === generation.current)
         setState((previous) => ({
@@ -90,6 +98,7 @@ export default function BoardDialog({
           board: previous?.id === boardId ? previous.board : null,
           error: userMessage(err, 'Unable to load Board.'),
         }))
+      return false
     }
   }, [boardId])
   useEffect(() => {
@@ -99,6 +108,13 @@ export default function BoardDialog({
       counter.current++
     }
   }, [load])
+  // Reload-latest recovery: only a successful fetch clears the 409 block.
+  const reloadLatest = async () => {
+    if (await load()) {
+      setError(null)
+      setConflict(false)
+    }
+  }
 
   // Reset sub-dialog state when a different Board is targeted.
   const [appliedBoardId, setAppliedBoardId] = useState(boardId)
@@ -123,6 +139,7 @@ export default function BoardDialog({
     try {
       await action()
       await load()
+      onChanged?.()
       return true
     } catch (err) {
       setConflict(err instanceof ApiError && err.status === 409)
@@ -286,6 +303,7 @@ export default function BoardDialog({
       <Dialog
         open={boardId != null}
         onClose={onClose}
+        container={container ?? undefined}
         fullScreen={mobile}
         fullWidth
         maxWidth="lg"
@@ -387,7 +405,7 @@ export default function BoardDialog({
           {(error || boardError) && (
             <Alert
               severity="error"
-              action={<Button onClick={() => void load()}>Reload latest</Button>}
+              action={<Button onClick={() => void reloadLatest()}>Reload latest</Button>}
             >
               {error || boardError}
             </Alert>
@@ -418,8 +436,12 @@ export default function BoardDialog({
           onSaved={() => {
             setEdit(false)
             void load()
+            onChanged?.()
           }}
-          onDeleted={onClose}
+          onDeleted={() => {
+            onChanged?.()
+            onClose()
+          }}
         />
       )}
       {owners && board && (
@@ -427,7 +449,10 @@ export default function BoardDialog({
           board={board}
           programs={programs}
           onClose={() => setOwners(false)}
-          onSaved={() => void load()}
+          onSaved={() => {
+            void load()
+            onChanged?.()
+          }}
         />
       )}
       {editingItem && (
@@ -435,9 +460,13 @@ export default function BoardDialog({
           item={editingItem}
           imageId={editingItem.image_id}
           view={editingItem}
+          container={container}
           userId={currentUser?.id}
           onClose={() => setEditingItem(null)}
-          onChanged={() => void load()}
+          onChanged={() => {
+            void load()
+            onChanged?.()
+          }}
         />
       )}
     </>

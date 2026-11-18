@@ -142,6 +142,9 @@ export interface CollectionsPageProps {
   onOpenCollection: (id: number) => void
   onCloseCollection: () => void
   onOpenImage: (image: ImageItem) => void
+  /** Opens the Board dialog for a collection viewer's drawer group heading;
+   * carries the viewer's container for full-page mode. */
+  onOpenBoard?: (boardId: number, container?: HTMLElement | null) => void
   /** Graph-view image clicks carry only an id (#1629) — the caller fetches
    *  the record and takes the normal `?image={id}` viewer path. */
   onOpenImageById?: (imageId: number) => void
@@ -683,6 +686,7 @@ export default function CollectionsPage({
   onOpenCollection,
   onCloseCollection,
   onOpenImage,
+  onOpenBoard,
   selectedCollectionItemId,
   selectedCollectionSlotId = null,
   onSelectCollectionItem,
@@ -1234,6 +1238,7 @@ export default function CollectionsPage({
             slotId={selectedCollectionSlotId}
             onSelectItem={onSelectCollectionItem}
             onOpenImage={onOpenImage}
+            onOpenBoard={onOpenBoard}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
             memberInfoNames={memberInfoNames}
@@ -1273,6 +1278,7 @@ export default function CollectionsPage({
                 : onSaveViewport(detail.id, viewportState)
             }
             onOpenImage={onOpenImage}
+            onOpenBoard={onOpenBoard}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
             memberInfoNames={memberInfoNames}
