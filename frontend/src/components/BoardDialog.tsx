@@ -24,6 +24,7 @@ import Star from '@mui/icons-material/Star'
 import StarBorder from '@mui/icons-material/StarBorder'
 import SwapHoriz from '@mui/icons-material/SwapHoriz'
 import { alpha } from '@mui/material/styles'
+import { markerAccentColor, markerFavouriteButtonSx } from '../theme'
 import { ApiError, fetchBoard, fetchMarker, updateMarker, userMessage } from '../api'
 import type { ApiBoard, ApiMarker, Group, Program, User } from '../types'
 import { boardManagerText } from '../boardUtils'
@@ -168,11 +169,11 @@ export default function BoardDialog({
           size="small"
           aria-label={`Favourite ${item.title}`}
           aria-pressed={item.favourite}
-          sx={
-            item.favourite
-              ? { bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }
-              : undefined
-          }
+          // data-favourite-star exempts this button from the overlay
+          // cluster's uniform grey-disc rule — the star carries its own
+          // shared face (red disc on / grey disc off).
+          data-favourite-star
+          sx={markerFavouriteButtonSx(item.favourite)}
           disabled={busy || conflict}
           onClick={(event) => {
             event.stopPropagation()
@@ -184,7 +185,7 @@ export default function BoardDialog({
           {item.favourite ? (
             <Star sx={{ color: 'common.white' }} fontSize="small" />
           ) : (
-            <StarBorder fontSize="small" />
+            <StarBorder sx={{ color: 'common.white' }} fontSize="small" />
           )}
         </IconButton>
       </Tooltip>
@@ -198,68 +199,47 @@ export default function BoardDialog({
       data-testid="marker-card"
       sx={{ position: 'relative', height: '100%' }}
     >
-      <Box sx={{ position: 'relative' }}>
-        <CardActionArea
-          onClick={() => onOpenMarker(item)}
-          aria-label={`Open Marker: ${item.title}`}
-        >
-          {item.thumb ? (
-            <RenewingThumbnail
-              image={{ id: item.id, thumb: item.thumb }}
-              renewThumb={fetchMarker}
-              alt=""
-              sx={{ width: '100%', height: 96, display: 'block', objectFit: 'cover' }}
-            />
-          ) : (
-            <Box
-              sx={{
-                height: 96,
-                display: 'grid',
-                placeItems: 'center',
-                bgcolor: 'primary.main',
-                color: 'primary.contrastText',
-              }}
-            >
-              <Room sx={{ fontSize: 48 }} />
-            </Box>
-          )}
-        </CardActionArea>
-        <Box
-          sx={(theme) => ({
-            position: 'absolute',
-            top: 4,
-            right: 4,
-            display: 'flex',
-            gap: 0.5,
-            '& .MuiIconButton-root': {
-              color: theme.palette.common.white,
-              bgcolor: alpha(theme.palette.common.black, 0.25),
-              '&:hover': { bgcolor: alpha(theme.palette.common.black, 0.45) },
-            },
-          })}
-        >
-          {favouriteAction(item)}
-        </Box>
-      </Box>
-      <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-        <Stack direction="row" alignItems="flex-start" gap={0.5}>
-          <Room color="primary" sx={{ fontSize: 24, flexShrink: 0 }} />
-          <Button
-            onClick={() => onOpenMarker(item)}
-            title={item.title}
+      {/* Whole-face action area like ImageTile/CollectionCard: hovering
+          anywhere on the tile lights the entire card, not just the
+          thumbnail strip. */}
+      <CardActionArea
+        component="div"
+        role="button"
+        tabIndex={0}
+        onClick={() => onOpenMarker(item)}
+        aria-label={`Open Marker: ${item.title}`}
+        sx={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'stretch' }}
+      >
+        {item.thumb ? (
+          <RenewingThumbnail
+            image={{ id: item.id, thumb: item.thumb }}
+            renewThumb={fetchMarker}
+            alt=""
+            sx={{ width: '100%', height: 96, display: 'block', objectFit: 'cover' }}
+          />
+        ) : (
+          <Box
             sx={{
-              p: 0,
-              minWidth: 0,
-              flex: 1,
-              textTransform: 'none',
-              justifyContent: 'flex-start',
-              textAlign: 'left',
+              height: 96,
+              display: 'grid',
+              placeItems: 'center',
+              bgcolor: 'primary.main',
+              color: 'primary.contrastText',
             }}
           >
+            <Room sx={{ fontSize: 48 }} />
+          </Box>
+        )}
+        <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+          <Stack direction="row" alignItems="flex-start" gap={0.5}>
+            <Room sx={{ fontSize: 24, flexShrink: 0, color: markerAccentColor }} />
             <Typography
               component="h3"
               variant="body2"
+              title={item.title}
               sx={{
+                flex: 1,
+                minWidth: 0,
                 display: '-webkit-box',
                 WebkitLineClamp: 2,
                 WebkitBoxOrient: 'vertical',
@@ -269,32 +249,48 @@ export default function BoardDialog({
             >
               {item.title}
             </Typography>
-          </Button>
-          {(item.permissions.can_edit || board?.permissions.can_edit) && (
-            <Tooltip title="Edit Marker">
-              <IconButton
-                size="small"
-                aria-label={`Edit Marker: ${item.title}`}
-                disabled={busy || conflict}
-                onClick={() => {
-                  setError(null)
-                  setEditingItem(item)
-                }}
-              >
-                <Edit sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
-          )}
-        </Stack>
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          noWrap
-          title={item.category_name ?? 'Uncategorized'}
-        >
-          {item.category_name ?? 'Uncategorized'}
-        </Typography>
-      </CardContent>
+          </Stack>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            noWrap
+            title={item.category_name ?? 'Uncategorized'}
+          >
+            {item.category_name ?? 'Uncategorized'}
+          </Typography>
+        </CardContent>
+      </CardActionArea>
+      <Box
+        sx={(theme) => ({
+          position: 'absolute',
+          top: 4,
+          right: 4,
+          display: 'flex',
+          gap: 0.5,
+          '& .MuiIconButton-root:not([data-favourite-star])': {
+            color: theme.palette.common.white,
+            bgcolor: alpha(theme.palette.common.black, 0.25),
+            '&:hover': { bgcolor: alpha(theme.palette.common.black, 0.45) },
+          },
+        })}
+      >
+        {favouriteAction(item)}
+        {(item.permissions.can_edit || board?.permissions.can_edit) && (
+          <Tooltip title="Edit Marker">
+            <IconButton
+              size="small"
+              aria-label={`Edit Marker: ${item.title}`}
+              disabled={busy || conflict}
+              onClick={() => {
+                setError(null)
+                setEditingItem(item)
+              }}
+            >
+              <Edit fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
+      </Box>
     </Card>
   )
 
@@ -405,7 +401,11 @@ export default function BoardDialog({
           {(error || boardError) && (
             <Alert
               severity="error"
-              action={<Button onClick={() => void reloadLatest()}>Reload latest</Button>}
+              action={
+                <Button size="small" onClick={() => void reloadLatest()}>
+                  Reload latest
+                </Button>
+              }
             >
               {error || boardError}
             </Alert>

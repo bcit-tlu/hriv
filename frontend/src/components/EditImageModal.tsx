@@ -537,6 +537,7 @@ function EditImageForm({
             <Divider />
             <Box>
               <Button
+                size="small"
                 color="error"
                 variant={confirmDelete ? 'contained' : 'outlined'}
                 onClick={handleDelete}
@@ -583,6 +584,7 @@ function EditImageForm({
       )}
       <DialogActions>
         <Button
+          size="small"
           onClick={() => {
             if (uploadInProgress && onCancelReplace) {
               onCancelReplace()
@@ -596,6 +598,7 @@ function EditImageForm({
         </Button>
         {replaceFile && onReplace ? (
           <Button
+            size="small"
             onClick={handleReplace}
             variant="contained"
             color={confirmReplace ? 'warning' : 'primary'}
@@ -604,7 +607,12 @@ function EditImageForm({
             {confirmReplace ? 'Confirm Replace & Save' : 'Replace & Save'}
           </Button>
         ) : (
-          <Button onClick={handleSave} variant="contained" disabled={!name.trim() || busy}>
+          <Button
+            size="small"
+            onClick={handleSave}
+            variant="contained"
+            disabled={!name.trim() || busy}
+          >
             Save
           </Button>
         )}

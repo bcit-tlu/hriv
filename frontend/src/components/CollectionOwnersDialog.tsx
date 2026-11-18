@@ -670,6 +670,7 @@ export default function CollectionOwnersDialog({
             action={
               conflict && onReloadConflict ? (
                 <Button
+                  size="small"
                   onClick={() => {
                     void onReloadConflict().catch((err) =>
                       setError(userMessage(err, 'Unable to reload ownership.')),
@@ -691,10 +692,11 @@ export default function CollectionOwnersDialog({
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={saving}>
+        <Button size="small" onClick={onClose} disabled={saving}>
           Cancel
         </Button>
         <Button
+          size="small"
           variant="contained"
           color="secondary"
           onClick={handleConfirm}

@@ -84,19 +84,17 @@ async function setup(props: Partial<React.ComponentProps<typeof MarkerFormDialog
 }
 async function openCreate(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('combobox', { name: 'Boards' }))
-  await user.click(screen.getByRole('button', { name: 'Add Board' }))
+  await user.click(screen.getByRole('button', { name: 'New Board' }))
 }
 describe('MarkerFormDialog', () => {
   it.each([null, MARKER_FIXTURE.description])(
-    'keeps inline description collapsed and preserves its value, description=%s',
+    'shows the inline description and preserves its value, description=%s',
     async (description) => {
       const { user, api } = await setup({ inline: true, item: { ...MARKER_FIXTURE, description } })
-      expect(screen.queryByRole('textbox', { name: 'Description' })).not.toBeInTheDocument()
+      expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue(description ?? '')
       expect(
         screen.getByRole('heading', { name: MARKER_FIXTURE.title }).previousElementSibling,
       ).toHaveAttribute('data-testid', 'RoomIcon')
-      await user.click(screen.getByRole('button', { name: 'More options' }))
-      expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue(description ?? '')
       await user.click(screen.getByRole('button', { name: 'Save' }))
       expect(api.updateMarker).toHaveBeenCalledWith(7, expect.objectContaining({ description }))
     },
@@ -105,7 +103,7 @@ describe('MarkerFormDialog', () => {
     const { user, api, onClose } = await setup({ inline: true, item: MARKER_FIXTURE })
     await user.clear(screen.getByRole('textbox', { name: /^Title/ }))
     await user.type(screen.getByRole('textbox', { name: /^Title/ }), 'Unsaved title')
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await user.click(screen.getByRole('button', { name: 'Delete Marker' }))
     await user.keyboard('{Escape}')
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: 'Delete Marker?' })).not.toBeInTheDocument(),
@@ -113,7 +111,7 @@ describe('MarkerFormDialog', () => {
     expect(screen.getByRole('textbox', { name: /^Title/ })).toHaveValue('Unsaved title')
     expect(onClose).not.toHaveBeenCalled()
     api.deleteMarker.mockRejectedValueOnce(new ApiError(403, 'Delete denied'))
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await user.click(screen.getByRole('button', { name: 'Delete Marker' }))
     const dialog = screen.getByRole('dialog', { name: 'Delete Marker?' })
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Delete denied')
@@ -143,7 +141,7 @@ describe('MarkerFormDialog', () => {
     await user.click(field)
     await user.type(field, 'My new Board')
     expect(screen.queryByRole('option')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Add Board' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'New Board' })).toBeVisible()
     await openCreate(user)
     await user.type(screen.getByLabelText('Name *'), 'My new Board')
     await user.click(screen.getByRole('button', { name: 'Create Board' }))
@@ -163,7 +161,7 @@ describe('MarkerFormDialog', () => {
     )
     expect(screen.queryByRole('checkbox', { name: 'Favourite' })).toBeNull()
   })
-  it('places in a non-modal panel with a selected title, remembered Board and collapsed optional fields', async () => {
+  it('places in a non-modal panel with a selected title, remembered Board and standard chrome', async () => {
     localStorage.setItem(LAST_BOARD, '1')
     const { user, api } = await setup({ placement: true })
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'false')
@@ -171,9 +169,11 @@ describe('MarkerFormDialog', () => {
     expect(title).toHaveFocus()
     expect(title.selectionStart).toBe(0)
     expect(title.selectionEnd).toBe(title.value.length)
-    expect(screen.queryByLabelText('Description')).not.toBeInTheDocument()
+    // The popover follows the standalone dialog's layout — Description is
+    // always visible, no collapsed "More options" section.
+    expect(screen.getByLabelText('Description')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More options' })).not.toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: 'Favourite' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'More options' }))
     await user.type(screen.getByLabelText('Description'), 'A saved detail')
     await user.click(screen.getByRole('button', { name: 'Favourite' }))
     await user.click(screen.getByRole('button', { name: 'Save', exact: true }))
@@ -333,7 +333,7 @@ describe('MarkerFormDialog', () => {
     'requires confirmation before an OCC-protected delete, inline=%s',
     async (inline) => {
       const { api, user, onChanged } = await setup({ item: MARKER_FIXTURE, inline })
-      await user.click(screen.getByRole('button', { name: 'Delete' }))
+      await user.click(screen.getByRole('button', { name: 'Delete Marker' }))
       expect(api.deleteMarker).not.toHaveBeenCalled()
       const confirmation = screen.getByRole('dialog', { name: 'Delete Marker?' })
       expect(
@@ -352,19 +352,19 @@ describe('MarkerFormDialog', () => {
     expect(screen.queryByRole('button', { name: /Save|Delete/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled()
   })
-  it('pins Add Board at the bottom of the Boards menu outside the scrollable listbox', async () => {
+  it('pins New Board at the bottom of the Boards menu outside the scrollable listbox', async () => {
     const { user } = await setup()
     const field = screen.getByRole('combobox', { name: 'Boards' })
     await user.click(field)
     const listbox = screen.getByRole('listbox')
-    const add = screen.getByRole('button', { name: 'Add Board' })
+    const add = screen.getByRole('button', { name: 'New Board' })
     expect(add).toBeVisible()
-    expect(within(listbox).queryByText('Add Board')).toBeNull()
+    expect(within(listbox).queryByText('New Board')).toBeNull()
     await user.type(field, 'zzz')
     expect(screen.queryByRole('option')).toBeNull()
     // Emptying the options inserts a "no options" node that remounts the
     // pinned footer, so re-query rather than reusing the earlier element.
-    expect(screen.getByRole('button', { name: 'Add Board' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'New Board' })).toBeVisible()
   })
   it('opens the Add Board pane over the form, returns via back or Escape, and keeps the draft', async () => {
     const { user, onClose } = await setup()

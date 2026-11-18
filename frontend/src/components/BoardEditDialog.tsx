@@ -292,7 +292,7 @@ export default function BoardEditDialog({
               severity="error"
               action={
                 conflict ? (
-                  <Button onClick={() => void reload()} disabled={busy}>
+                  <Button size="small" onClick={() => void reload()} disabled={busy}>
                     Reload latest
                   </Button>
                 ) : undefined
@@ -322,6 +322,7 @@ export default function BoardEditDialog({
               <Divider sx={{ my: 2 }} />
               <Box>
                 <Button
+                  size="small"
                   color="error"
                   variant={confirmDelete ? 'contained' : 'outlined'}
                   fullWidth
@@ -346,10 +347,11 @@ export default function BoardEditDialog({
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={busy}>
+        <Button size="small" onClick={onClose} disabled={busy}>
           Cancel
         </Button>
         <Button
+          size="small"
           variant="contained"
           onClick={() => void save()}
           disabled={

@@ -199,6 +199,7 @@ export default function AnnouncementsPage({
         {canCompose && (
           <Button
             variant="contained"
+            size="small"
             startIcon={<AddIcon />}
             onClick={() => setComposer({ mode: 'create', source: null })}
           >
@@ -302,8 +303,15 @@ export default function AnnouncementsPage({
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPendingDelete(null)}>Cancel</Button>
-          <Button color="error" variant="contained" onClick={() => void confirmDelete()}>
+          <Button size="small" onClick={() => setPendingDelete(null)}>
+            Cancel
+          </Button>
+          <Button
+            size="small"
+            color="error"
+            variant="contained"
+            onClick={() => void confirmDelete()}
+          >
             Delete
           </Button>
         </DialogActions>

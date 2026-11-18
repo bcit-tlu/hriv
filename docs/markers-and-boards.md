@@ -210,6 +210,14 @@ and permission fields are reused in write responses.
 | `PUT /api/boards/{id}/markers/order`          | `items: [{marker_id}]`, parent token; Board detail                                                                               |
 | `DELETE /api/boards/{id}/markers/{marker_id}` | Parent concurrency header; Board detail                                                                                          |
 
+`PATCH /api/boards/{id}` also accepts the tile cover fields, mirroring the
+Collections picker: `cover_marker_id` pins a member marker's thumbnail on
+the tile (422 when the marker is not a visible member of the Board; `null`
+clears the pin and restores the first-member fallback) and `cover_blank`
+renders the Board-icon placeholder. The two are mutually exclusive —
+writing either clears the other — and deleting the pinned marker clears the
+pin (`SET NULL`).
+
 Every Marker must have at least one Board link. Missing/empty
 `board_assignments` on create is 422. Assignments contain `board_id` and
 optional `sort_order`; new links

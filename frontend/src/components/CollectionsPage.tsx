@@ -275,7 +275,9 @@ export interface CollectionsPageProps {
 }
 
 // Icon + text label per view button (sentence case, like other buttons).
-const viewToggleSx = { gap: 0.75, px: 1.25, textTransform: 'none' } as const
+// py keeps the toggle group at the size="small" button height (30.75px) —
+// tops and bottoms align with the title row's other buttons.
+const viewToggleSx = { gap: 0.75, px: 1.25, py: '3px', textTransform: 'none' } as const
 
 function ownerFilterKey(owner: CollectionOwnerFilter): string {
   if (owner === 'any' || owner === 'orphaned') return owner
@@ -1366,6 +1368,9 @@ export default function CollectionsPage({
             gap: 1,
             mb: 3,
             flexShrink: 0,
+            // Buttons are size="small" (30.75px) — keep the row at the
+            // historical 36.5px so the FilterBar position doesn't shift.
+            minHeight: 36.5,
           }}
         >
           <Typography variant="h5" component="h1">
@@ -1414,6 +1419,7 @@ export default function CollectionsPage({
               <span>
                 <Button
                   variant="contained"
+                  size="small"
                   startIcon={<AddIcon />}
                   onClick={openCreate}
                   disabled={typesAtLimit.size === 2}

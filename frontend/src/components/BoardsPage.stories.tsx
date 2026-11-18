@@ -84,7 +84,9 @@ type Story = StoryObj<typeof meta>
 export const Basic: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(await canvas.findByRole('heading', { name: 'My Boards', level: 1 })).toBeVisible()
+    await expect(
+      await canvas.findByRole('heading', { name: 'Boards and Markers', level: 1 }),
+    ).toBeVisible()
     await expect(
       await canvas.findByRole('button', { name: 'Open Board: Architecture inspiration' }),
     ).toBeVisible()
@@ -104,12 +106,12 @@ export const Basic: Story = {
         .getAllByRole('button', { name: /^Open Marker:/ })
         .map((el) => el.getAttribute('aria-label')?.replace('Open Marker: ', '')),
     ).toEqual([
-      'A study in geometry',
-      'Light through glass',
       'Rose window',
       'Stone columns',
-      'The arcade',
       'Tracery details',
+      'The arcade',
+      'A study in geometry',
+      'Light through glass',
     ])
   },
 }
@@ -126,9 +128,9 @@ export const Table: Story = {
     await expect(
       within(canvas.getByRole('region', { name: 'Filter Boards and Markers' })).getByRole(
         'button',
-        { name: 'Select' },
+        { name: 'Choose columns' },
       ),
-    ).toHaveClass(/MuiButton-outlined/)
+    ).toBeVisible()
   },
 }
 export const SelectedBoard: Story = {
@@ -204,14 +206,13 @@ export const Favourites: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await canvas.findByRole('button', { name: 'Open Marker: Rose window' })
-    await userEvent.click(canvas.getByRole('button', { name: 'Favourite' }))
+    const filters = canvas.getByRole('region', { name: 'Filter Boards and Markers' })
     await userEvent.click(
-      within(canvasElement.ownerDocument.body).getByRole('menuitemradio', {
-        name: 'Favourites only',
-      }),
+      within(filters).getByRole('button', { name: 'Favourites', pressed: false }),
     )
-    await userEvent.click(canvas.getByRole('heading', { name: 'My Boards' }))
-    await expect(canvas.getByText('Favourites', { exact: true })).toBeVisible()
+    await expect(
+      within(filters).getByRole('button', { name: 'Favourites', pressed: true }),
+    ).toBeVisible()
     await expect(
       canvas.queryByRole('button', { name: 'Open Marker: Stone columns' }),
     ).not.toBeInTheDocument()
@@ -221,13 +222,11 @@ export const ScopeFilter: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await canvas.findByRole('button', { name: 'Open Board: Architecture inspiration' })
-    await userEvent.click(canvas.getByRole('button', { name: 'Scope' }))
-    await userEvent.click(
-      within(canvasElement.ownerDocument.body).getByRole('menuitemcheckbox', {
-        name: 'Private',
-      }),
-    )
-    await userEvent.click(canvas.getByRole('heading', { name: 'My Boards' }))
+    const filters = canvas.getByRole('region', { name: 'Filter Boards and Markers' })
+    await userEvent.click(within(filters).getByRole('button', { name: 'Private', pressed: false }))
+    await expect(
+      within(filters).getByRole('button', { name: 'Private', pressed: true }),
+    ).toBeVisible()
     await expect(
       canvas.queryByRole('button', { name: 'Open Board: Shared discoveries' }),
     ).not.toBeInTheDocument()
@@ -377,7 +376,11 @@ export const ReadOnlyOwnedBoard: Story = {
   },
 }
 
-function rejectedDrop(name: string, message: string): NonNullable<Story['play']> {
+function rejectedDrop(
+  name: string,
+  message: string,
+  blockedCaption?: string,
+): NonNullable<Story['play']> {
   return async ({ canvasElement, userEvent: user }) => {
     const canvas = within(canvasElement)
     const source = (
@@ -393,6 +396,7 @@ function rejectedDrop(name: string, message: string): NonNullable<Story['play']>
     const end = { clientX: t.x + t.width / 2, clientY: t.y + t.height / 2 }
     await user.pointer({ target, coords: end })
     await expect(target).not.toHaveStyle({ outlineStyle: 'solid' })
+    if (blockedCaption) await expect(await within(target).findByText(blockedCaption)).toBeVisible()
     await user.pointer({ keys: '[/MouseLeft]', target, coords: end })
     await waitFor(() =>
       expect(within(canvasElement.ownerDocument.body).getByText(message)).toBeVisible(),
@@ -405,23 +409,27 @@ function rejectedDrop(name: string, message: string): NonNullable<Story['play']>
   }
 }
 export const AlreadyLinkedDrop: Story = {
-  play: rejectedDrop('Architecture inspiration', 'Already in Architecture inspiration'),
+  play: rejectedDrop(
+    'Architecture inspiration',
+    'Already in Architecture inspiration',
+    'Already saved',
+  ),
 }
 
 export const CollectionSelection: Story = {
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    await userEvent.click(await canvas.findByRole('button', { name: 'Select' }))
-    const checkboxes = await canvas.findAllByRole('checkbox', { name: /^Select / })
+    const canvas = within(canvasElement.ownerDocument.body)
+    await userEvent.click(
+      await canvas.findByRole('button', { name: 'Open Board: Architecture inspiration' }),
+    )
+    const dialog = await canvas.findByRole('dialog', { name: 'Architecture inspiration' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Select' }))
+    const checkboxes = await within(dialog).findAllByRole('checkbox', { name: /^Select / })
     await userEvent.click(checkboxes[0])
     await userEvent.click(checkboxes[1])
-    const toolbar = canvas.getByRole('toolbar', { name: 'Selected Markers' })
-    await expect(
-      within(toolbar).getByRole('button', { name: 'Create Sequence Collection' }),
-    ).toBeEnabled()
-    await expect(
-      within(toolbar).getByRole('button', { name: 'Create Synchronized Collection' }),
-    ).toBeEnabled()
+    const toolbar = within(dialog).getByRole('toolbar', { name: 'Selected Markers' })
+    await expect(within(toolbar).getByRole('button', { name: 'Create Collection' })).toBeEnabled()
+    await expect(within(toolbar).getByRole('button', { name: 'Add to Collection' })).toBeEnabled()
   },
 }
 

@@ -2705,6 +2705,16 @@ export default function App() {
               collectionsEnabled={collectionsEnabled}
               categories={categories}
               onOpenCollection={handleOpenCollection}
+              onNavigateCategory={(categoryPath) => {
+                runCanvasNavigation(() => {
+                  setPath(categoryPath)
+                  setPage('browse')
+                  pushNavState(
+                    'browse',
+                    categoryPath.map((c) => c.id),
+                  )
+                })
+              }}
               onSelectBoard={(boardId) => {
                 graphImageEpoch.current++
                 setBoardLocation({ boardId })
@@ -2911,6 +2921,9 @@ export default function App() {
                   mb: 2,
                   gap: 1,
                   flexShrink: 0,
+                  // Buttons are size="small" (30.75px) — keep the row at the
+                  // historical 36.5px so content position doesn't shift.
+                  minHeight: 36.5,
                 }}
               >
                 <Box
@@ -3036,6 +3049,7 @@ export default function App() {
                         return (
                           <Button
                             variant="text"
+                            size="small"
                             startIcon={<VisibilityOff />}
                             disabled
                             aria-label="Visibility: Hidden by category"
@@ -3052,6 +3066,7 @@ export default function App() {
                         return (
                           <Button
                             variant="text"
+                            size="small"
                             startIcon={<VisibilityOff />}
                             onClick={() => {
                               toggleImageVisibility(selectedImage.id).catch(() => {})
@@ -3066,6 +3081,7 @@ export default function App() {
                       return (
                         <Button
                           variant="text"
+                          size="small"
                           startIcon={<Visibility />}
                           onClick={() => {
                             toggleImageVisibility(selectedImage.id).catch(() => {})
@@ -3088,6 +3104,7 @@ export default function App() {
                       <span>
                         <Button
                           variant="outlined"
+                          size="small"
                           startIcon={<PlaylistAddIcon />}
                           onClick={() => {
                             setAddToCollectionImageIds([selectedImage.id])
@@ -3106,6 +3123,7 @@ export default function App() {
                       <span>
                         <Button
                           variant="contained"
+                          size="small"
                           startIcon={<EditIcon />}
                           onClick={() => setImageEditOpen(true)}
                           disabled={canvasEditActive}
@@ -3120,6 +3138,7 @@ export default function App() {
                     <Tooltip title="Copy shareable link to clipboard">
                       <Button
                         variant="outlined"
+                        size="small"
                         startIcon={<LinkIcon />}
                         onClick={copyShareLink}
                         sx={inactiveViewerActionSx}
@@ -3300,6 +3319,9 @@ export default function App() {
                   flexWrap: 'wrap',
                   mb: 2,
                   gap: 1,
+                  // Buttons are size="small" (30.75px) — keep the row at the
+                  // historical 36.5px so content position doesn't shift.
+                  minHeight: 36.5,
                 }}
               >
                 <Box
@@ -3465,6 +3487,7 @@ export default function App() {
                               return (
                                 <Button
                                   variant="text"
+                                  size="small"
                                   startIcon={<VisibilityOff />}
                                   disabled
                                   aria-label="Visibility: Hidden by parent category"
@@ -3481,6 +3504,7 @@ export default function App() {
                               return (
                                 <Button
                                   variant="text"
+                                  size="small"
                                   startIcon={<VisibilityOff />}
                                   onClick={() => toggleCategoryVisibility(current.id)}
                                   aria-label="Visibility: Show category"
@@ -3493,6 +3517,7 @@ export default function App() {
                             return (
                               <Button
                                 variant="text"
+                                size="small"
                                 startIcon={<Visibility />}
                                 onClick={() => toggleCategoryVisibility(current.id)}
                                 aria-label="Visibility: Hide category"
@@ -3505,6 +3530,7 @@ export default function App() {
                         {collectionsEnabled && (
                           <Button
                             variant="outlined"
+                            size="small"
                             startIcon={<AddIcon />}
                             onClick={openBrowseCollectionCreate}
                             sx={categoryPageHiddenSx}
@@ -3516,6 +3542,7 @@ export default function App() {
                           liveCategoryPath.length < MAX_DEPTH && (
                             <Button
                               variant="outlined"
+                              size="small"
                               startIcon={<CreateNewFolderIcon />}
                               onClick={() => setAddCatOpen(true)}
                               sx={categoryPageHiddenSx}
@@ -3525,6 +3552,7 @@ export default function App() {
                           )}
                         <Button
                           variant="contained"
+                          size="small"
                           startIcon={<AddPhotoAlternateIcon />}
                           onClick={() => setUploadOpen(true)}
                           sx={categoryPageHiddenSx}
@@ -3753,6 +3781,7 @@ export default function App() {
         </DialogContent>
         <DialogActions>
           <Button
+            size="small"
             onClick={() => {
               setDiscardNavigationOpen(false)
               pendingNavigationRef.current = null
@@ -3761,7 +3790,12 @@ export default function App() {
           >
             Keep Editing
           </Button>
-          <Button color="error" onClick={confirmCanvasNavigationDiscard} disabled={canvasSaving}>
+          <Button
+            size="small"
+            color="error"
+            onClick={confirmCanvasNavigationDiscard}
+            disabled={canvasSaving}
+          >
             Discard Changes
           </Button>
         </DialogActions>

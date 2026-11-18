@@ -40,8 +40,8 @@ export function useBoardsData(boardId: number | null, favourites: boolean, enabl
         const rows: ApiMarker[] = []
         for (let page = 1; ; page++) {
           const batch = await fetchMarkers({
-            sort: 'updated_at',
-            order: 'desc',
+            sort: 'sort_order',
+            order: 'asc',
             favourite: favourites || undefined,
             page,
             page_size: 200,

@@ -1433,11 +1433,19 @@ selection MouseTracker ignores their presses.
 
 ### Boards & Markers overview and Board dialog
 
-- The My Boards page title uses Collections' h5/h1 and unpadded flex header exactly.
-  The Boards & Markers navigation/tab label is unchanged.
-- One short horizontally scrolling owned-Board row begins with New Board. Rounded,
-  outlined chips have a flush-left square cover/placeholder, a single-line name and
-  the shared scope pill below it on a taller tile.
+- The Boards and Markers page title uses Collections' h5/h1 and unpadded flex
+  header exactly, with the Cards/Table toggle in the title row immediately left
+  of All Boards and the Filter by bar rendered under the title like Manage
+  Images. The Boards & Markers navigation/tab label is unchanged.
+- One short horizontally scrolling owned-Board row begins with New Board (a
+  compact ~136px tile split evenly between its icon block and a regular-weight
+  name). Elevated tiles fixed at 260px (matching Images, Collections and
+  Categories) carry a thick 2px accent-blue border (#4A78A7 light / #2196F3
+  dark, the Marker blue), a flush-left square cover/placeholder, a larger
+  single-line h6 name in the Image-tile title colour that truncates with an
+  ellipsis, and a metadata row showing the Marker count left-aligned with
+  the shared scope pill right-aligned; the row hugs the marker grid closely
+  below.
   Editable chips reorder by surface drag without grip icons; clicking still opens a Board. Read-only
   owned/program Boards are discoverable through the All Boards dialog's Public & Shared
   filter, not the chip row, for every role.
@@ -1457,10 +1465,17 @@ selection MouseTracker ignores their presses.
   owner/program names (No owner for orphans). The list is independent of overview filters;
   choosing a tile closes discovery and opens the existing Board dialog. UX filtering
   does not change backend visibility or establish a security boundary.
-- My Markers has Collections-style Cards/Table controls (no Graph), then the filter bar.
-  Outlined Select is right-aligned on that Filter by row in both overview views,
-  and every selection action — including Cancel Selection — renders on the same
+- There is no My Markers heading or overview Select; Marker selection lives in
+  the Board dialog's Saved views toolbar, where every selection action —
+  including Cancel Selection — renders on the same
   row so starting selection never pushes Cancel Selection downward.
+  The row's collection actions are exactly two concise buttons: a contained
+  Create Collection (the Board dialog's flow, seeding CollectionEditDialog with
+  the selected Markers) and an outlined Add to Collection that lists every
+  editable collection and disables full ones; the pair renders only once at
+  least one Marker is selected. In select mode each Marker card carries a
+  top-left checkbox overlay on its thumbnail and a primary outline when
+  checked, matching the Collection Manage Images tiles.
   The fully paginated overview is case-insensitive title ascending, then numeric ID;
   favourite/membership updates do not affect order. Filled stars use the primary accent.
   Both views show only personally owned Markers, fetched in pages of 200. Cards
@@ -1468,20 +1483,44 @@ selection MouseTracker ignores their presses.
   Cards are 234px wide with proportionally scaled 96px covers, including in Board dialogs.
   Marker cards carry no scope pill — the reused Collections scope pill lives on
   Board tiles instead, leaving Marker tiles correspondingly shorter.
-  Pin and title-row edit pencil follow Collection cards.
+  Pin and title-row edit pencil follow Collection cards; the pin and the h6
+  title render in the Marker accent blue (#4A78A7 light / #2196F3 dark) and the
+  category line's tooltip reads In category {name}.
   Top-right Star/StarBorder favourite takes Collections' cover-picker position, beside Move/Save.
   The pencil opens the existing editor; Delete and Remove from this Board remain there.
+  The editor mimics Edit Image/Edit Collection chrome: a View Marker button sits
+  at the top right of the dialog heading and Delete is a wide destructive button
+  whose press opens the standard "Delete Marker?" confirmation dialog.
   Card click opens the saved view; no card overflow or drag-handle icon remains.
-  Table columns are Title, Category, Boards, Favourite and Actions. Board names
-  navigate; actions and filters work in both views.
+  Table columns are Select, Thumbnail, Title, Image, Description, Category,
+  Boards, Favourite, Owner, Created, Modified and a fixed trailing Actions.
+  Labelled headers sort via TableSortLabel, rows paginate with a per-user
+  rows-per-page preference, and the Select column's checkboxes (with a
+  Select-all header cell for the page) feed the same Create/Add Collection
+  actions. Row clicks — and Enter/Space on the focused row — open the Marker
+  edit dialog; the Thumbnail cell's button navigates to the saved view.
+  Board names navigate; actions and filters work in both views. A Choose columns button on
+  the filter row (Table view only) opens the shared reorderable visibility
+  dialog; visibility and order persist per user
+  (`hrivpref:table-columns:markers:user:<id>` /
+  `hrivpref:table-column-order:markers:user:<id>`) and Actions stays a fixed
+  trailing column.
   Program-owned Boards retain program-membership ownership semantics in the main row.
-- The Collections filter bar components provide title/description search,
-  Private/Restricted/Public scope, owner/Mine and Favourite facets on both the
-  Board row and overview collage. Scope uses any visible Board membership;
-  Favourite Boards are those holding a favourite Marker. Active chips can be
-  removed, and Clear filters resets all facets.
+- The Collections filter bar components provide title/description search and
+  owner/Mine popovers plus visible toggle chips for Private/Restricted/Public
+  scope (multi-select) and Favourites — styled like the Search dialog's chips,
+  outlined by default and filled/primary with `aria-pressed` when active — on
+  both the Board row and overview collage. Scope uses any visible Board
+  membership; Favourite Boards are those holding a favourite Marker. Active chips
+  can be removed, and Clear filters resets all facets.
 - Dragging editable overview Marker cards saves onto editable Board chips,
-  preserving existing memberships. Targets highlight and success shows a snackbar.
+  preserving existing memberships. The dragged tile dims and gains a 3px solid
+  primary outline; a valid target carries the shared Category/Image drop-zone
+  treatment — a 3px dashed outline with a 3px offset, a slight scale-up, and an
+  opaque "Add here" overlay that swaps the tile face while hovering. Success
+  shows a snackbar. A Board the Marker already belongs to shows a muted dashed
+  outline with a "not allowed" Block icon and an "Already saved" caption, so
+  the denied target explains itself rather than staying silent.
   Rejected drops stay unhighlighted but show a snackbar: Already in {Board name},
   or You can't add Markers to {Board name}; no mutation is sent.
   The bottom-centre Snackbar contains the app's filled Alert, using success for
