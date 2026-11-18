@@ -1,0 +1,37 @@
+import { Controls, Meta, Primary, Stories, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as InstructorNoteFieldStories from './InstructorNoteField.stories'
+
+<Meta of={InstructorNoteFieldStories} />
+
+<Title />
+
+<Subtitle>Multiline input for an image's staff-only Instructor note (#1778).</Subtitle>
+
+## When to use
+
+Shared by every form that edits image metadata, so the field looks and behaves
+the same everywhere:
+
+- **Edit image** — directly below Description.
+- **Bulk edit** — a blank value means "no change" for the selected images.
+- **Upload** and **Bulk import** (via `ImageMetadataFields`, which passes an
+  `id` for its label wiring).
+
+The lock icon in the label and the "Visible to instructors, staff and admins"
+helper text tell editors that students never see this note. That is enforced by
+the server, which sends `instructor_note: null` to students — the component does
+no role check. Only admins and instructors reach these forms; staff can read the
+note in the viewer but never edit it.
+
+The input is capped at `MAX_NOTE_LENGTH` (500) characters, matching the
+backend, and the helper text shows a live `n/500` counter.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={InstructorNoteFieldStories.Basic} />
+
+## All stories
+
+<Stories />
