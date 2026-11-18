@@ -4,6 +4,8 @@ import Box from '@mui/material/Box'
 import ImageViewer from './ImageViewer'
 import { expect, userEvent, within } from 'storybook/test'
 import { MARKER_FIXTURE, BOARD_FIXTURE } from './markerFixtures'
+import { BOARD_AUTH } from './boardsFixtures'
+import { AuthContext } from '../authContextValue'
 import ImageDetailsDrawer, { ImageDetailsTrigger, ImageDetailsContent } from './ImageDetailsDrawer'
 
 const IMAGE = {
@@ -19,34 +21,36 @@ function ImageViewerExample({ markersEnabled = false }: { markersEnabled?: boole
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   return (
-    <Box sx={{ width: '100%', height: '100vh' }}>
-      <ImageViewer
-        tileSources="/marker-image.json"
-        height="100%"
-        imageId={42}
-        markersEnabled={markersEnabled}
-        sidePanelDetails={
-          <ImageDetailsContent dense image={IMAGE} programNames={['Histology']} groupNames={[]} />
-        }
-        viewportControl={
-          markersEnabled ? null : (
-            <ImageDetailsTrigger open={open} onOpenChange={setOpen} triggerRef={triggerRef} />
-          )
-        }
-        viewportOverlay={
-          !markersEnabled && (
-            <ImageDetailsDrawer
-              image={IMAGE}
-              programNames={['Architecture']}
-              groupNames={['Image Research']}
-              open={open}
-              onOpenChange={setOpen}
-              triggerRef={triggerRef}
-            />
-          )
-        }
-      />
-    </Box>
+    <AuthContext.Provider value={BOARD_AUTH}>
+      <Box sx={{ width: '100%', height: '100vh' }}>
+        <ImageViewer
+          tileSources="/marker-image.json"
+          height="100%"
+          imageId={42}
+          markersEnabled={markersEnabled}
+          sidePanelDetails={
+            <ImageDetailsContent dense image={IMAGE} programNames={['Histology']} groupNames={[]} />
+          }
+          viewportControl={
+            markersEnabled ? null : (
+              <ImageDetailsTrigger open={open} onOpenChange={setOpen} triggerRef={triggerRef} />
+            )
+          }
+          viewportOverlay={
+            !markersEnabled && (
+              <ImageDetailsDrawer
+                image={IMAGE}
+                programNames={['Architecture']}
+                groupNames={['Image Research']}
+                open={open}
+                onOpenChange={setOpen}
+                triggerRef={triggerRef}
+              />
+            )
+          }
+        />
+      </Box>
+    </AuthContext.Provider>
   )
 }
 
@@ -55,6 +59,11 @@ const meta = {
   component: ImageViewerExample,
   parameters: { layout: 'fullscreen' },
   beforeEach: () => {
+    localStorage.setItem(
+      'hrivpref:viewer-panel:user:9',
+      JSON.stringify({ open: false, tab: 'markers' }),
+    )
+    localStorage.removeItem('hriv.markerVisibility.9')
     const original = globalThis.fetch
     globalThis.fetch = async (input, init) => {
       const path = new URL(
@@ -96,7 +105,11 @@ export const PanelMarkers: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
-    await expect(canvas.getByRole('heading', { name: 'Markers (1)' })).toBeVisible()
+    await expect(
+      within(canvas.getByRole('complementary')).getByRole('button', {
+        name: 'View Marker: Rose window',
+      }),
+    ).toBeVisible()
   },
 }
 export const PanelDetails: Story = {

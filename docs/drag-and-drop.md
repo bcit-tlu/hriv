@@ -321,7 +321,8 @@ can reorder/move members within their Board but cannot use cross-Board save.
 The explicit Move/Save dialog supports atomic cross-Board moves and is also the
 accessible alternative.
 Drop regions expose accessible names: `Save to {Board}`.
-Read-only owned Boards move to Public & shared Boards rather than the chip row, for
+Read-only owned Boards stay out of the chip row — discoverable through the All
+Boards dialog's Public & Shared filter instead — for
 every role, and cannot accept saves. The Board dialog retains sortable member card surfaces in its
 independently scrolling collage, without involving Browse's collision machinery.
 All visible Board chips register typed drop receivers, including already-linked

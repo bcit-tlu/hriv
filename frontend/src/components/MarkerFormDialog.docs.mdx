@@ -8,9 +8,12 @@ import * as MarkerFormDialogStories from './MarkerFormDialog.stories'
 Title and at least one Board are required.
 The searchable checkbox dropdown sorts Boards alphabetically (case-insensitive).
 It has no chips: the closed field displays selected names as text, truncating beyond
-two to `A, B +1`. The separate **+ Create new board** link below the menu opens an
-inline name field and Create Board action. Creation always makes a private,
-name-only Board and selects it; the menu contains only existing editable Boards.
+two to `A, B +1`. A pinned **+ Add Board** row sits at the bottom of the
+fixed-height menu while options scroll above it. It slides a New Board pane in
+from the right over the form, reusing the Boards & Markers Add Board fields
+(name, description, “Visible to” radios, restricted Program/Group chips); a top-left back
+arrow or Escape returns with the draft preserved. Creation selects the new
+Board; the menu options contain only existing editable Boards.
 The last successfully used Board is remembered per user; unavailable Boards are
 never selected from storage.
 

@@ -759,6 +759,52 @@ vi.mock('../src/components/BoardsPage', () => ({
       </div>
     ) : null,
 }))
+vi.mock('../src/components/BoardDialog', () => ({
+  default: ({
+    boardId,
+    container,
+    onClose,
+    onOpenMarker,
+    onManage,
+    onChanged,
+  }: {
+    boardId: number | null
+    container?: HTMLElement | null
+    onClose: () => void
+    onOpenMarker: (item: ApiMarker) => void
+    onManage?: (id: number) => void
+    onChanged?: () => void
+  }) =>
+    boardId != null ? (
+      <div
+        data-testid="board-dialog"
+        data-board={String(boardId)}
+        data-container={container ? 'viewer' : 'none'}
+      >
+        <button onClick={onClose}>Close Board dialog</button>
+        <button onClick={() => onManage?.(boardId)}>Manage Board dialog</button>
+        <button onClick={() => onChanged?.()}>Trigger Board change</button>
+        <button onClick={() => onOpenMarker({ ...MARKER_FIXTURE, image_id: 101, rotation: 90 })}>
+          Open dialog saved view
+        </button>
+        <button
+          onClick={() =>
+            onOpenMarker({
+              ...MARKER_FIXTURE,
+              id: 8,
+              image_id: 101,
+              x: 0.7,
+              y: 0.6,
+              zoom: 4,
+              rotation: 45,
+            })
+          }
+        >
+          Open dialog other view
+        </button>
+      </div>
+    ) : null,
+}))
 const addToCollectionMocks = vi.hoisted(() => ({
   addImagesToCollection: vi.fn(),
   createCollectionWithImages: vi.fn(),
@@ -944,7 +990,11 @@ let mockCategoriesStable: { signature: string; value: MockCategory[] } | null = 
 function stableMockCategories(): MockCategory[] {
   const signature = JSON.stringify(mockCategories)
   if (mockCategoriesStable == null || mockCategoriesStable.signature !== signature) {
-    mockCategoriesStable = { signature, value: [...mockCategories] }
+    // Snapshot, not a shallow copy — `value` must not share element refs with
+    // `mockCategories`: resetFixtures mutates `.images` in place then splices
+    // out the element, and a signature collision would otherwise serve the
+    // stale (emptied) object.
+    mockCategoriesStable = { signature, value: JSON.parse(signature) as MockCategory[] }
   }
   return mockCategoriesStable.value
 }
@@ -3740,6 +3790,139 @@ describe('Boards navigation', () => {
       expect(screen.getByTestId('boards-page')).toHaveAttribute('data-board', '5'),
     )
     expect(window.location.search).toBe('?page=boards&board=5')
+  })
+  it('focuses the selected Marker and carries it in the URL', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    expect(imageViewerProps.current?.markerFocus).toMatchObject({
+      id: 7,
+      imageId: 101,
+      navigate: true,
+    })
+    expect(window.location.search).toContain('marker=7')
+  })
+  it('opens the Board dialog over the viewer when the viewer requests a Board', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    const host = document.createElement('div')
+    act(() => {
+      ;(
+        imageViewerProps.current?.onOpenBoard as (
+          id: number,
+          container?: HTMLElement | null,
+        ) => void
+      )(7, host)
+    })
+    const dialog = await screen.findByTestId('board-dialog')
+    expect(dialog).toHaveAttribute('data-board', '7')
+    // The opening viewer's container reaches the dialog for full-page portals.
+    expect(dialog).toHaveAttribute('data-container', 'viewer')
+    // The viewer stays mounted and the URL stays on the image — no Boards navigation.
+    expect(screen.getByText(/Image Viewer 101/)).toBeInTheDocument()
+    expect(window.location.search).not.toContain('page=boards')
+  })
+  it('restores a shared viewport instead of re-centring when popping to a marker link', async () => {
+    const goBack = async () => {
+      await act(async () => {
+        const popped = new Promise<void>((resolve) =>
+          window.addEventListener('popstate', () => resolve(), { once: true }),
+        )
+        window.history.back()
+        await popped
+      })
+    }
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    expect(imageViewerProps.current?.markerFocus).toMatchObject({ id: 7, navigate: true })
+    // Leaving for Boards pushes a second entry; Back pops to the recorded
+    // `?marker=7&x/y/zoom` entry — the shared viewport wins, so no re-centre;
+    // the recorded coords ride along so the mounted viewer can restore them.
+    fireEvent.click(screen.getByRole('button', { name: 'Shell Boards' }))
+    await screen.findByTestId('boards-page')
+    await goBack()
+    await waitFor(() =>
+      expect(imageViewerProps.current?.markerFocus).toMatchObject({
+        id: 7,
+        imageId: 101,
+        navigate: false,
+        viewport: { x: 0.46, y: 0.29, zoom: 2.5, rotation: 90 },
+      }),
+    )
+  })
+  it('restores the recorded viewport when popping between markers on one image', async () => {
+    const goBack = async () => {
+      await act(async () => {
+        const popped = new Promise<void>((resolve) =>
+          window.addEventListener('popstate', () => resolve(), { once: true }),
+        )
+        window.history.back()
+        await popped
+      })
+    }
+    render(<App />)
+    // Marker A from Boards, then marker B via the in-place Board dialog on
+    // the same image — two history entries (Devin Review scenario).
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    expect(imageViewerProps.current?.markerFocus).toMatchObject({ id: 7, navigate: true })
+    act(() => {
+      ;(imageViewerProps.current?.onOpenBoard as (id: number) => void)(7)
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Open dialog other view' }))
+    await waitFor(() =>
+      expect(imageViewerProps.current?.markerFocus).toMatchObject({ id: 8, navigate: true }),
+    )
+    // Back pops to A's entry: same image stays mounted, so the recorded
+    // viewport must ride along in the focus payload to be restored.
+    await goBack()
+    await waitFor(() =>
+      expect(imageViewerProps.current?.markerFocus).toMatchObject({
+        id: 7,
+        imageId: 101,
+        navigate: false,
+        viewport: { x: 0.46, y: 0.29, zoom: 2.5, rotation: 90 },
+      }),
+    )
+    expect(screen.getByText(/Image Viewer 101/)).toBeInTheDocument()
+  })
+  it('signals the mounted viewer to reload markers after a Board dialog change', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    const before = imageViewerProps.current?.markersReloadSignal
+    act(() => {
+      ;(imageViewerProps.current?.onOpenBoard as (id: number) => void)(7)
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Trigger Board change' }))
+    await waitFor(() => expect(imageViewerProps.current?.markersReloadSignal).not.toBe(before))
+  })
+  it('signals a mounted collection viewer to reload markers after a Board change', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Shell tab collections' }))
+    await screen.findByTestId('collections-page')
+    const before = collectionsPageProps.current?.markersReloadSignal
+    act(() => {
+      ;(collectionsPageProps.current?.onOpenBoard as (id: number) => void)(7)
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Trigger Board change' }))
+    await waitFor(() => expect(collectionsPageProps.current?.markersReloadSignal).not.toBe(before))
+  })
+  it('reaches the Boards page through the dialog manage link', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    act(() => {
+      ;(imageViewerProps.current?.onOpenBoard as (id: number) => void)(7)
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage Board dialog' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('boards-page')).toHaveAttribute('data-board', '7'),
+    )
+    expect(window.location.search).toBe('?page=boards&board=7')
+    expect(screen.queryByTestId('board-dialog')).not.toBeInTheDocument()
   })
   it('does not navigate after a late image fetch if the user left Boards', async () => {
     let finish: (image: ApiImage) => void = () => {}

@@ -3,12 +3,19 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within, waitFor } from 'storybook/test'
 import Box from '@mui/material/Box'
 import { AuthContext, type AuthContextValue } from '../authContextValue'
-import type { ApiMarker, Collection, ImageItem } from '../types'
+import type { ApiBoard, ApiMarker, Collection, ImageItem } from '../types'
 import ImageViewer from './ImageViewer'
 import SequenceCollectionViewer from './SequenceCollectionViewer'
 import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
 import { BOARD_FIXTURE, MARKER_FIXTURE } from './markerFixtures'
+import { BOARDS_FIXTURES } from './boardsFixtures'
 
+const classmateBoard: ApiBoard = {
+  ...BOARDS_FIXTURES[2],
+  id: 4,
+  name: 'Classmate picks',
+  owners: [{ user_id: 42, program_id: null, name: 'Sam', role: 'student' }],
+}
 const items: ApiMarker[] = [
   MARKER_FIXTURE,
   { ...MARKER_FIXTURE, id: 8, title: 'Stone columns', x: 0.7, y: 0.5 },
@@ -18,6 +25,7 @@ const items: ApiMarker[] = [
     title: 'Instructor example',
     x: 0.65,
     y: 0.7,
+    board_ids: [2],
     source: 'instructor',
     permissions: { can_edit: false, can_delete: false },
   },
@@ -27,6 +35,7 @@ const items: ApiMarker[] = [
     title: 'Public inspiration',
     x: 0.4,
     y: 0.6,
+    board_ids: [4],
     source: 'public',
     permissions: { can_edit: false, can_delete: false },
   },
@@ -109,7 +118,13 @@ function DrawerViewer({
     <AuthContext.Provider value={auth}>
       <Box sx={{ p: 2, height: 700, maxWidth: 1200 }}>
         {kind === 'image' ? (
-          <ImageViewer imageId={42} markersEnabled height={620} tileSources={tileSource} />
+          <ImageViewer
+            imageId={42}
+            markersEnabled
+            height={620}
+            tileSources={tileSource}
+            onOpenBoard={() => {}}
+          />
         ) : kind === 'sequence' ? (
           <SequenceCollectionViewer
             collection={collection}
@@ -162,7 +177,8 @@ const meta = {
           })),
         )
       if (path === '/api/boards/1') return Response.json(BOARD_FIXTURE)
-      if (path === '/api/boards') return Response.json([BOARD_FIXTURE])
+      if (path === '/api/boards')
+        return Response.json([BOARD_FIXTURE, BOARDS_FIXTURES[2], classmateBoard])
       return original(input, init)
     }
     return () => {
@@ -179,37 +195,47 @@ export const Basic: Story = {
     await userEvent.click(trigger)
     await expect(await canvas.findByRole('complementary')).toBeVisible()
     await expect(canvas.queryByRole('button', { name: 'Public Markers' })).not.toBeInTheDocument()
-    await expect(canvasElement.querySelector('[data-marker-id="10"]')).toBeNull()
+    await expect(canvasElement.querySelector('[data-marker-id="10"]')).toBeEmptyDOMElement()
     const drawer = within(canvas.getByRole('complementary'))
     await expect(drawer.queryByRole('heading', { name: /^Markers \(/ })).not.toBeInTheDocument()
-    await expect(drawer.getByRole('heading', { name: /^My Markers \(/ })).toHaveClass(
+    await expect(drawer.getByRole('heading', { name: 'Architecture inspiration' })).toHaveClass(
       'MuiTypography-body2',
     )
-    await expect(drawer.getByRole('heading', { name: /^Instructor Markers \(/ })).toBeVisible()
-    await userEvent.click(drawer.getByRole('button', { name: 'My Markers options' }))
-    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Markers markers' }))
-    await userEvent.click(drawer.getByRole('button', { name: 'My Markers options' }))
-    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Markers labels' }))
-    await waitFor(() =>
-      expect(canvasElement.ownerDocument.querySelector('.MuiModal-root')).toBeNull(),
-    )
+    await expect(
+      drawer.getByRole('button', { name: 'Open Board: Architecture inspiration' }),
+    ).toBeVisible()
+    await userEvent.click(drawer.getByRole('button', { name: 'Architecture inspiration markers' }))
+    await expect(
+      drawer.getByRole('button', { name: 'Architecture inspiration labels' }),
+    ).toBeDisabled()
     await userEvent.hover(
       drawer.getByRole('button', { name: 'View Marker: Rose window (marker hidden)' }),
     )
     const row = drawer.getByRole('button', { name: 'View Marker: Rose window (marker hidden)' })
-    const bounds = row.getBoundingClientRect()
-    const rowBounds = row.closest('li')!.getBoundingClientRect()
-    await expect(bounds.left).toBe(rowBounds.left)
-    await expect(bounds.right).toBe(rowBounds.right)
+    await waitFor(
+      () => {
+        const bounds = row.getBoundingClientRect()
+        const rowBounds = row.closest('li')!.getBoundingClientRect()
+        expect(bounds.left).toBe(rowBounds.left)
+        expect(bounds.right).toBe(rowBounds.right)
+      },
+      { timeout: 5000 },
+    )
     await expect(row.querySelector('button')).toBeNull()
     await expect(canvasElement.querySelector('[data-marker-id="7"]')).toBeEmptyDOMElement()
-    await userEvent.click(drawer.getByRole('button', { name: 'My Markers options' }))
-    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Markers markers' }))
-    await userEvent.click(drawer.getByRole('button', { name: 'My Markers options' }))
-    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Markers labels' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'Architecture inspiration markers' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'Architecture inspiration labels' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'Architecture inspiration labels' }))
     await waitFor(() =>
       expect(canvasElement.ownerDocument.querySelector('.MuiModal-root')).toBeNull(),
     )
+    const sharedToggle = drawer.getByRole('button', { name: 'Public & Shared' })
+    await expect(sharedToggle).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(sharedToggle)
+    await expect(drawer.getByRole('region', { name: 'Classmate picks' })).toBeVisible()
+    await expect(
+      drawer.getByRole('button', { name: 'View Marker: Public inspiration (marker hidden)' }),
+    ).toBeVisible()
   },
 }
 export const LabelOnly: Story = {
@@ -229,32 +255,36 @@ export const LabelOnly: Story = {
       canvas.getAllByRole('button', { name: 'View Marker: Rose window (marker hidden)' }),
     ).toHaveLength(1)
     const drawer = within(canvas.getByRole('complementary'))
-    await userEvent.click(drawer.getByRole('button', { name: 'My Markers options' }))
     await expect(
-      canvas.getByRole('menuitemcheckbox', { name: 'My Markers markers' }),
-    ).toHaveAttribute('aria-checked', 'mixed')
-    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Markers markers' }))
-    await userEvent.click(drawer.getByRole('button', { name: 'My Markers options' }))
+      drawer.getByRole('button', { name: 'Architecture inspiration markers' }),
+    ).toHaveAttribute('aria-pressed', 'mixed')
+    await userEvent.click(drawer.getByRole('button', { name: 'Architecture inspiration markers' }))
     await expect(
-      canvas.getByRole('menuitemcheckbox', { name: 'My Markers markers' }),
-    ).toHaveAttribute('aria-checked', 'true')
+      drawer.getByRole('button', { name: 'Architecture inspiration markers' }),
+    ).toHaveAttribute('aria-pressed', 'true')
     await userEvent.keyboard('{Escape}')
   },
 }
-export const OwnAndInstructorOnly: Story = {
+export const TieredBoards: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
     await expect(canvas.queryByRole('button', { name: 'Public Markers' })).not.toBeInTheDocument()
+    const drawer = within(canvas.getByRole('complementary'))
     await expect(
-      within(canvas.getByRole('complementary')).getByRole('button', {
-        name: 'View Marker: Instructor example',
-      }),
+      drawer.getByRole('button', { name: 'View Marker: Instructor example' }),
     ).toBeVisible()
-    await expect(canvasElement.querySelector('[data-marker-id="10"]')).toBeNull()
+    await expect(drawer.getByRole('button', { name: 'Public & Shared' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    await expect(
+      drawer.queryByRole('button', { name: /View Marker: Public inspiration/ }),
+    ).not.toBeInTheDocument()
+    await expect(canvasElement.querySelector('[data-marker-id="10"]')).toBeEmptyDOMElement()
   },
 }
-export const Sequence: Story = { args: { kind: 'sequence' }, play: OwnAndInstructorOnly.play }
+export const Sequence: Story = { args: { kind: 'sequence' }, play: TieredBoards.play }
 export const Persistent: Story = {
   args: { kind: 'sequence' },
   play: async ({ canvasElement }) => {
@@ -321,15 +351,12 @@ export const Synchronized: Story = {
   args: { kind: 'synchronized' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const triggers = await canvas.findAllByRole('button', { name: 'Markers (3)' })
+    const triggers = await canvas.findAllByRole('button', { name: 'Markers (4)' })
     await userEvent.click(triggers[0])
     await expect(await canvas.findByRole('complementary', { name: /Markers/ })).toBeVisible()
     const drawer = within(canvas.getByRole('complementary'))
-    await userEvent.click(drawer.getByRole('button', { name: 'My Markers options' }))
-    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Markers markers' }))
-    await userEvent.click(drawer.getByRole('button', { name: 'My Markers options' }))
-    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Markers labels' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'Architecture inspiration markers' }))
     await expect(canvasElement.querySelector('[data-marker-id="7"]')).toBeEmptyDOMElement()
-    await expect(canvasElement.querySelector('[data-marker-id="107"]')).toBeEmptyDOMElement()
+    await expect(canvasElement.querySelector('[data-marker-id="107"]')).not.toBeEmptyDOMElement()
   },
 }

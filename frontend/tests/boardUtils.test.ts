@@ -31,9 +31,10 @@ describe('Board navigation and membership order', () => {
     expect(ownsBoard(BOARDS_FIXTURES[2], BOARD_USER)).toBe(false)
     expect(ownsBoard(BOARDS_FIXTURES[0], null)).toBe(false)
   })
-  it('serializes the existing saved-view URL parameters including zero and rotation', () =>
+  it('serializes the saved-view URL parameters including zero, rotation and marker', () =>
     expect(markerViewParams({ ...BOARD_ITEMS[0], x: 0, rotation: 90 })).toEqual({
       image: '42',
+      marker: '7',
       x: '0',
       y: '0.29',
       zoom: '2.5',

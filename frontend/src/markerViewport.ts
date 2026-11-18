@@ -10,9 +10,15 @@ export function adjustMarkerPixelForFlip(
     : pixel
 }
 
+export function navigateToView(
+  viewer: OpenSeadragon.Viewer,
+  view: { x: number; y: number; zoom: number; rotation?: number },
+) {
+  viewer.viewport.setRotation(view.rotation ?? 0, false)
+  viewer.viewport.zoomTo(view.zoom, undefined, false)
+  viewer.viewport.panTo(new OpenSeadragon.Point(view.x, view.y), false)
+}
+
 export function navigateToMarker(viewer: OpenSeadragon.Viewer, item: MarkerView) {
-  const point = new OpenSeadragon.Point(item.x, item.y)
-  viewer.viewport.setRotation(item.rotation, false)
-  viewer.viewport.zoomTo(item.zoom, undefined, false)
-  viewer.viewport.panTo(point, false)
+  navigateToView(viewer, item)
 }

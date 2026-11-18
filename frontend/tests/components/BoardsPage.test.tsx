@@ -200,7 +200,7 @@ describe('BoardsPage', () => {
   it('orders discovery, chip Boards, My Markers and the filter bar like Collections', async () => {
     await setup()
     const pageTitle = screen.getByRole('heading', { name: 'My Boards', level: 1 })
-    const link = screen.getByRole('button', { name: 'Public & shared Boards' })
+    const link = screen.getByRole('button', { name: 'All Boards' })
     expect(pageTitle.parentElement).toBe(link.parentElement?.parentElement)
     expect(link.parentElement).toHaveStyle({ justifyContent: 'flex-end' })
     expect(pageTitle).toHaveClass('MuiTypography-h5')
@@ -226,7 +226,12 @@ describe('BoardsPage', () => {
       gridTemplateColumns: 'repeat(auto-fill, 234px)',
     })
     expect(card.querySelector('img')).toHaveStyle({ height: '96px' })
-    expect(within(card).getByTestId('collection-visibility-chip')).toHaveTextContent('Private')
+    expect(within(card).queryByTestId('collection-visibility-chip')).not.toBeInTheDocument()
+    expect(
+      within(screen.getByRole('group', { name: 'Architecture inspiration' })).getByTestId(
+        'collection-visibility-chip',
+      ),
+    ).toHaveTextContent('Private')
     expect(within(card).getByTestId('StarIcon')).toBeInTheDocument()
     expect(within(card).getByRole('button', { name: 'Edit Marker: Rose window' })).toBeVisible()
     expect(
@@ -240,7 +245,6 @@ describe('BoardsPage', () => {
     expect(table.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
       'Title',
       'Category',
-      'Scope',
       'Boards',
       'Favourite',
       'Actions',
@@ -248,7 +252,6 @@ describe('BoardsPage', () => {
     const row = within(table.getByText('Rose window').closest('tr')!)
     expect(row.queryByRole('button', { name: 'Rose window' })).not.toBeInTheDocument()
     expect(row.getByText('Architectural details')).toBeVisible()
-    expect(row.getByText('Private')).toBeVisible()
     fireEvent.click(row.getByRole('button', { name: 'Architecture inspiration' }))
     expect(view.onSelectBoard).toHaveBeenCalledWith(1)
     expect(view.onOpenMarker).not.toHaveBeenCalled()
@@ -657,7 +660,7 @@ describe('BoardsPage', () => {
     ).not.toBeInTheDocument()
   })
 
-  it.each(['student', 'staff', 'instructor', 'admin'] as const)(
+  it.each(['staff', 'instructor', 'admin'] as const)(
     'puts read-only program-owned Boards in discovery rather than chips for %s',
     async (role) => {
       const readOnly = {
@@ -676,8 +679,9 @@ describe('BoardsPage', () => {
         screen.queryByRole('button', { name: `Reorder ${readOnly.name}` }),
       ).not.toBeInTheDocument()
       expect(screen.getByRole('group', { name: BOARDS_FIXTURES[0].name })).toBeVisible()
-      fireEvent.click(screen.getByRole('button', { name: 'Public & shared Boards' }))
-      const dialog = await screen.findByRole('dialog', { name: 'Public & shared Boards' })
+      fireEvent.click(screen.getByRole('button', { name: 'All Boards' }))
+      const dialog = await screen.findByRole('dialog', { name: 'All Boards' })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Public & Shared' }))
       fireEvent.click(within(dialog).getByRole('button', { name: `Open Board: ${readOnly.name}` }))
       expect(view.onSelectBoard).toHaveBeenCalledWith(readOnly.id)
     },
@@ -695,8 +699,9 @@ describe('BoardsPage', () => {
       }),
     ).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'New Board' })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Public & shared Boards' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Public & shared Boards' })
+    fireEvent.click(screen.getByRole('button', { name: 'All Boards' }))
+    const dialog = await screen.findByRole('dialog', { name: 'All Boards' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Public & Shared' }))
     expect(
       within(dialog).getByRole('button', { name: `Open Board: ${readOnly.name}` }),
     ).toBeVisible()
@@ -732,14 +737,17 @@ describe('BoardsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'New Board' }))
     expect(screen.getByRole('dialog')).toHaveTextContent('New Board')
   })
-  it('lists others’ Boards in a separate dialog and opens the existing Board route', async () => {
+  it('lists others’ Boards through the Public & Shared filter and opens the existing Board route', async () => {
     const view = await setup()
-    fireEvent.click(screen.getByRole('button', { name: 'Public & shared Boards' }))
-    const dialog = screen.getByRole('dialog', { name: 'Public & shared Boards' })
+    fireEvent.click(screen.getByRole('button', { name: 'All Boards' }))
+    const dialog = screen.getByRole('dialog', { name: 'All Boards' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Public & Shared' }))
     expect(
       within(dialog).queryByRole('button', { name: 'Open Board: Architecture inspiration' }),
     ).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open Board: Shared discoveries' })).toBeVisible()
+    expect(
+      within(dialog).getByRole('button', { name: 'Open Board: Shared discoveries' }),
+    ).toBeVisible()
     expect(
       screen.queryByRole('button', { name: 'Reorder Shared discoveries' }),
     ).not.toBeInTheDocument()
@@ -792,15 +800,13 @@ describe('BoardsPage', () => {
       const view = await setup(null, { currentUser: { ...BOARD_USER, role } })
       const allButton = screen.queryByRole('button', { name: 'All Boards' })
       expect(allButton != null).toBe(role !== 'student')
-      fireEvent.click(screen.getByRole('button', { name: 'Public & shared Boards' }))
-      const shared = screen.getByRole('dialog', { name: 'Public & shared Boards' })
-      expect(
-        within(shared).queryByRole('button', { name: `Open Board: ${privateBoard.name}` }),
-      ).not.toBeInTheDocument()
-      expect(
-        within(shared).queryByRole('button', { name: `Open Board: ${BOARDS_FIXTURES[0].name}` }),
-      ).not.toBeInTheDocument()
-      const publicTile = within(shared).getByRole('button', {
+      if (!allButton) return
+      expect(allButton).toHaveClass('MuiButton-outlined')
+      fireEvent.click(allButton)
+      const all = screen.getByRole('dialog', { name: 'All Boards' })
+      const tiles = () => within(all).getAllByRole('button', { name: /^Open Board:/ })
+      expect(tiles()).toHaveLength(boards.length)
+      const publicTile = within(all).getByRole('button', {
         name: 'Open Board: Shared discoveries',
       })
       expect(within(publicTile).getByRole('heading', { name: 'Shared discoveries' })).toBeVisible()
@@ -808,35 +814,52 @@ describe('BoardsPage', () => {
       expect(within(publicTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
         'Public',
       )
-      const restrictedTile = within(shared).getByRole('button', {
+      const restrictedTile = within(all).getByRole('button', {
         name: `Open Board: ${restrictedBoard.name}`,
       })
       expect(within(restrictedTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
         'Restricted',
       )
-      expect(within(shared).getByText('Managed by program Design')).toBeVisible()
-      expect(within(shared).getByText('No owner')).toBeVisible()
-      expect(within(shared).getByText('Managed by Morgan, Alex')).toBeVisible()
-      fireEvent.click(within(shared).getByRole('button', { name: 'Close' }))
+      expect(within(all).getByText('Managed by program Design')).toBeVisible()
+      expect(within(all).getByText('No owner')).toBeVisible()
+      expect(within(all).getByText('Managed by Morgan, Alex')).toBeVisible()
+      // Chip filters sit under the title and narrow the grid in place.
+      fireEvent.click(within(all).getByRole('button', { name: 'Public & Shared' }))
+      expect(tiles()).toHaveLength(5)
+      expect(
+        within(all).queryByRole('button', { name: `Open Board: ${privateBoard.name}` }),
+      ).not.toBeInTheDocument()
+      expect(
+        within(all).queryByRole('button', { name: `Open Board: ${BOARDS_FIXTURES[0].name}` }),
+      ).not.toBeInTheDocument()
+      fireEvent.click(within(all).getByRole('button', { name: 'Public & Shared' }))
+      expect(tiles()).toHaveLength(boards.length)
+      fireEvent.click(within(all).getByRole('button', { name: 'Instructor Boards' }))
+      expect(tiles()).toHaveLength(5)
+      expect(
+        within(all).queryByRole('button', { name: `Open Board: ${orphanBoard.name}` }),
+      ).not.toBeInTheDocument()
+      expect(
+        within(all).queryByRole('button', { name: `Open Board: ${BOARDS_FIXTURES[0].name}` }),
+      ).not.toBeInTheDocument()
+      expect(
+        within(all).queryByRole('button', { name: `Open Board: ${privateBoard.name}` }),
+      ).toBeInTheDocument()
+      fireEvent.click(within(all).getByRole('button', { name: 'Public & Shared' }))
+      expect(tiles()).toHaveLength(6)
+      fireEvent.click(within(all).getByRole('button', { name: 'Instructor Boards' }))
+      fireEvent.click(within(all).getByRole('button', { name: 'Public & Shared' }))
+      expect(tiles()).toHaveLength(boards.length)
+      const privateTile = within(all).getByRole('button', {
+        name: `Open Board: ${privateBoard.name}`,
+      })
+      expect(within(privateTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
+        'Private',
+      )
+      expect(within(privateTile).getByText('Managed by Morgan')).toBeVisible()
+      fireEvent.click(privateTile)
+      expect(view.onSelectBoard).toHaveBeenCalledWith(privateBoard.id)
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-      if (allButton) {
-        expect(allButton).toHaveClass('MuiButton-outlined')
-        fireEvent.click(allButton)
-        const all = screen.getByRole('dialog', { name: 'All Boards' })
-        expect(within(all).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(
-          boards.length,
-        )
-        const privateTile = within(all).getByRole('button', {
-          name: `Open Board: ${privateBoard.name}`,
-        })
-        expect(within(privateTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
-          'Private',
-        )
-        expect(within(privateTile).getByText('Managed by Morgan')).toBeVisible()
-        fireEvent.click(privateTile)
-        expect(view.onSelectBoard).toHaveBeenCalledWith(privateBoard.id)
-        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-      }
     },
   )
   it('shows an empty All Boards dialog', async () => {
@@ -847,25 +870,24 @@ describe('BoardsPage', () => {
       within(screen.getByRole('dialog', { name: 'All Boards' })).getByText('No Boards available.'),
     ).toBeVisible()
   })
-  it('shows an empty public/shared dialog and closes without navigation', async () => {
+  it('reports no matches when a discovery filter excludes every Board and closes cleanly', async () => {
     vi.mocked(api.fetchBoards).mockResolvedValue([BOARDS_FIXTURES[0]])
     const view = await setup()
-    fireEvent.click(screen.getByRole('button', { name: 'Public & shared Boards' }))
-    expect(screen.getByText('No public or shared Boards available.')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    fireEvent.click(screen.getByRole('button', { name: 'All Boards' }))
+    const dialog = screen.getByRole('dialog', { name: 'All Boards' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Public & Shared' }))
+    expect(within(dialog).getByText('No matching Boards.')).toBeVisible()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
     expect(view.onSelectBoard).not.toHaveBeenCalled()
   })
-  it.each(['Public & shared Boards', 'All Boards'])(
-    'shows overview read errors rather than an empty %s list',
-    async (name) => {
-      vi.mocked(api.fetchBoards).mockRejectedValue(new api.ApiError(503, 'Unavailable'))
-      await setup()
-      fireEvent.click(screen.getByRole('button', { name }))
-      expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent(
-        'Unable to load Boards.',
-      )
-    },
-  )
+  it('shows overview read errors rather than an empty All Boards list', async () => {
+    vi.mocked(api.fetchBoards).mockRejectedValue(new api.ApiError(503, 'Unavailable'))
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'All Boards' }))
+    expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent(
+      'Unable to load Boards.',
+    )
+  })
   it('excludes non-owned Markers even when their Board is owned', async () => {
     vi.mocked(api.fetchMarkers).mockResolvedValue([
       BOARD_ITEMS[0],

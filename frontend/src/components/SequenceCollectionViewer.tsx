@@ -48,6 +48,11 @@ export interface SequenceCollectionViewerProps {
   onOpenImage: (image: ImageItem) => void
   /** Refresh a member's tokenized URLs after the viewer's tile-token renewal. */
   onImageRenewed: (image: ApiImage) => void
+  /** Opens the Board dialog for a drawer group heading; carries the
+   * viewer's container so the dialog stays visible in full-page mode. */
+  onOpenBoard?: (boardId: number, container?: HTMLElement | null) => void
+  /** Bumped when the in-place Board dialog mutates Marker/Board data. */
+  markersReloadSignal?: number
   onError: (message: string) => void
   /**
    * Program/group display names per member image id for the details drawer
@@ -132,6 +137,8 @@ export default function SequenceCollectionViewer({
   onSelectItem,
   onOpenImage,
   onImageRenewed,
+  onOpenBoard,
+  markersReloadSignal,
   onError,
   memberInfoNames,
   hidden = false,
@@ -578,6 +585,8 @@ export default function SequenceCollectionViewer({
         >
           <ImageViewer
             markersEnabled={markersEnabled}
+            onOpenBoard={onOpenBoard}
+            markersReloadSignal={markersReloadSignal}
             onMarkersDrawerOpenChange={setMarkersDrawerOpen}
             onViewerPanelWidthChange={setViewerPanelWidth}
             sidePanelDetails={<CollectionImageDetailsPanel />}

@@ -22,16 +22,23 @@ export function ViewerPanelToggle({
   panelId,
   triggerRef,
   disabled = false,
+  tooltipContainer,
 }: {
   open: boolean
   onToggle: () => void
   panelId: string
   triggerRef?: RefObject<HTMLButtonElement | null>
   disabled?: boolean
+  tooltipContainer?: HTMLElement | (() => HTMLElement | null) | null
 }) {
   const label = open ? 'Close viewer panel' : 'Open viewer panel'
   return (
-    <Tooltip title={label} slotProps={{ popper: { disablePortal: true } }}>
+    <Tooltip
+      title={label}
+      slotProps={{
+        popper: tooltipContainer ? { container: tooltipContainer } : { disablePortal: true },
+      }}
+    >
       <IconButton
         ref={triggerRef}
         aria-label={label}
@@ -145,6 +152,7 @@ export default function ViewerSidePanel({
               alignItems: 'center',
               justifyContent: 'space-between',
               flexShrink: 0,
+              py: 0.5,
             }}
           >
             <ToggleButtonGroup
@@ -172,22 +180,36 @@ export default function ViewerSidePanel({
               }}
             >
               <ToggleButton disableRipple value="markers" aria-label="Show Markers">
-                <Tooltip title="Markers">
+                <Tooltip
+                  title="Markers"
+                  slotProps={{ popper: { container: () => ref.current?.parentElement ?? null } }}
+                >
                   <Room />
                 </Tooltip>
               </ToggleButton>
               <ToggleButton disableRipple value="share" aria-label="Show Shared View">
-                <Tooltip title="Shared View">
+                <Tooltip
+                  title="Shared View"
+                  slotProps={{ popper: { container: () => ref.current?.parentElement ?? null } }}
+                >
                   <Link />
                 </Tooltip>
               </ToggleButton>
               <ToggleButton disableRipple value="details" aria-label="Show image details">
-                <Tooltip title="Image details">
+                <Tooltip
+                  title="Image details"
+                  slotProps={{ popper: { container: () => ref.current?.parentElement ?? null } }}
+                >
                   <InfoOutlined />
                 </Tooltip>
               </ToggleButton>
             </ToggleButtonGroup>
-            <ViewerPanelToggle open onToggle={onClose} panelId={panelId} />
+            <ViewerPanelToggle
+              open
+              onToggle={onClose}
+              panelId={panelId}
+              tooltipContainer={() => ref.current?.parentElement ?? null}
+            />
           </Box>
           {tab !== 'markers' && (
             <Typography
