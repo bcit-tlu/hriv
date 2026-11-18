@@ -45,9 +45,7 @@ describe('BoardEditDialog', () => {
     setup(BOARDS_FIXTURES[0])
     fireEvent.click(screen.getByRole('button', { name: 'Delete Board' }))
     expect(api.deleteBoard).not.toHaveBeenCalled()
-    expect(
-      screen.getByText(/Inuksuks only on this Board will be permanently deleted/),
-    ).toBeVisible()
+    expect(screen.getByText(/Markers only on this Board will be permanently deleted/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Delete Board' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('before deleting')
     expect(screen.getByRole('button', { name: 'Confirm Delete Board' })).toBeDisabled()

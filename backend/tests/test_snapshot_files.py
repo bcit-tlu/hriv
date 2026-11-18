@@ -13,7 +13,7 @@ from app.snapshot_files import snapshot_files
 def test_snapshot_files_archive_round_trip(tmp_path, monkeypatch):
     data = tmp_path / "data"
     tiles = data / "tiles"
-    for namespace in ("inuksuks", "collection_slots"):
+    for namespace in ("markers", "collection_slots"):
         directory = tiles / "42" / namespace
         directory.mkdir(parents=True)
         (directory / "7.jpg").write_bytes(b"original JPEG")
@@ -41,7 +41,7 @@ def test_snapshot_files_skip_symlinks_and_missing_directories(tmp_path):
     (external / "1.jpg").write_bytes(b"private")
     tiles = tmp_path / "tiles"
     (tiles / "42").mkdir(parents=True)
-    (tiles / "42" / "inuksuks").symlink_to(external, target_is_directory=True)
+    (tiles / "42" / "markers").symlink_to(external, target_is_directory=True)
     assert list(snapshot_files(tiles)) == []
 
 
@@ -49,7 +49,7 @@ def test_snapshot_files_skip_symlinks_and_missing_directories(tmp_path):
 def test_snapshot_file_restore_rolls_back_with_other_entries(tmp_path, monkeypatch, failure_phase):
     data = tmp_path / "data"
     tiles = data / "tiles"
-    for namespace, name in (("inuksuks", "1.jpg"), ("collection_slots", "2.jpg")):
+    for namespace, name in (("markers", "1.jpg"), ("collection_slots", "2.jpg")):
         directory = tiles / "42" / namespace
         directory.mkdir(parents=True)
         (directory / name).write_bytes(b"before")
@@ -82,7 +82,7 @@ def test_snapshot_file_restore_rolls_back_with_other_entries(tmp_path, monkeypat
 def test_snapshot_restore_stages_on_separate_tiles_filesystem(tmp_path, monkeypatch):
     data = tmp_path / "data"
     tiles = data / "tiles"
-    for namespace in ("inuksuks", "collection_slots"):
+    for namespace in ("markers", "collection_slots"):
         directory = tiles / "42" / namespace
         directory.mkdir(parents=True)
         (directory / "7.jpg").write_bytes(b"original JPEG")

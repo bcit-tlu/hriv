@@ -298,7 +298,7 @@ Notes: <…>
 
 `components/BoardsPage.tsx` owns a separate `DragDropProvider`. Browse's
 `SortableTileGrid` detectors, zones, priorities and activation logic are untouched.
-The Boards provider has two typed surfaces. Board chips and Inuksuks both use
+The Boards provider has two typed surfaces. Board chips and Markers both use
 their surfaces for dragging without a separate grip icon. Clicking still opens them:
 
 - `board-card` / `board:{id}`: editable owned Board tabs reorder within the row;
@@ -315,7 +315,7 @@ their surfaces for dragging without a separate grip icon. Clicking still opens t
 
 Overview cards use `useDraggable` card surfaces, not sortable targets.
 `save:{boardId}` bins on editable Board tabs accept owned/editable
-overview Inuksuks and add a link without removing the source, with target outline
+overview Markers and add a link without removing the source, with target outline
 feedback and a success snackbar. Non-owner Board editors
 can reorder/move members within their Board but cannot use cross-Board save.
 The explicit Move/Save dialog supports atomic cross-Board moves and is also the
@@ -328,10 +328,10 @@ All visible Board chips register typed drop receivers, including already-linked
 Boards, so rejected drops can explain themselves without writing. Only eligible targets
 show the outline; rejected targets remain unhighlighted. Dropping on an existing
 membership shows `Already in {Board name}`; a read-only destination shows
-`You can't add Inuksuks to {Board name}` in the existing page snackbar
+`You can't add Markers to {Board name}` in the existing page snackbar
 if permissions become stale or another target remains reachable.
 Chip eligibility always uses the API edit permission, without role exemptions.
-Item permissions, stale/missing Board or Inuksuk data, and busy/conflict guards also
+Item permissions, stale/missing Board or Marker data, and busy/conflict guards also
 explain rejected drops. Cancelled drags remain silent and make no request.
 
 Drop notifications use the app's filled MUI Alert inside a bottom-centre Snackbar:

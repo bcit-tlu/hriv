@@ -88,7 +88,7 @@ it('steps between same-image coordinates by slot and remounts at the seeded view
   const props = {
     ...actions,
     collection,
-    inuksuksEnabled: true,
+    markersEnabled: true,
     itemId: 100,
     onSelectItem: selected,
   }
@@ -120,7 +120,7 @@ it.each([null, ''])(
           type: 'sequence',
           images: [{ ...members[0], slot: { ...members[0].slot, label } }],
         })}
-        inuksuksEnabled
+        markersEnabled
         itemId={100}
         slotId={11}
         onSelectItem={vi.fn()}
@@ -137,7 +137,7 @@ it('falls back to the real image parameter for an unavailable slot', () => {
     <SequenceCollectionViewer
       {...actions}
       collection={makeCollection({ images: members })}
-      inuksuksEnabled
+      markersEnabled
       itemId={100}
       slotId={999}
       onSelectItem={vi.fn()}
@@ -152,7 +152,7 @@ it('compares one slide in two independent panes and saves slot viewports only', 
     <SynchronizedCollectionViewer
       {...actions}
       collection={makeCollection({ type: 'synchronized', images: members })}
-      inuksuksEnabled
+      markersEnabled
       onSaveViewport={save}
     />,
   )

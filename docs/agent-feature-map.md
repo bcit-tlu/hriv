@@ -35,19 +35,19 @@ Frontend hooks/components live under `frontend/src/` (e.g. `useImageActions.ts`,
 | Measurement review (epic #1865)               | `components/MeasurementReviewPage.tsx`, `DetectionReviewDialog.tsx` (bare-OSD inspect-and-tune dialog), `DetectionOutlinesLayer.tsx` + `detectionOutlines.ts` (preview outline overlay), `MeasurementScaleFields.tsx`, `MeasurementObjectiveSelect.tsx`, `measurementEvidence.ts`, `measurementUnits.ts`, `api.ts` (`*MeasurementFinding*`, `previewMeasurementFinding`, `updateMeasurementFindingParams`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `measurement/` (`detector.py`, `service.py`), `routers/measurements.py`, `schemas.py` (`DetectionTuning`, `MeasurementFinding*`, `DetectionPreviewOut`), `counting/mpp.py` (`detection_params_from_metadata`)                                                                                                                                                                                                                                                                                                | `test_measurement.py`, `MeasurementReviewPage.test.tsx`, `DetectionReviewDialog.test.tsx`, `detectionOutlines.test.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | [`docs/measurement-review.md`](measurement-review.md)                                                                                                 |
 | Object counting (epic #1661)                  | `api.ts` (`startCount`, `getCount`, `cancelCount`, `ApiCount*`), `useSelectionCounts.ts`, `countingUi.ts`, `countOutlines.ts`, `countPalette.ts`, `components/CountObjectsButton.tsx`, `CountProgressSnackbar.tsx`, `CountReportDialog.tsx`, `CountOutlinesLayer.tsx`, `CountHelpDialog.tsx`, `SelectionCountLayer.tsx`, `ImageViewer.tsx` (selection keys + portal), `guide/object-counting.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `counting/` (`stitch.py`, `jobs.py`, `outliners.py`, `pipeline.py`, `worker.py`, `mpp.py` — pixel size from `mpp_x`/`measurement_scale`), `routers/counts.py`, `schemas.py` (`Count*`, `FeaturesOut.counting`), `database.py` (`counting_*`), `main.py` (router + features)                                                                                                                                                                                                                                  | `test_counting_stitch.py`, `test_router_counts.py`, `test_counting_worker.py`, `test_counting_mpp.py`, `test_middleware.py`, `test_main.py`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | [`docs/object-counting.md`](object-counting.md), [`docs/TESTING.md`](TESTING.md)                                                                      |
 
-### Boards and Inuksuks read API (#1768)
+### Boards and Markers read API (#1768)
 
-Backend entry points: `routers/boards.py`, `routers/inuksuks.py`, and
-`routers/images.py` (`GET /api/images/{id}/inuksuks`). `board_views.py`
+Backend entry points: `routers/boards.py`, `routers/markers.py`, and
+`routers/images.py` (`GET /api/images/{id}/markers`). `board_views.py`
 owns batch loading, visibility context and serialization; `authz.py`
-exposes Board and Inuksuk capability predicates. `schemas.py` defines the
-read projections. `inuksuks.py` and `InuksuksFeatureMiddleware` gate the
+exposes Board and Marker capability predicates. `schemas.py` defines the
+read projections. `markers.py` and `MarkersFeatureMiddleware` gate the
 dark launch. No frontend is wired yet.
 
 Tests: `test_board_authz.py` (role/dual-gate/capability matrices) and
 `test_board_reads.py` (PostgreSQL API, drawer sources, conditional GET,
 thumbnail scopes and eager loading). See
-[Inuksuks and Boards](inuksuks-and-boards.md).
+[Markers and Boards](markers-and-boards.md).
 
 ### Regular image viewer information
 
@@ -118,29 +118,29 @@ item switches and collection close.
 
 ## Domain model & invariants
 
-### Inuksuk viewer (#1772)
+### Marker viewer (#1772)
 
 - Contracts/flag: `frontend/src/types.ts`, `api.ts`, `useFeatures.ts`.
-- Image marker loading and stale-response protection: `useImageInuksuks.ts`.
+- Image marker loading and stale-response protection: `useImageMarkers.ts`.
 - Tool/mode exclusion, coordinate capture and dialog lifecycle:
   `components/ImageViewer.tsx`; flag propagation from `App.tsx` through
   `CollectionsPage.tsx`, `SequenceCollectionViewer.tsx` and
   `SynchronizedCollectionViewer.tsx`.
-- Constant-size icon/title portal: `components/InuksukMarkersLayer.tsx`;
-  shared smooth navigation: `inuksukViewport.ts`.
+- Constant-size icon/title portal: `components/MarkersLayer.tsx`;
+  shared smooth navigation: `markerViewport.ts`.
 - Editable Board multi-picker, private Board creation, user-scoped last Board
-  and OCC reload/delete: `components/InuksukFormDialog.tsx`.
+  and OCC reload/delete: `components/MarkerFormDialog.tsx`.
 - Component stories/docs and corresponding Vitest tests cover these surfaces;
-  [feature contract](inuksuks-and-boards.md#imageviewer-frontend-1772).
+  [feature contract](markers-and-boards.md#imageviewer-frontend-1772).
 
-### Inuksuks drawer (#1773)
+### Markers drawer (#1773)
 
-See `frontend/src/components/ImageInuksuksDrawer.tsx` for its
-trigger, grouped controls and rows; `frontend/src/useInuksukVisibilityPrefs.ts`
+See `frontend/src/components/ImageMarkersDrawer.tsx` for its
+trigger, grouped controls and rows; `frontend/src/useMarkerVisibilityPrefs.ts`
 owns bounded, per-user marker/label defaults and overrides shared across panes.
-`ImageViewer.tsx` hosts the TOP_LEFT control and reuses `useImageInuksuks`;
+`ImageViewer.tsx` hosts the TOP_LEFT control and reuses `useImageMarkers`;
 `SequenceCollectionViewer.tsx` hides conflicting navigation arrows while open.
-See [the drawer contract](inuksuks-and-boards.md#inuksuks-drawer-1773).
+See [the drawer contract](markers-and-boards.md#markers-drawer-1773).
 
 ### Boards page (#1771)
 
@@ -152,7 +152,7 @@ and restricted scope; `BoardOwnersDialog.tsx` adapts the Collections picker.
 `AppShell.tsx`, `App.tsx`, `useShareableImageState.ts` and
 `useNavigationHistory.ts` wire the feature-gated utility and deep links.
 Cards reuse the existing saved image viewport URL, preserving Board history.
-See [the page contract](inuksuks-and-boards.md#boards-page-1771) and
+See [the page contract](markers-and-boards.md#boards-page-1771) and
 [its separate DnD contract](drag-and-drop.md#boards-page-1771).
 
 For schema/relationship details before touching models or migrations, see
@@ -166,9 +166,9 @@ Backend: `collection_slots.py` plans ordered membership changes and owns
 snapshot files; `routers/collections.py` retains permission/OCC enforcement;
 `collection_views.py` filters before projecting nested slot metadata.
 Migration `0047_collection_image_slots`, `models.CollectionImage`,
-`tile_tokens.py`, `inuksuk_thumbs.py`, nginx's slot URI class, Image deletion /
+`tile_tokens.py`, `marker_thumbs.py`, nginx's slot URI class, Image deletion /
 replacement hooks, and `admin_ops.py` must remain aligned. Runtime additions
-require `INUKSUKS_ENABLED`; the frontend slot-identity rollout is #1774.
+require `MARKERS_ENABLED`; the frontend slot-identity rollout is #1774.
 Tests: `test_collection_slots.py`, existing Collection persistence/API tests,
 thumbnail/token and admin operation tests, plus Helm regression checks.
 
@@ -190,15 +190,15 @@ thumbnail/token and admin operation tests, plus Helm regression checks.
 ### Saved-view search and archives (#1775)
 
 - Search result kinds/chips and collection staging: `components/SearchModal.tsx`,
-  `useSavedViewSearch.ts`; reuse `GET /boards?q` and `GET /inuksuks?q` and their
+  `useSavedViewSearch.ts`; reuse `GET /boards?q` and `GET /markers?q` and their
   backend visibility checks. `App.tsx` reuses the saved-view viewport navigation.
 - Shared saved-view-to-draft conversion: `collectionMembers.ts`; Manage owns final
-  temporary member keys. Board expansion follows the ordered `ApiBoard.inuksuks` list.
+  temporary member keys. Board expansion follows the ordered `ApiBoard.markers` list.
 - Flag-independent table archives: `backend/app/board_archives.py`, integrated
   into `admin_ops.py`'s snapshot export and atomic restore.
 - Selective authoritative JPEG inventory: `backend/app/snapshot_files.py`;
   filesystem restore participates in existing rename/rollback semantics.
   `processing.py` retains snapshots during same-source tile rebuild promotion.
-- User guide: `frontend/guide/inuksuks-and-boards.md`, registered in `guideContent.ts`.
+- User guide: `frontend/guide/markers-and-boards.md`, registered in `guideContent.ts`.
 - Backup and restore-validation use whole-database recovery rather than an
   application table allowlist; no saved-view table enumeration needs extending.

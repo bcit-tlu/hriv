@@ -1,17 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import {
-  inuksukViewParams,
-  moveBoardMember,
-  ownsBoard,
-  parseBoardLocation,
-} from '../src/boardUtils'
+import { markerViewParams, moveBoardMember, ownsBoard, parseBoardLocation } from '../src/boardUtils'
 import { BOARDS_FIXTURES, BOARD_ITEMS, BOARD_USER } from '../src/components/boardsFixtures'
 
 describe('Board navigation and membership order', () => {
   it('reorders the flat membership list without losing or duplicating members', () => {
     const result = moveBoardMember(BOARDS_FIXTURES[0], 7, 2)
-    expect(result.map((row) => row.inuksuk_id)).toEqual([8, 9, 7, 10, 11, 12])
-    expect(new Set(result.map((row) => row.inuksuk_id)).size).toBe(6)
+    expect(result.map((row) => row.marker_id)).toEqual([8, 9, 7, 10, 11, 12])
+    expect(new Set(result.map((row) => row.marker_id)).size).toBe(6)
   })
 
   it.each([
@@ -37,7 +32,7 @@ describe('Board navigation and membership order', () => {
     expect(ownsBoard(BOARDS_FIXTURES[0], null)).toBe(false)
   })
   it('serializes the existing saved-view URL parameters including zero and rotation', () =>
-    expect(inuksukViewParams({ ...BOARD_ITEMS[0], x: 0, rotation: 90 })).toEqual({
+    expect(markerViewParams({ ...BOARD_ITEMS[0], x: 0, rotation: 90 })).toEqual({
       image: '42',
       x: '0',
       y: '0.29',

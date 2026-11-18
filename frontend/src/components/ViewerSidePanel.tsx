@@ -12,7 +12,7 @@ import {
   Typography,
 } from '@mui/material'
 import { alpha } from '@mui/material/styles'
-import { CompassCalibration, InfoOutlined, Link } from '@mui/icons-material'
+import { InfoOutlined, Link, Room } from '@mui/icons-material'
 import { ViewerControlHints } from './ImageDetailsDrawer'
 import type { ViewerPanelTab } from '../useViewerPanelState'
 
@@ -79,7 +79,7 @@ export interface ViewerSidePanelProps {
   onTabChange: (tab: ViewerPanelTab) => void
   onClose: () => void
   panelId: string
-  inuksuks: ReactNode
+  markers: ReactNode
   details?: ReactNode
   onShareView?: () => void
 }
@@ -90,7 +90,7 @@ export default function ViewerSidePanel({
   onTabChange,
   onClose,
   panelId,
-  inuksuks,
+  markers,
   details,
   onShareView,
 }: ViewerSidePanelProps) {
@@ -99,7 +99,7 @@ export default function ViewerSidePanel({
     if (open) {
       const panel = ref.current
       const selectedRow = panel?.querySelector<HTMLButtonElement>(
-        '[data-inuksuk-row][aria-pressed="true"]',
+        '[data-marker-row][aria-pressed="true"]',
       )
       const selectedTab = panel?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')
       ;(selectedRow ?? selectedTab)?.focus()
@@ -171,9 +171,9 @@ export default function ViewerSidePanel({
                 },
               }}
             >
-              <ToggleButton disableRipple value="inuksuks" aria-label="Show Inuksuks">
-                <Tooltip title="Inuksuks">
-                  <CompassCalibration />
+              <ToggleButton disableRipple value="markers" aria-label="Show Markers">
+                <Tooltip title="Markers">
+                  <Room />
                 </Tooltip>
               </ToggleButton>
               <ToggleButton disableRipple value="share" aria-label="Show Shared View">
@@ -189,7 +189,7 @@ export default function ViewerSidePanel({
             </ToggleButtonGroup>
             <ViewerPanelToggle open onToggle={onClose} panelId={panelId} />
           </Box>
-          {tab !== 'inuksuks' && (
+          {tab !== 'markers' && (
             <Typography
               component="h2"
               variant="body2"
@@ -202,8 +202,8 @@ export default function ViewerSidePanel({
             tabIndex={0}
             role="region"
             aria-label={
-              tab === 'inuksuks'
-                ? 'Inuksuks list'
+              tab === 'markers'
+                ? 'Markers list'
                 : tab === 'share'
                   ? 'Shared View'
                   : 'Image metadata'
@@ -212,11 +212,11 @@ export default function ViewerSidePanel({
               flex: 1,
               minHeight: 0,
               overflowY: 'auto',
-              ...(tab !== 'inuksuks' ? { px: 1.5, py: 1 } : {}),
+              ...(tab !== 'markers' ? { px: 1.5, py: 1 } : {}),
             }}
           >
-            {tab === 'inuksuks' ? (
-              inuksuks
+            {tab === 'markers' ? (
+              markers
             ) : tab === 'share' ? (
               <Button startIcon={<Link />} onClick={onShareView} disabled={!onShareView}>
                 Copy current view
@@ -241,14 +241,14 @@ export default function ViewerSidePanel({
             }}
             tabIndex={0}
             role="region"
-            aria-label={tab === 'inuksuks' ? 'About Inuksuks' : 'Viewer controls'}
+            aria-label={tab === 'markers' ? 'About Markers' : 'Viewer controls'}
           >
             <Typography component="h3" variant="caption" sx={{ mb: 0.5, fontWeight: 'medium' }}>
-              {tab === 'inuksuks' ? 'About Inuksuks:' : 'Viewer controls'}
+              {tab === 'markers' ? 'About Markers:' : 'Viewer controls'}
             </Typography>
-            {tab === 'inuksuks' ? (
+            {tab === 'markers' ? (
               <Typography variant="caption" component="p" color="text.secondary">
-                Inuksuks save a location and zoom level so you can return to important areas of an
+                Markers save a location and zoom level so you can return to important areas of an
                 image.
               </Typography>
             ) : (

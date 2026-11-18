@@ -124,7 +124,7 @@ limit is reached.
 
 While viewing an image, click **Add to Collection** and pick one of your collections
 — or one owned by a program you teach in. It sits next to **Share View**
-when the legacy viewer is active. With Inuksuks enabled, Add to Collection stays
+when the legacy viewer is active. With Markers enabled, Add to Collection stays
 in the header and sharing moves to the right panel's **Shared View** link tab.
 Type in the filter box to narrow a long list.
 
@@ -347,9 +347,9 @@ usual.
 
 ### Saved-view panel in Sequence collections
 
-With Inuksuks enabled, Sequence viewers share the image page's permanent right
-panel. The sidebar toggle opens it; compass/info buttons select saved views or
+With Markers enabled, Sequence viewers share the image page's permanent right
+panel. The sidebar toggle opens it; pin/info buttons select saved views or
 image details. The minimap and edge arrows stay beside the panel rather than
 under it. Open state and selected content carry between steps. On phones the
 panel covers the image until closed. Synchronized panes retain their existing
-independent Details and Inuksuks controls.
+independent Details and Markers controls.

@@ -1,0 +1,44 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as MarkerFormDialogStories from './MarkerFormDialog.stories'
+
+<Meta of={MarkerFormDialogStories} />
+<Title />
+
+**Add Marker** saves an exact image position, zoom and rotation to one or more editable Boards.
+Title and at least one Board are required.
+The searchable checkbox dropdown sorts Boards alphabetically (case-insensitive).
+It has no chips: the closed field displays selected names as text, truncating beyond
+two to `A, B +1`. The separate **+ Create new board** link below the menu opens an
+inline name field and Create Board action. Creation always makes a private,
+name-only Board and selects it; the menu contains only existing editable Boards.
+The last successfully used Board is remembered per user; unavailable Boards are
+never selected from storage.
+
+Owner capabilities come from the API, not role guesses. Edits and confirmed
+deletes send the current version. A stale-version response preserves the local
+draft and offers **Reload current** before retrying. The dialog is contained in
+the viewer during OSD full-page mode.
+
+Viewer placement uses the non-modal top-right variant. The selected Title and
+Board picker stay visible, while Description starts collapsed under More options.
+Favourite is an outlined/filled toggle star at the title row's right, with a tooltip
+and aria-pressed state, never a More options checkbox.
+Save keeps the viewer tool armed; Cancel or Escape removes its draft marker and
+drawer row. Viewer edits reuse this form inline in the top-right information card;
+BoardsPage retains the modal edit flow. Inline outside presses preserve the editor;
+Save/Cancel or explicit Escape finish it. Board menus remain keyboard-accessible.
+The inline header retains the Marker icon and saved title, and its submit label
+is Save. Description starts collapsed under More options even when already filled;
+opening the toggle restores its existing value. The prior placement toggle did not
+auto-expand based on description, so inline mode does not either.
+Delete opens a secondary confirmation dialog using the app's Dialog/Title/Content/
+Actions pattern. Cancelling or Escape closes only that confirmation and preserves
+the draft; errors and the version-conflict Reload current action stay in it.
+
+Successful creation reports the new record to the viewer, which selects its marker
+and info card and focuses its selected panel row. Failed saves retain the draft.
+Both variants use small inputs, body2 input text, caption guidance and tighter
+spacing; the modal and placement form keep their existing keyboard behavior.
+
+<Primary />
+<Stories includePrimary={false} />

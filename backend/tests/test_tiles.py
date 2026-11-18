@@ -23,10 +23,10 @@ from app.tile_tokens import (
     TileTokenError,
     append_tile_token,
     append_thumb_token,
-    append_inuksuk_thumb_token,
+    append_marker_thumb_token,
     issue_tile_token,
     issue_thumb_token,
-    issue_inuksuk_thumb_token,
+    issue_marker_thumb_token,
     source_image_id_from_tile_url,
     validate_tile_token,
 )
@@ -342,8 +342,8 @@ def tiles_app(tmp_path, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     (image_dir / "image_files" / "0").mkdir(parents=True)
     (image_dir / "image.dzi").write_text("<?xml version='1.0'?><Image/>")
     (image_dir / "thumbnail.jpeg").write_bytes(b"\xff\xd8jpegdata")
-    (image_dir / "inuksuks").mkdir()
-    (image_dir / "inuksuks" / "7.jpg").write_bytes(b"\xff\xd8inuksuk")
+    (image_dir / "markers").mkdir()
+    (image_dir / "markers" / "7.jpg").write_bytes(b"\xff\xd8marker")
     (image_dir / "image_files" / "0" / "0_0.jpeg").write_bytes(b"\xff\xd8tile")
     # A file outside the image directory that traversal must not reach.
     (tiles_dir / "secret.txt").write_text("secret")
@@ -649,50 +649,50 @@ def test_thumb_token_validates_thumbnail_path() -> None:
     validate_tile_token(token, 42, "thumbnail.jpeg")
 
 
-def test_thumb_token_validates_inuksuk_and_serializes_thumb_purpose() -> None:
-    url = append_inuksuk_thumb_token("/api/tiles/42/inuksuks/7.jpg?tile_token=stale")
+def test_thumb_token_validates_marker_and_serializes_thumb_purpose() -> None:
+    url = append_marker_thumb_token("/api/tiles/42/markers/7.jpg?tile_token=stale")
     assert "?tile_token=" in url
     token = url.split("tile_token=")[1]
     payload = jwt.decode(token, auth.auth_settings.jwt_secret, algorithms=[auth.auth_settings.jwt_algorithm])
-    assert payload["purpose"] == "thumb" and payload["iid"] == 7
-    validate_tile_token(token, 42, "inuksuks/7.jpg")
+    assert payload["purpose"] == "thumb" and payload["mid"] == 7
+    validate_tile_token(token, 42, "markers/7.jpg")
     with pytest.raises(TileTokenError) as exc:
-        validate_tile_token(token, 43, "inuksuks/7.jpg")
+        validate_tile_token(token, 43, "markers/7.jpg")
     assert exc.value.status_code == 403
 
 
 @pytest.mark.parametrize("path", [
-    "inuksuks/8.jpg", "thumbnail.jpeg", "image_files/0/0_0.jpeg",
-    "inuksuks/../thumbnail.jpeg", "inuksuks/07.jpg",
+    "markers/8.jpg", "thumbnail.jpeg", "image_files/0/0_0.jpeg",
+    "markers/../thumbnail.jpeg", "markers/07.jpg",
 ])
-def test_inuksuk_token_rejects_other_paths(path: str) -> None:
+def test_marker_token_rejects_other_paths(path: str) -> None:
     with pytest.raises(TileTokenError) as exc:
-        validate_tile_token(issue_inuksuk_thumb_token(42, 7), 42, path)
+        validate_tile_token(issue_marker_thumb_token(42, 7), 42, path)
     assert exc.value.status_code == 403
 
 
-@pytest.mark.parametrize("iid", [None, True, "7", 7.0, 0, -1])
-def test_inuksuk_token_rejects_malformed_claim(iid) -> None:
+@pytest.mark.parametrize("mid", [None, True, "7", 7.0, 0, -1])
+def test_marker_token_rejects_malformed_claim(mid) -> None:
     token = jwt.encode(
-        {"purpose": "thumb", "sid": 42, "iid": iid,
+        {"purpose": "thumb", "sid": 42, "mid": mid,
          "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
         auth.auth_settings.jwt_secret, algorithm=auth.auth_settings.jwt_algorithm,
     )
-    for path in ("inuksuks/7.jpg", "thumbnail.jpeg"):
+    for path in ("markers/7.jpg", "thumbnail.jpeg"):
         with pytest.raises(TileTokenError) as exc:
             validate_tile_token(token, 42, path)
         assert exc.value.status_code == 403
 
 
-@pytest.mark.parametrize("iid", [True, "7", 0, -1])
-def test_inuksuk_token_mint_rejects_invalid_id(iid) -> None:
+@pytest.mark.parametrize("mid", [True, "7", 0, -1])
+def test_marker_token_mint_rejects_invalid_id(mid) -> None:
     with pytest.raises(ValueError):
-        issue_inuksuk_thumb_token(42, iid)
+        issue_marker_thumb_token(42, mid)
 
 
-@pytest.mark.parametrize("url", ["", "/thumb.jpg", "/api/tiles/42/thumbnail.jpeg", "/api/tiles/42/inuksuks/../7.jpg"])
-def test_inuksuk_tokenize_nonmatching_urls_unchanged(url: str) -> None:
-    assert append_inuksuk_thumb_token(url) == url
+@pytest.mark.parametrize("url", ["", "/thumb.jpg", "/api/tiles/42/thumbnail.jpeg", "/api/tiles/42/markers/../7.jpg"])
+def test_marker_tokenize_nonmatching_urls_unchanged(url: str) -> None:
+    assert append_marker_thumb_token(url) == url
 
 
 @pytest.mark.parametrize(
@@ -706,13 +706,13 @@ def test_inuksuk_tokenize_nonmatching_urls_unchanged(url: str) -> None:
         # paths, not the thumbnail.
         "foo/thumbnail.jpeg",
         "image_files/0/thumbnail.jpeg",
-        "inuksuks/../x",
-        "inuksuks/../thumbnail.jpeg",
-        "inuksuks/%2e%2e/thumbnail.jpeg",
-        "inuksuks/7.jpg/extra",
-        "inuksuks/-1.jpg",
-        "inuksuks/name.jpg",
-        "inuksuks/7.jpg",
+        "markers/../x",
+        "markers/../thumbnail.jpeg",
+        "markers/%2e%2e/thumbnail.jpeg",
+        "markers/7.jpg/extra",
+        "markers/-1.jpg",
+        "markers/name.jpg",
+        "markers/7.jpg",
     ],
 )
 def test_thumb_token_rejects_tile_paths_with_403(path: str) -> None:
@@ -782,12 +782,12 @@ async def test_tile_route_thumb_token_rejects_dzi(tiles_app: FastAPI) -> None:
     assert resp.status_code == 403
 
 
-async def test_tile_route_thumb_token_serves_inuksuk(tiles_app: FastAPI) -> None:
-    token = issue_inuksuk_thumb_token(42, 7)
+async def test_tile_route_thumb_token_serves_marker(tiles_app: FastAPI) -> None:
+    token = issue_marker_thumb_token(42, 7)
     async with _client(tiles_app) as client:
-        response = await client.get(f"/api/tiles/42/inuksuks/7.jpg?tile_token={token}")
+        response = await client.get(f"/api/tiles/42/markers/7.jpg?tile_token={token}")
     assert response.status_code == 200
-    assert response.content == b"\xff\xd8inuksuk"
+    assert response.content == b"\xff\xd8marker"
     assert response.headers["content-type"] == "image/jpeg"
 
 
@@ -831,16 +831,16 @@ async def test_tiles_auth_thumb_token_allows_thumbnail(
 
 
 @pytest.mark.parametrize("path,status", [
-    ("inuksuks/7.jpg", 204),
-    ("inuksuks/8.jpg", 403),
+    ("markers/7.jpg", 204),
+    ("markers/8.jpg", 403),
     ("thumbnail.jpeg", 403),
     ("image_files/0/0_0.jpeg", 403),
-    ("inuksuks/../thumbnail.jpeg", 403),
-    ("inuksuks/%2e%2e/thumbnail.jpeg", 403),
-    ("inuksuks/../image_files/0/0_0.jpeg", 403),
+    ("markers/../thumbnail.jpeg", 403),
+    ("markers/%2e%2e/thumbnail.jpeg", 403),
+    ("markers/../image_files/0/0_0.jpeg", 403),
 ])
-async def test_tiles_auth_inuksuk_paths(auth_app: FastAPI, path: str, status: int) -> None:
-    token = issue_inuksuk_thumb_token(42, 7)
+async def test_tiles_auth_marker_paths(auth_app: FastAPI, path: str, status: int) -> None:
+    token = issue_marker_thumb_token(42, 7)
     async with _client(auth_app) as client:
         response = await client.get(
             "/api/tiles-auth",
@@ -855,7 +855,7 @@ async def test_tiles_auth_inuksuk_paths(auth_app: FastAPI, path: str, status: in
         "/api/tiles/42/image.dzi",
         "/api/tiles/42/image_files/0/0_0.jpeg",
         "/api/tiles/42/image_files/0/thumbnail.jpeg",
-        "/api/tiles/42/inuksuks/7.jpg",
+        "/api/tiles/42/markers/7.jpg",
     ],
 )
 async def test_tiles_auth_thumb_token_rejects_tile_paths(

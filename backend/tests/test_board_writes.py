@@ -16,10 +16,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app import auth, board_writes, processing
 from app.database import get_db, settings
 from app.models import (
-    Board, BoardInuksuk, Category, Group, Image, Inuksuk,
+    Board, BoardMarker, Category, Group, Image, Marker,
     Program, SourceImage, User,
 )
-from app.routers import boards, images as images_router, inuksuks, users as users_router
+from app.routers import boards, images as images_router, markers, users as users_router
 
 DB_URL = os.environ.get("TEST_DATABASE_URL", "")
 
@@ -28,7 +28,7 @@ DB_URL = os.environ.get("TEST_DATABASE_URL", "")
 async def world(tmp_path, monkeypatch):
     if not DB_URL:
         pytest.skip("TEST_DATABASE_URL not set")
-    monkeypatch.setattr(settings, "inuksuks_enabled", True)
+    monkeypatch.setattr(settings, "markers_enabled", True)
     monkeypatch.setattr(settings, "tiles_dir", str(tmp_path))
     engine = create_async_engine(DB_URL)
     async with engine.connect() as connection:
@@ -96,7 +96,7 @@ async def world(tmp_path, monkeypatch):
 
         app = FastAPI()
         app.include_router(boards.router, prefix="/api")
-        app.include_router(inuksuks.router, prefix="/api")
+        app.include_router(markers.router, prefix="/api")
         app.include_router(images_router.router, prefix="/api")
         app.include_router(users_router.router, prefix="/api")
         app.dependency_overrides[get_db] = session
@@ -105,7 +105,7 @@ async def world(tmp_path, monkeypatch):
             async def create(*, assignments=None, image="visible", title="Point"):
                 if assignments is None:
                     assignments = [{"board_id": board_ids[caller["role"]]}]
-                result = await client.post("/api/inuksuks", json={
+                result = await client.post("/api/markers", json={
                     "image_id": image_ids[image], "title": title, "x": .5, "y": .375, "zoom": 2,
                     "board_assignments": assignments,
                 })
@@ -131,23 +131,23 @@ async def world(tmp_path, monkeypatch):
     ("POST", "/api/boards", {}), ("PATCH", "/api/boards/1", {}),
     ("DELETE", "/api/boards/1", None), ("PUT", "/api/boards/order", {}),
     ("PUT", "/api/boards/1/owners", {}), ("POST", "/api/boards/1/transfer", {}),
-    ("PUT", "/api/boards/1/inuksuks/order", {}), ("DELETE", "/api/boards/1/inuksuks/1", None),
-    ("POST", "/api/inuksuks", {}), ("PATCH", "/api/inuksuks/1", {}),
-    ("DELETE", "/api/inuksuks/1", None), ("PUT", "/api/inuksuks/order", {}),
-    ("PUT", "/api/inuksuks/1/owners", {}),
+    ("PUT", "/api/boards/1/markers/order", {}), ("DELETE", "/api/boards/1/markers/1", None),
+    ("POST", "/api/markers", {}), ("PATCH", "/api/markers/1", {}),
+    ("DELETE", "/api/markers/1", None), ("PUT", "/api/markers/order", {}),
+    ("PUT", "/api/markers/1/owners", {}),
 ])
 async def test_disabled_write_dependencies_precede_parsing(monkeypatch, method, path, body):
-    monkeypatch.setattr(settings, "inuksuks_enabled", False)
+    monkeypatch.setattr(settings, "markers_enabled", False)
     app = FastAPI()
     app.include_router(boards.router, prefix="/api")
-    app.include_router(inuksuks.router, prefix="/api")
+    app.include_router(markers.router, prefix="/api")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         result = await client.request(method, path, json=body)
     assert result.status_code == 404
 
 
 @pytest.mark.parametrize("role", ["admin", "instructor", "staff", "student"])
-async def test_own_board_and_inuksuk_crud_occ(world, role):
+async def test_own_board_and_marker_crud_occ(world, role):
     world.caller["role"] = role
     created = await world.client.post("/api/boards", json={"name": "  New board  "})
     assert created.status_code == 201, created.text
@@ -170,7 +170,7 @@ async def test_own_board_and_inuksuk_crud_occ(world, role):
     result = await world.client.delete(path, headers={"If-Match": "2"})
     assert result.status_code == 204
     item = await world.create()
-    path = f"/api/inuksuks/{item['id']}"
+    path = f"/api/markers/{item['id']}"
     result = await world.client.patch(path, json={"title": "missing"})
     assert result.status_code == 428
     changed = await world.client.patch(path, json={"version": 1, "title": "Edited", "favourite": True})
@@ -194,10 +194,10 @@ async def test_non_owner_write_authority(world, role):
     expected = 200 if role == "admin" else 403
     result = await world.client.patch(f"/api/boards/{world.boards['other']}", json={"version": 2, "name": "Changed"})
     assert result.status_code == expected, result.text
-    result = await world.client.patch(f"/api/inuksuks/{item['id']}", json={"version": 1, "title": "Changed"})
+    result = await world.client.patch(f"/api/markers/{item['id']}", json={"version": 1, "title": "Changed"})
     assert result.status_code == expected, result.text
     if role != "admin":
-        result = await world.client.delete(f"/api/inuksuks/{item['id']}", headers={"If-Match": "1"})
+        result = await world.client.delete(f"/api/markers/{item['id']}", headers={"If-Match": "1"})
         assert result.status_code == 403
     if role == "student":
         result = await world.client.patch(f"/api/boards/{world.boards['private']}", json={"version": 1, "name": "Probe"})
@@ -215,12 +215,12 @@ async def test_ownership_checks_precede_target_validation(world):
     item = await world.create()
     world.caller["role"] = "student"
     result = await world.client.put(
-        f"/api/inuksuks/{item['id']}/owners",
+        f"/api/markers/{item['id']}/owners",
         json={"version": 1, "user_ids": [2147483647]},
     )
     assert result.status_code == 403
     result = await world.client.put(
-        "/api/inuksuks/2147483647/owners",
+        "/api/markers/2147483647/owners",
         json={"version": 1, "user_ids": [2147483647]},
     )
     assert result.status_code == 404
@@ -229,7 +229,7 @@ async def test_ownership_checks_precede_target_validation(world):
 async def test_reorder_checks_version_before_membership_validation(world):
     before = await world.board("student")
     path = f"/api/boards/{before['id']}"
-    resource = "inuksuks"
+    resource = "markers"
     order = {"items": []}
     await world.create()
     current = await world.board("student")
@@ -251,14 +251,14 @@ async def test_reorder_checks_version_before_membership_validation(world):
 async def test_creation_image_visibility(world, role):
     world.caller["role"] = role
     for key in ("inactive", "hidden"):
-        result = await world.client.post("/api/inuksuks", json={
+        result = await world.client.post("/api/markers", json={
             "image_id": world.images[key], "title": "Point", "x": .5, "y": .375, "zoom": 2,
             "board_assignments": [{"board_id": world.boards[role]}],
         })
         assert result.status_code == (404 if role == "student" else 201), result.text
 
 
-async def test_geometry_writes_lock_image_before_boards_and_inuksuks(world):
+async def test_geometry_writes_lock_image_before_boards_and_markers(world):
     statements = []
 
     def capture(_connection, _cursor, statement, _parameters, _context, _executemany):
@@ -269,16 +269,16 @@ async def test_geometry_writes_lock_image_before_boards_and_inuksuks(world):
         item = await world.create()
         image_lock = next(i for i, sql in enumerate(statements) if "FROM images" in sql and "FOR SHARE" in sql)
         board_lock = next(i for i, sql in enumerate(statements) if "FROM boards" in sql and "FOR UPDATE" in sql)
-        insert = next(i for i, sql in enumerate(statements) if sql.startswith("INSERT INTO inuksuks "))
+        insert = next(i for i, sql in enumerate(statements) if sql.startswith("INSERT INTO markers "))
         assert image_lock < board_lock < insert
         statements.clear()
         result = await world.client.patch(
-            f"/api/inuksuks/{item['id']}", json={"version": 1, "zoom": 3},
+            f"/api/markers/{item['id']}", json={"version": 1, "zoom": 3},
         )
         assert result.status_code == 200, result.text
         image_lock = next(i for i, sql in enumerate(statements) if "FROM images" in sql and "FOR SHARE" in sql)
         board_lock = next(i for i, sql in enumerate(statements) if "FROM boards" in sql and "FOR UPDATE" in sql)
-        item_lock = next(i for i, sql in enumerate(statements) if "FROM inuksuks" in sql and "FOR UPDATE" in sql)
+        item_lock = next(i for i, sql in enumerate(statements) if "FROM markers" in sql and "FOR UPDATE" in sql)
         assert image_lock < board_lock < item_lock
     finally:
         event.remove(world.engine.sync_engine, "before_cursor_execute", capture)
@@ -286,22 +286,22 @@ async def test_geometry_writes_lock_image_before_boards_and_inuksuks(world):
 
 async def test_assignment_validation_last_board_and_preservation(world):
     base = {"image_id": world.images["visible"], "title": "Point", "x": .5, "y": .375, "zoom": 2}
-    result = await world.client.post("/api/inuksuks", json=base)
+    result = await world.client.post("/api/markers", json=base)
     assert result.status_code == 422
-    result = await world.client.post("/api/inuksuks", json={**base, "board_assignments": []})
+    result = await world.client.post("/api/markers", json={**base, "board_assignments": []})
     assert result.status_code == 422
     for assignment, status in [
         ({"board_id": world.boards["other"]}, 403),
         ({"board_id": world.boards["private"]}, 404),
     ]:
-        result = await world.client.post("/api/inuksuks", json={**base, "board_assignments": [assignment]})
+        result = await world.client.post("/api/markers", json={**base, "board_assignments": [assignment]})
         assert result.status_code == status, result.text
     item = await world.create()
-    path = f"/api/inuksuks/{item['id']}"
+    path = f"/api/markers/{item['id']}"
     result = await world.client.patch(path, json={"version": 1, "board_assignments": []})
     assert result.status_code == 422
     board = await world.board("student")
-    result = await world.client.delete(f"/api/boards/{board['id']}/inuksuks/{item['id']}", headers={"If-Match": str(board["version"])})
+    result = await world.client.delete(f"/api/boards/{board['id']}/markers/{item['id']}", headers={"If-Match": str(board["version"])})
     assert result.status_code == 422
     world.caller["role"] = "admin"
     result = await world.client.patch(path, json={"version": 1, "board_assignments": [
@@ -316,7 +316,7 @@ async def test_assignment_validation_last_board_and_preservation(world):
     result = await world.client.patch(path, json={"version": 3, "board_assignments": []})
     assert result.status_code == 200 and result.json()["board_ids"] == []
     async with world.sessions() as db:
-        links = (await db.execute(select(BoardInuksuk).where(BoardInuksuk.inuksuk_id == item["id"]))).scalars().all()
+        links = (await db.execute(select(BoardMarker).where(BoardMarker.marker_id == item["id"]))).scalars().all()
         assert [(link.board_id, link.sort_order) for link in links] == [
             (world.boards["private"], 77),
         ]
@@ -325,7 +325,7 @@ async def test_assignment_validation_last_board_and_preservation(world):
 async def test_board_editor_can_reorder_and_remove_others_items(world):
     item = await world.create(assignments=[{"board_id": world.boards["student"]}])
     world.caller["role"] = "admin"
-    result = await world.client.patch(f"/api/inuksuks/{item['id']}", json={"version": 1, "board_assignments": [
+    result = await world.client.patch(f"/api/markers/{item['id']}", json={"version": 1, "board_assignments": [
         {"board_id": world.boards["student"]},
         {"board_id": world.boards["instructor"]},
     ]})
@@ -333,37 +333,37 @@ async def test_board_editor_can_reorder_and_remove_others_items(world):
     world.caller["role"] = "instructor"
     board = await world.board("instructor")
     path = f"/api/boards/{board['id']}"
-    result = await world.client.put(f"{path}/inuksuks/order", json={
-        "version": board["version"], "items": [{"inuksuk_id": item["id"]}],
+    result = await world.client.put(f"{path}/markers/order", json={
+        "version": board["version"], "items": [{"marker_id": item["id"]}],
     })
     assert result.status_code == 200, result.text
     board = result.json()
-    result = await world.client.delete(f"{path}/inuksuks/{item['id']}", headers={"If-Match": str(board["version"])})
-    assert result.status_code == 200 and result.json()["inuksuks"] == []
+    result = await world.client.delete(f"{path}/markers/{item['id']}", headers={"If-Match": str(board["version"])})
+    assert result.status_code == 200 and result.json()["markers"] == []
     async with world.sessions() as db:
-        assert await db.get(Inuksuk, item["id"]) is not None
+        assert await db.get(Marker, item["id"]) is not None
 
 
 async def test_reorders_and_ownership_validation(world):
     item = await world.create()
     second = await world.create(title="Second")
-    result = await world.client.put("/api/inuksuks/order", json={"items": [
-        {"inuksuk_id": second["id"], "version": 1}, {"inuksuk_id": item["id"], "version": 1},
+    result = await world.client.put("/api/markers/order", json={"items": [
+        {"marker_id": second["id"], "version": 1}, {"marker_id": item["id"], "version": 1},
     ]})
     assert result.status_code == 200, result.text
     assert [(r["id"], r["sort_order"], r["version"]) for r in result.json()] == [(second["id"], 0, 2), (item["id"], 1, 2)]
-    result = await world.client.put("/api/inuksuks/order", json={"items": [{"inuksuk_id": item["id"]}]})
+    result = await world.client.put("/api/markers/order", json={"items": [{"marker_id": item["id"]}]})
     assert result.status_code == 428
     result = await world.client.put("/api/boards/order", json={"items": [{"board_id": world.boards["student"], "version": 3}]})
     assert result.status_code == 200, result.text
-    result = await world.client.put(f"/api/inuksuks/{item['id']}/owners", json={"version": 2, "user_ids": []})
+    result = await world.client.put(f"/api/markers/{item['id']}/owners", json={"version": 2, "user_ids": []})
     assert result.status_code == 422
     for uid in (world.users["inactive"], 2147483647):
-        result = await world.client.put(f"/api/inuksuks/{item['id']}/owners", json={"version": 2, "user_ids": [uid]})
+        result = await world.client.put(f"/api/markers/{item['id']}/owners", json={"version": 2, "user_ids": [uid]})
         assert result.status_code == 422
-    result = await world.client.put(f"/api/inuksuks/{item['id']}/owners", json={"version": 2, "user_ids": [world.users["student"], world.users["other"]]})
+    result = await world.client.put(f"/api/markers/{item['id']}/owners", json={"version": 2, "user_ids": [world.users["student"], world.users["other"]]})
     assert result.status_code == 200 and len(result.json()["owners"]) == 2
-    result = await world.client.put(f"/api/inuksuks/{item['id']}/owners", json={"version": 2, "user_ids": [world.users["student"]]})
+    result = await world.client.put(f"/api/markers/{item['id']}/owners", json={"version": 2, "user_ids": [world.users["student"]]})
     assert result.status_code == 409
     result = await world.client.patch(f"/api/boards/{world.boards['shared']}", json={"version": 1, "visibility": "private"})
     assert result.status_code == 403
@@ -403,7 +403,7 @@ async def test_restricted_attach_and_board_transfer_rules(world, role):
     assert result.status_code == 200 and result.json()["owner_program_id"] is None
 
 
-@pytest.mark.parametrize("kind,cap", [("board", 10), ("inuksuk", 200)])
+@pytest.mark.parametrize("kind,cap", [("board", 10), ("marker", 200)])
 async def test_student_caps_include_coownership_and_owner_additions(world, kind, cap):
     async with world.sessions() as db:
         student = await db.get(User, world.users["student"])
@@ -411,22 +411,22 @@ async def test_student_caps_include_coownership_and_owner_additions(world, kind,
             count = await db.scalar(select(func.count()).select_from(Board).where(Board.owners.any(User.id == student.id)))
             db.add_all([Board(name=f"Quota {i}", owners=[student]) for i in range(cap - count)])
         else:
-            items = [Inuksuk(title=f"Quota {i}", image_id=world.images["visible"], owners=[student], x=0, y=0, zoom=1) for i in range(cap)]
+            items = [Marker(title=f"Quota {i}", image_id=world.images["visible"], owners=[student], x=0, y=0, zoom=1) for i in range(cap)]
             db.add_all(items)
             await db.flush()
-            db.add_all([BoardInuksuk(board_id=world.boards["student"], inuksuk_id=item.id) for item in items])
+            db.add_all([BoardMarker(board_id=world.boards["student"], marker_id=item.id) for item in items])
         await db.commit()
     if kind == "board":
         result = await world.client.post("/api/boards", json={"name": "Over cap"})
     else:
-        result = await world.client.post("/api/inuksuks", json={"image_id": world.images["visible"], "title": "Over cap", "x": 0, "y": 0, "zoom": 1, "board_assignments": [{"board_id": world.boards["student"]}]})
+        result = await world.client.post("/api/markers", json={"image_id": world.images["visible"], "title": "Over cap", "x": 0, "y": 0, "zoom": 1, "board_assignments": [{"board_id": world.boards["student"]}]})
     assert result.status_code == 422
     world.caller["role"] = "admin"
     if kind == "board":
         result = await world.client.put(f"/api/boards/{world.boards['admin']}/owners", json={"version": 1, "user_ids": [world.users["student"]]})
     else:
         item = await world.create()
-        result = await world.client.put(f"/api/inuksuks/{item['id']}/owners", json={"version": 1, "user_ids": [world.users["student"]]})
+        result = await world.client.put(f"/api/markers/{item['id']}/owners", json={"version": 1, "user_ids": [world.users["student"]]})
     assert result.status_code == 422
 
 
@@ -441,37 +441,37 @@ def make_pyramid(world):
 
 async def test_thumbnail_generation_regeneration_fallback_and_delete(world, monkeypatch):
     root = make_pyramid(world)
-    original = board_writes.generate_inuksuk_thumbnail
+    original = board_writes.generate_marker_thumbnail
     threads = []
 
     def generate(*args):
         threads.append(threading.get_ident())
         return original(*args)
 
-    monkeypatch.setattr(board_writes, "generate_inuksuk_thumbnail", generate)
+    monkeypatch.setattr(board_writes, "generate_marker_thumbnail", generate)
     item = await world.create()
-    path = root / "inuksuks" / f"{item['id']}.jpg"
-    assert path.exists() and "/inuksuks/" in item["thumb"]
+    path = root / "markers" / f"{item['id']}.jpg"
+    assert path.exists() and "/markers/" in item["thumb"]
     assert threads and threads[0] != threading.get_ident()
-    result = await world.client.patch(f"/api/inuksuks/{item['id']}", json={"version": 1, "title": "No geometry change"})
+    result = await world.client.patch(f"/api/markers/{item['id']}", json={"version": 1, "title": "No geometry change"})
     assert result.status_code == 200 and len(threads) == 1
-    result = await world.client.patch(f"/api/inuksuks/{item['id']}", json={"version": 2, "x": .6})
+    result = await world.client.patch(f"/api/markers/{item['id']}", json={"version": 2, "x": .6})
     assert result.status_code == 200 and len(threads) == 2 and path.exists()
 
     def broken(*args):
         raise RuntimeError("thumbnail failed")
 
-    monkeypatch.setattr(board_writes, "generate_inuksuk_thumbnail", broken)
-    result = await world.client.patch(f"/api/inuksuks/{item['id']}", json={"version": 3, "rotation": 90})
+    monkeypatch.setattr(board_writes, "generate_marker_thumbnail", broken)
+    result = await world.client.patch(f"/api/markers/{item['id']}", json={"version": 3, "rotation": 90})
     assert result.status_code == 200, result.text
     assert "thumbnail.jpeg" in result.json()["thumb"] and not path.exists()
     item2 = await world.create(title="Failure on create")
     assert "thumbnail.jpeg" in item2["thumb"]
-    monkeypatch.setattr(board_writes, "generate_inuksuk_thumbnail", original)
+    monkeypatch.setattr(board_writes, "generate_marker_thumbnail", original)
     item3 = await world.create()
-    path3 = root / "inuksuks" / f"{item3['id']}.jpg"
+    path3 = root / "markers" / f"{item3['id']}.jpg"
     assert path3.exists()
-    result = await world.client.delete(f"/api/inuksuks/{item3['id']}", headers={"If-Match": "1"})
+    result = await world.client.delete(f"/api/markers/{item3['id']}", headers={"If-Match": "1"})
     assert result.status_code == 204 and not path3.exists()
 
 
@@ -483,25 +483,25 @@ async def test_board_delete_orphan_cleanup_preserves_other_boards_and_files(worl
     result = await world.client.delete(f"/api/boards/{board['id']}", headers={"If-Match": str(board["version"])})
     assert result.status_code == 204, result.text
     async with world.sessions() as db:
-        assert await db.get(Inuksuk, orphan["id"]) is None
-        assert await db.get(Inuksuk, shared["id"]) is not None
-        assert (await db.execute(select(BoardInuksuk.board_id).where(BoardInuksuk.inuksuk_id == shared["id"]))).scalars().all() == [world.boards["shared"]]
-    assert not (root / "inuksuks" / f"{orphan['id']}.jpg").exists()
-    assert (root / "inuksuks" / f"{shared['id']}.jpg").exists()
+        assert await db.get(Marker, orphan["id"]) is None
+        assert await db.get(Marker, shared["id"]) is not None
+        assert (await db.execute(select(BoardMarker.board_id).where(BoardMarker.marker_id == shared["id"]))).scalars().all() == [world.boards["shared"]]
+    assert not (root / "markers" / f"{orphan['id']}.jpg").exists()
+    assert (root / "markers" / f"{shared['id']}.jpg").exists()
 
 
-async def test_inuksuk_delete_and_assignment_changes_invalidate_every_affected_board(world):
+async def test_marker_delete_and_assignment_changes_invalidate_every_affected_board(world):
     assignment = [{"board_id": world.boards["student"]}, {"board_id": world.boards["shared"]}]
     item = await world.create(assignments=assignment)
     before_student, before_shared = await world.board("student"), await world.board("shared")
-    result = await world.client.patch(f"/api/inuksuks/{item['id']}", json={
+    result = await world.client.patch(f"/api/markers/{item['id']}", json={
         "version": 1, "board_assignments": [{"board_id": world.boards["shared"]}],
     })
     assert result.status_code == 200, result.text
     after_student, after_shared = await world.board("student"), await world.board("shared")
     assert after_student["version"] == before_student["version"] + 1
     assert after_shared["version"] == before_shared["version"] + 1
-    result = await world.client.delete(f"/api/inuksuks/{item['id']}", headers={"If-Match": "2"})
+    result = await world.client.delete(f"/api/markers/{item['id']}", headers={"If-Match": "2"})
     assert result.status_code == 204, result.text
     final = await world.board("shared")
     assert final["version"] == after_shared["version"] + 1
@@ -534,7 +534,7 @@ async def test_image_delete_invalidates_linked_boards(world, bulk):
     board_update = next(i for i, sql in enumerate(statements) if "UPDATE boards SET" in sql)
     assert image_lock < board_update
     after = await world.board("admin")
-    assert after["version"] == before["version"] + 1 and after["inuksuks"] == []
+    assert after["version"] == before["version"] + 1 and after["markers"] == []
 
 
 @pytest.mark.parametrize("bulk", [False, True])
@@ -553,12 +553,12 @@ async def test_user_deletion_cleans_board_orphans_and_sole_owned_files(world, bu
         result = await world.client.delete(f"/api/users/{world.users['other']}")
     assert result.status_code == 204, result.text
     async with world.sessions() as db:
-        assert await db.get(Inuksuk, orphan["id"]) is None
-        assert await db.get(Inuksuk, sole["id"]) is None
-        assert await db.get(Inuksuk, shared["id"]) is not None
+        assert await db.get(Marker, orphan["id"]) is None
+        assert await db.get(Marker, sole["id"]) is None
+        assert await db.get(Marker, shared["id"]) is not None
     for item in (orphan, sole):
-        assert not (root / "inuksuks" / f"{item['id']}.jpg").exists()
-    assert (root / "inuksuks" / f"{shared['id']}.jpg").exists()
+        assert not (root / "markers" / f"{item['id']}.jpg").exists()
+    assert (root / "markers" / f"{shared['id']}.jpg").exists()
     after = await world.board("shared")
     assert after["version"] == before["version"] + 1
 
@@ -566,12 +566,12 @@ async def test_user_deletion_cleans_board_orphans_and_sole_owned_files(world, bu
 async def test_commit_failure_preserves_rows_and_thumbnails(world, monkeypatch):
     root = make_pyramid(world)
     item = await world.create()
-    monkeypatch.setattr(inuksuks, "commit_write", AsyncMock(side_effect=RuntimeError("commit failed")))
+    monkeypatch.setattr(markers, "commit_write", AsyncMock(side_effect=RuntimeError("commit failed")))
     with pytest.raises(RuntimeError, match="commit failed"):
-        await world.client.delete(f"/api/inuksuks/{item['id']}", headers={"If-Match": "1"})
-    assert (root / "inuksuks" / f"{item['id']}.jpg").exists()
+        await world.client.delete(f"/api/markers/{item['id']}", headers={"If-Match": "1"})
+    assert (root / "markers" / f"{item['id']}.jpg").exists()
     async with world.sessions() as db:
-        assert await db.get(Inuksuk, item["id"]) is not None
+        assert await db.get(Marker, item["id"]) is not None
 
 
 async def test_replace_deletes_rows_links_and_old_files(world, monkeypatch):
@@ -602,14 +602,14 @@ async def test_replace_deletes_rows_links_and_old_files(world, monkeypatch):
     finally:
         event.remove(world.engine.sync_engine, "before_cursor_execute", capture)
     image_lock = next(i for i, sql in enumerate(statements) if "FROM images" in sql and "FOR UPDATE" in sql)
-    delete = next(i for i, sql in enumerate(statements) if sql.startswith("DELETE FROM inuksuks "))
+    delete = next(i for i, sql in enumerate(statements) if sql.startswith("DELETE FROM markers "))
     assert image_lock < delete
     async with world.sessions() as db:
         source = await db.get(SourceImage, source_id)
         assert source.status == "completed", source.error_message
-        assert await db.get(Inuksuk, item["id"]) is None
-        assert await db.scalar(select(func.count()).select_from(BoardInuksuk).where(BoardInuksuk.inuksuk_id == item["id"])) == 0
-    assert not (root / "inuksuks").exists()
+        assert await db.get(Marker, item["id"]) is None
+        assert await db.scalar(select(func.count()).select_from(BoardMarker).where(BoardMarker.marker_id == item["id"])) == 0
+    assert not (root / "markers").exists()
     after = await world.board("student")
     assert after["version"] == before["version"] + 1
     result = await world.client.patch(

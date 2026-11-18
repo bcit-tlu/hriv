@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import Box from '@mui/material/Box'
 import ImageViewer from './ImageViewer'
 import { expect, userEvent, within } from 'storybook/test'
-import { INUKSUK_FIXTURE, BOARD_FIXTURE } from './inuksukFixtures'
+import { MARKER_FIXTURE, BOARD_FIXTURE } from './markerFixtures'
 import ImageDetailsDrawer, { ImageDetailsTrigger, ImageDetailsContent } from './ImageDetailsDrawer'
 
 const IMAGE = {
@@ -15,26 +15,26 @@ const IMAGE = {
   fileSize: 4_718_592,
 }
 
-function ImageViewerExample({ inuksuksEnabled = false }: { inuksuksEnabled?: boolean }) {
+function ImageViewerExample({ markersEnabled = false }: { markersEnabled?: boolean }) {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   return (
     <Box sx={{ width: '100%', height: '100vh' }}>
       <ImageViewer
-        tileSources="/inuksuk-image.json"
+        tileSources="/marker-image.json"
         height="100%"
         imageId={42}
-        inuksuksEnabled={inuksuksEnabled}
+        markersEnabled={markersEnabled}
         sidePanelDetails={
           <ImageDetailsContent dense image={IMAGE} programNames={['Histology']} groupNames={[]} />
         }
         viewportControl={
-          inuksuksEnabled ? null : (
+          markersEnabled ? null : (
             <ImageDetailsTrigger open={open} onOpenChange={setOpen} triggerRef={triggerRef} />
           )
         }
         viewportOverlay={
-          !inuksuksEnabled && (
+          !markersEnabled && (
             <ImageDetailsDrawer
               image={IMAGE}
               programNames={['Architecture']}
@@ -61,7 +61,7 @@ const meta = {
         typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
         window.location.href,
       ).pathname
-      if (/^\/api\/images\/\d+\/inuksuks$/.test(path)) return Response.json([INUKSUK_FIXTURE])
+      if (/^\/api\/images\/\d+\/markers$/.test(path)) return Response.json([MARKER_FIXTURE])
       if (path === '/api/boards') return Response.json([BOARD_FIXTURE])
       return original(input, init)
     }
@@ -77,13 +77,13 @@ export const WithImageDetails: StoryObj<typeof meta> = {}
 
 type Story = StoryObj<typeof meta>
 export const PanelClosed: Story = {
-  args: { inuksuksEnabled: true },
+  args: { markersEnabled: true },
   play: async ({ canvasElement }) => {
     await within(canvasElement).findByRole('button', { name: 'Open viewer panel' })
   },
 }
-export const PanelInuksuks: Story = {
-  args: { inuksuksEnabled: true },
+export const PanelMarkers: Story = {
+  args: { markersEnabled: true },
   parameters: {
     chromatic: {
       modes: {
@@ -96,13 +96,13 @@ export const PanelInuksuks: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
-    await expect(canvas.getByRole('heading', { name: 'Inuksuks (1)' })).toBeVisible()
+    await expect(canvas.getByRole('heading', { name: 'Markers (1)' })).toBeVisible()
   },
 }
 export const PanelDetails: Story = {
-  args: { inuksuksEnabled: true },
+  args: { markersEnabled: true },
   play: async (context) => {
-    await PanelInuksuks.play?.(context)
+    await PanelMarkers.play?.(context)
     await userEvent.click(
       within(context.canvasElement).getByRole('button', { name: 'Show image details' }),
     )

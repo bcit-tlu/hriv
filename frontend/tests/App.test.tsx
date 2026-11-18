@@ -2,8 +2,8 @@ import { createRef, useEffect, useState, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from '../src/App'
-import { INUKSUK_FIXTURE } from '../src/components/inuksukFixtures'
-import type { ApiInuksuk, ImageItem } from '../src/types'
+import { MARKER_FIXTURE } from '../src/components/markerFixtures'
+import type { ApiMarker, ImageItem } from '../src/types'
 import type { UseShareableImageStateDeps } from '../src/useShareableImageState'
 import type { ProcessingJob } from '../src/useProcessingJobs'
 import {
@@ -402,7 +402,7 @@ vi.mock('../src/components/AppShell', () => ({
     backendVersion,
     onReportIssue,
     collectionsEnabled,
-    inuksuksEnabled,
+    markersEnabled,
     fillViewport,
     footerDockSlot,
   }: {
@@ -419,14 +419,14 @@ vi.mock('../src/components/AppShell', () => ({
     backendVersion: string | null
     onReportIssue: () => void
     collectionsEnabled: boolean
-    inuksuksEnabled?: boolean
+    markersEnabled?: boolean
   }) => (
     <div data-fill-viewport={fillViewport ? 'true' : undefined}>
       <div>
         versions: {String(frontendVersion)}/{String(backendVersion)}
       </div>
       <div data-testid="shell-collections-enabled">{String(collectionsEnabled)}</div>
-      {inuksuksEnabled && <button onClick={() => onTabChange('boards')}>Shell Boards</button>}
+      {markersEnabled && <button onClick={() => onTabChange('boards')}>Shell Boards</button>}
       <button type="button" onClick={onReportIssue}>
         Shell report issue
       </button>
@@ -742,17 +742,17 @@ vi.mock('../src/components/BoardsPage', () => ({
     enabled,
     boardId,
     onSelectBoard,
-    onOpenInuksuk,
+    onOpenMarker,
   }: {
     enabled: boolean
     boardId: number | null
     onSelectBoard: (id: number) => void
-    onOpenInuksuk: (item: ApiInuksuk) => void
+    onOpenMarker: (item: ApiMarker) => void
   }) =>
     enabled ? (
       <div data-testid="boards-page" data-board={String(boardId)}>
         <button onClick={() => onSelectBoard(5)}>Select Board</button>
-        <button onClick={() => onOpenInuksuk({ ...INUKSUK_FIXTURE, image_id: 101, rotation: 90 })}>
+        <button onClick={() => onOpenMarker({ ...MARKER_FIXTURE, image_id: 101, rotation: 90 })}>
           Open saved view
         </button>
       </div>
@@ -2005,12 +2005,12 @@ describe('App failure notifications', () => {
 })
 
 describe('App image details drawer', () => {
-  it('replaces the old details controls with panel metadata only when Inuksuks is enabled', async () => {
+  it('replaces the old details controls with panel metadata only when Markers is enabled', async () => {
     resetFixtures()
-    apiMocks.fetchFeatures.mockResolvedValue({ collections: true, inuksuks: true })
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: true, markers: true })
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
-    await waitFor(() => expect(imageViewerProps.current?.inuksuksEnabled).toBe(true))
+    await waitFor(() => expect(imageViewerProps.current?.markersEnabled).toBe(true))
     expect(screen.queryByRole('button', { name: 'Image details' })).toBeNull()
     expect(imageViewerProps.current?.sidePanelDetails).toMatchObject({
       props: { image: expect.objectContaining({ id: mockImage.id }) },
@@ -3650,7 +3650,7 @@ describe('Boards navigation', () => {
     mockCategories[0].images = [mockImage]
     realBoardNavigation.enabled = true
     window.history.replaceState(null, '', '/?page=boards&board=5&section=11')
-    apiMocks.fetchFeatures.mockResolvedValue({ collections: true, inuksuks: true })
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: true, markers: true })
     apiMocks.fetchImage.mockResolvedValue({
       id: 101,
       name: 'Specimen Image',
@@ -3762,7 +3762,7 @@ describe('Boards navigation', () => {
     expect(screen.queryByText(/Image Viewer 101/)).not.toBeInTheDocument()
   })
   it('falls back to Browse from a direct link when the flag is off', async () => {
-    apiMocks.fetchFeatures.mockResolvedValue({ collections: true, inuksuks: false })
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: true, markers: false })
     render(<App />)
     await waitFor(() => expect(window.location.search).not.toContain('page=boards'))
     expect(screen.queryByTestId('boards-page')).not.toBeInTheDocument()

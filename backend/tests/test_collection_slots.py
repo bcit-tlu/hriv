@@ -23,7 +23,7 @@ from app.collection_slots import (
     SlotPlan, finish_slot_changes, slot_thumb_file, snapshot_thumbnail,
 )
 from app.database import get_db, settings
-from app.models import Board, BoardInuksuk, Category, Collection, CollectionImage, Image, Inuksuk, TileOrderRevision, User
+from app.models import Board, BoardMarker, Category, Collection, CollectionImage, Image, Marker, TileOrderRevision, User
 from app.models import Group, Program, board_groups, board_owners, board_programs
 from app.routers import collections, images, tile_order
 from app.schemas import CollectionCreate, CollectionImagesUpdate, CollectionViewportUpdate, SlotViewport
@@ -35,7 +35,7 @@ VIEW = {"x": .5, "y": .375, "zoom": 2.0}
 
 @pytest.mark.parametrize("enabled", [False, True])
 async def test_saved_view_archive_round_trip(world, monkeypatch, enabled):
-    monkeypatch.setattr(settings, "inuksuks_enabled", enabled)
+    monkeypatch.setattr(settings, "markers_enabled", enabled)
     program = Program(name=f"archive-{uuid4().hex}")
     group = Group(name=f"archive-{uuid4().hex}")
     world.db.add_all([program, group])
@@ -48,17 +48,17 @@ async def test_saved_view_archive_round_trip(world, monkeypatch, enabled):
     image_ids = {world.image.id, world.secret.id}
     original = await export_saved_views(world.db, image_ids)
     assert "board_sections" not in original
-    assert all(original[name] for name in ("boards", "inuksuks", "board_owners", "board_programs", "board_groups", "inuksuk_owners", "board_inuksuks"))
+    assert all(original[name] for name in ("boards", "markers", "board_owners", "board_programs", "board_groups", "marker_owners", "board_markers"))
     await clear_saved_views(world.db)
     assert all(not rows for rows in (await export_saved_views(world.db, image_ids)).values())
     legacy = {**original, "board_sections": [{"id": 99, "board_id": world.board.id, "name": "Old"}]}
-    legacy["board_inuksuks"] = [{**row, "section_id": 99} for row in original["board_inuksuks"]]
+    legacy["board_markers"] = [{**row, "section_id": 99} for row in original["board_markers"]]
     await import_saved_views(world.db, legacy)
     assert await export_saved_views(world.db, image_ids) == original
     filtered = await export_saved_views(world.db, {world.image.id})
-    assert world.hidden.id not in {row["id"] for row in filtered["inuksuks"]}
-    assert world.hidden.id not in {row["inuksuk_id"] for row in filtered["board_inuksuks"]}
-    assert world.hidden.id not in {row["inuksuk_id"] for row in filtered["inuksuk_owners"]}
+    assert world.hidden.id not in {row["id"] for row in filtered["markers"]}
+    assert world.hidden.id not in {row["marker_id"] for row in filtered["board_markers"]}
+    assert world.hidden.id not in {row["marker_id"] for row in filtered["marker_owners"]}
 
 
 async def test_legacy_archive_without_saved_views(world):
@@ -67,15 +67,34 @@ async def test_legacy_archive_without_saved_views(world):
     assert all(not rows for rows in (await export_saved_views(world.db, {world.image.id})).values())
 
 
+async def test_legacy_pre_marker_archive_keys(world):
+    image_ids = {world.image.id, world.secret.id}
+    original = await export_saved_views(world.db, image_ids)
+    await clear_saved_views(world.db)
+    legacy = {}
+    for key, legacy_key in (
+        ("boards", "boards"), ("markers", "inuksuks"), ("board_owners", "board_owners"),
+        ("board_programs", "board_programs"), ("board_groups", "board_groups"),
+        ("marker_owners", "inuksuk_owners"), ("board_markers", "board_inuksuks"),
+    ):
+        legacy[legacy_key] = [
+            {("inuksuk_id" if column == "marker_id" else column): value
+             for column, value in row.items()}
+            for row in original[key]
+        ]
+    await import_saved_views(world.db, legacy)
+    assert await export_saved_views(world.db, image_ids) == original
+
+
 @pytest.mark.parametrize("field,value", [("x", float("nan")), ("y", float("inf")), ("zoom", 0), ("rotation", float("inf")), ("x", True), ("zoom", "2")])
 def test_viewport_validation(field, value):
     with pytest.raises(ValidationError):
         SlotViewport.model_validate({**VIEW, field: value})
 
 
-@pytest.mark.parametrize("payload", [{"slots": []}, {"source_board_id": 1}, {"inuksuk_ids": []}, {"image_ids": [1, 1]}])
+@pytest.mark.parametrize("payload", [{"slots": []}, {"source_board_id": 1}, {"marker_ids": []}, {"image_ids": [1, 1]}])
 def test_flag_off_rejects_new_writes(monkeypatch, payload):
-    monkeypatch.setattr(settings, "inuksuks_enabled", False)
+    monkeypatch.setattr(settings, "markers_enabled", False)
     with pytest.raises(ValidationError):
         CollectionCreate(name="test", type="sequence", **payload)
     with pytest.raises(ValidationError):
@@ -86,7 +105,7 @@ def test_flag_off_rejects_new_writes(monkeypatch, payload):
         CollectionViewportUpdate(version=1)
 
 
-@pytest.mark.parametrize("path", ["image.dzi", "image_files/1/0_0.jpeg", "inuksuks/8.jpg", "thumbnail.jpeg", "collection_slots/9.jpg", "collection_slots/../collection_slots/8.jpg"])
+@pytest.mark.parametrize("path", ["image.dzi", "image_files/1/0_0.jpeg", "markers/8.jpg", "thumbnail.jpeg", "collection_slots/9.jpg", "collection_slots/../collection_slots/8.jpg"])
 def test_slot_token_exact_scope(path):
     token = issue_slot_thumb_token(42, 8)
     validate_tile_token(token, 42, "collection_slots/8.jpg")
@@ -109,7 +128,7 @@ def test_slot_tokenizer_and_invalid_id():
 
 @pytest.mark.parametrize("enabled", [False, True])
 def test_export_import_slots_and_legacy(monkeypatch, enabled):
-    monkeypatch.setattr(settings, "inuksuks_enabled", enabled)
+    monkeypatch.setattr(settings, "markers_enabled", enabled)
     original = Collection(image_links=[CollectionImage(image_id=7, viewport_state=VIEW, label="first", thumb="/api/tiles/42/collection_slots/8.jpg"), CollectionImage(image_id=7, label="second")])
     dump = export_slots(original, {7})
     restored = Collection(image_links=import_slots({"slots": dump, "image_ids": [999]}))
@@ -131,7 +150,7 @@ async def test_cleanup_only_canonical_slot_paths(tmp_path, monkeypatch):
     target.write_bytes(b"test")
     await cleanup_slot_thumbs(["/api/tiles/42/collection_slots/8.jpg", None, "../../etc/passwd"])
     assert not target.exists()
-    assert slot_thumb_file("/api/tiles/42/inuksuks/8.jpg") is None
+    assert slot_thumb_file("/api/tiles/42/markers/8.jpg") is None
 
 
 def test_thumbnail_unavailable_and_symlink_safe(tmp_path, monkeypatch):
@@ -148,14 +167,14 @@ def test_thumbnail_unavailable_and_symlink_safe(tmp_path, monkeypatch):
 async def world(monkeypatch, tmp_path):
     if not DB_URL:
         pytest.skip("TEST_DATABASE_URL not set")
-    monkeypatch.setattr(settings, "inuksuks_enabled", True)
+    monkeypatch.setattr(settings, "markers_enabled", True)
     monkeypatch.setattr(settings, "collections_student_access", True)
     monkeypatch.setattr(settings, "collections_enabled", True)
     monkeypatch.setattr(settings, "tiles_dir", str(tmp_path))
     root = tmp_path / "42"
     root.mkdir()
     pyvips.Image.black(640, 480).new_from_image([255, 255, 255]).dzsave(str(root / "image"), tile_size=126, overlap=1, suffix=".png")
-    (root / "inuksuks").mkdir()
+    (root / "markers").mkdir()
     engine = create_async_engine(DB_URL)
     async with engine.connect() as connection:
         transaction = await connection.begin()
@@ -171,16 +190,16 @@ async def world(monkeypatch, tmp_path):
             private = Board(name="private", visibility="private", owners=[other], groups=[], programs=[])
             db.add_all([*users.values(), other, image, secret, public, private, category])
             await db.flush()
-            items = [Inuksuk(image=image, title=f"view-{i}", x=.1 + i * .2, y=.25, zoom=2, rotation=i * 10, owners=[users["student"]]) for i in range(3)]
-            hidden_item = Inuksuk(image=secret, title="secret", x=.5, y=.3, zoom=2, owners=[users["student"]])
-            private_item = Inuksuk(image=image, title="private", x=.5, y=.3, zoom=2, owners=[other])
+            items = [Marker(image=image, title=f"view-{i}", x=.1 + i * .2, y=.25, zoom=2, rotation=i * 10, owners=[users["student"]]) for i in range(3)]
+            hidden_item = Marker(image=secret, title="secret", x=.5, y=.3, zoom=2, owners=[users["student"]])
+            private_item = Marker(image=image, title="private", x=.5, y=.3, zoom=2, owners=[other])
             db.add_all([*items, hidden_item, private_item])
             await db.flush()
             for i, item in enumerate(items):
-                item.thumb = f"/api/tiles/42/inuksuks/{item.id}.jpg"
-                pyvips.Image.black(8, 8).new_from_image([i * 70, 0, 0]).jpegsave(str(root / "inuksuks" / f"{item.id}.jpg"))
-                db.add(BoardInuksuk(board_id=public.id, inuksuk_id=item.id, sort_order=i))
-            db.add_all([BoardInuksuk(board_id=public.id, inuksuk_id=hidden_item.id, sort_order=4), BoardInuksuk(board_id=private.id, inuksuk_id=private_item.id)])
+                item.thumb = f"/api/tiles/42/markers/{item.id}.jpg"
+                pyvips.Image.black(8, 8).new_from_image([i * 70, 0, 0]).jpegsave(str(root / "markers" / f"{item.id}.jpg"))
+                db.add(BoardMarker(board_id=public.id, marker_id=item.id, sort_order=i))
+            db.add_all([BoardMarker(board_id=public.id, marker_id=hidden_item.id, sort_order=4), BoardMarker(board_id=private.id, marker_id=private_item.id)])
             await db.flush()
             caller = {"role": "admin"}
             app = FastAPI()
@@ -203,12 +222,12 @@ async def world(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("operation", ["create", "replace", "append"])
-@pytest.mark.parametrize("source", ["inuksuk_ids", "source_board_id", "slots", "image_ids"])
+@pytest.mark.parametrize("source", ["marker_ids", "source_board_id", "slots", "image_ids"])
 async def test_membership_response_with_fresh_request_session(world, operation, source):
     image_id, secret_id = world.image.id, world.secret.id
     expected = [image_id, image_id]
     payload = {}
-    if source == "inuksuk_ids":
+    if source == "marker_ids":
         payload[source] = [item.id for item in world.items[:2]]
     elif source == "source_board_id":
         payload[source] = world.board.id
@@ -328,8 +347,8 @@ async def test_slot_replacement_preserves_tile_order_revision(world):
     assert reordered.status_code == 200, reordered.text
 
 
-async def test_three_inuksuks_same_image_are_independent_snapshots(world):
-    result = await create(world, inuksuk_ids=[item.id for item in world.items])
+async def test_three_markers_same_image_are_independent_snapshots(world):
+    result = await create(world, marker_ids=[item.id for item in world.items])
     assert [row["id"] for row in result["images"]] == [world.image.id] * 3
     slots = [row["slot"] for row in result["images"]]
     assert len({slot["id"] for slot in slots}) == 3
@@ -338,7 +357,7 @@ async def test_three_inuksuks_same_image_are_independent_snapshots(world):
     assert [slot["viewport_state"]["x"] for slot in slots] == [item.x for item in world.items]
     for slot, item in zip(slots, world.items):
         path = urlsplit(slot["thumb"]).path
-        assert slot_thumb_file(path).read_bytes() == (world.root / "inuksuks" / f"{item.id}.jpg").read_bytes()
+        assert slot_thumb_file(path).read_bytes() == (world.root / "markers" / f"{item.id}.jpg").read_bytes()
         token = parse_qs(urlsplit(slot["thumb"]).query)["tile_token"][0]
         validate_tile_token(token, 42, f"collection_slots/{slot['id']}.jpg")
     members = await world.client.get("/api/images/collections-map")
@@ -368,15 +387,15 @@ async def test_board_source_and_invalid_slot_references(world):
 
 async def test_flag_disabled_on_existing_slots_returns_unique_images(world, monkeypatch):
     result = await create(world, image_ids=[world.image.id] * 3)
-    monkeypatch.setattr(settings, "inuksuks_enabled", False)
+    monkeypatch.setattr(settings, "markers_enabled", False)
     response = await world.client.get(f"/api/collections/{result['id']}")
     assert response.status_code == 200
     assert len(response.json()["images"]) == response.json()["member_count"] == 1
     assert "slot" not in response.json()["images"][0]
 
 
-async def test_sync_slot_viewports_occ_and_inuksuks_unchanged(world):
-    result = await create(world, type="synchronized", inuksuk_ids=[item.id for item in world.items[:2]])
+async def test_sync_slot_viewports_occ_and_markers_unchanged(world):
+    result = await create(world, type="synchronized", marker_ids=[item.id for item in world.items[:2]])
     before = [(item.x, item.y, item.zoom, item.rotation, item.title) for item in world.items]
     slot_id = result["images"][0]["slot"]["id"]
     response = await world.client.put(f"/api/collections/{result['id']}/viewport", json={"version": result["version"], "slot_viewports": {str(slot_id): VIEW}})
@@ -394,7 +413,7 @@ async def test_sync_slot_viewports_occ_and_inuksuks_unchanged(world):
 
 
 async def test_student_filters_slots_and_board_seeds(world):
-    result = await create(world, visibility="public", inuksuk_ids=[world.items[0].id, world.hidden.id, world.items[1].id])
+    result = await create(world, visibility="public", marker_ids=[world.items[0].id, world.hidden.id, world.items[1].id])
     world.caller["role"] = "student"
     visible = await world.client.get(f"/api/collections/{result['id']}")
     assert visible.status_code == 200
@@ -403,14 +422,14 @@ async def test_student_filters_slots_and_board_seeds(world):
     seeded = await create(world, source_board_id=world.board.id)
     assert [row["slot"]["label"] for row in seeded["images"]] == [world.items[i].title for i in (0, 1, 2)]
     for item_id in (world.hidden.id, world.private.id):
-        denied = await world.client.post("/api/collections", json={"name": "bad", "type": "sequence", "inuksuk_ids": [item_id]})
+        denied = await world.client.post("/api/collections", json={"name": "bad", "type": "sequence", "marker_ids": [item_id]})
         assert denied.status_code == 404
     denied = await world.client.post("/api/collections", json={"name": "bad", "type": "sequence", "source_board_id": world.private_board.id})
     assert denied.status_code == 404
 
 
 async def test_legacy_matching_explicit_slot_override_and_cleanup(world):
-    result = await create(world, inuksuk_ids=[item.id for item in world.items])
+    result = await create(world, marker_ids=[item.id for item in world.items])
     old_slots = [row["slot"] for row in result["images"]]
     url = f"/api/collections/{result['id']}/images"
     result2 = await world.client.put(url, json={"version": result["version"], "image_ids": [world.image.id] * 3})
@@ -434,8 +453,8 @@ async def test_legacy_matching_explicit_slot_override_and_cleanup(world):
 
 @pytest.mark.parametrize("bulk", [False, True])
 async def test_missing_source_regenerates_and_image_delete_cleans(world, bulk):
-    (world.root / "inuksuks" / f"{world.items[0].id}.jpg").unlink()
-    result = await create(world, inuksuk_ids=[world.items[0].id])
+    (world.root / "markers" / f"{world.items[0].id}.jpg").unlink()
+    result = await create(world, marker_ids=[world.items[0].id])
     slot = result["images"][0]["slot"]
     path = slot_thumb_file(urlsplit(slot["thumb"]).path)
     assert pyvips.Image.new_from_file(str(path)).width == 320
@@ -445,7 +464,7 @@ async def test_missing_source_regenerates_and_image_delete_cleans(world, bulk):
 
 
 async def test_replacement_clear_preserves_slots_and_labels(world):
-    result = await create(world, inuksuk_ids=[world.items[0].id])
+    result = await create(world, marker_ids=[world.items[0].id])
     slot = result["images"][0]["slot"]
     paths = await image_slot_thumbs(world.db, [world.image.id], clear=True)
     await world.db.commit()
@@ -458,13 +477,13 @@ async def test_replacement_clear_preserves_slots_and_labels(world):
 
 async def test_replacement_without_snapshot_invalidates_old_version(world, monkeypatch):
     result = await create(world, image_ids=[world.image.id])
-    monkeypatch.setattr(settings, "inuksuks_enabled", False)
+    monkeypatch.setattr(settings, "markers_enabled", False)
     await image_slot_thumbs(world.db, [world.image.id], clear=True)
     await world.db.commit()
     collection = await world.db.get(Collection, result["id"])
     await world.db.refresh(collection)
     assert collection.version == result["version"] + 1
-    monkeypatch.setattr(settings, "inuksuks_enabled", True)
+    monkeypatch.setattr(settings, "markers_enabled", True)
     response = await world.client.put(f"/api/collections/{result['id']}/viewport", json={
         "version": result["version"],
         "slot_viewports": {str(result["images"][0]["slot"]["id"]): VIEW},
@@ -520,24 +539,24 @@ async def test_synchronized_caps_count_slots(world, count, status, field):
         assert len(response.json()["images"]) == count
 
 
-@pytest.mark.parametrize("source", ["inuksuks", "board"])
+@pytest.mark.parametrize("source", ["markers", "board"])
 @pytest.mark.parametrize("count,status", [(0, 422), (1, 422), (2, 201), (4, 201), (5, 422)])
 async def test_synchronized_seed_minimum_only_applies_on_create(world, source, count, status):
     ids = [world.items[0].id] * count
-    if source == "inuksuks":
-        payload = {"inuksuk_ids": ids}
+    if source == "markers":
+        payload = {"marker_ids": ids}
     else:
-        links = (await world.db.execute(select(BoardInuksuk).where(
-            BoardInuksuk.board_id == world.board.id
+        links = (await world.db.execute(select(BoardMarker).where(
+            BoardMarker.board_id == world.board.id
         ))).scalars().all()
         for link in links:
             await world.db.delete(link)
         for index in range(count):
-            item = Inuksuk(image=world.image, title=f"seed-{index}", x=.5, y=.3,
+            item = Marker(image=world.image, title=f"seed-{index}", x=.5, y=.3,
                            zoom=2, owners=[world.users["student"]])
             world.db.add(item)
             await world.db.flush()
-            world.db.add(BoardInuksuk(board_id=world.board.id, inuksuk_id=item.id,
+            world.db.add(BoardMarker(board_id=world.board.id, marker_id=item.id,
                                      sort_order=index))
         await world.db.commit()
         payload = {"source_board_id": world.board.id}
@@ -580,7 +599,7 @@ async def test_student_reorder_is_by_slot_identity_and_preserves_hidden(world):
 
 
 async def test_hidden_slot_survives_student_replacement(world):
-    result = await create(world, inuksuk_ids=[world.items[0].id, world.hidden.id, world.items[1].id])
+    result = await create(world, marker_ids=[world.items[0].id, world.hidden.id, world.items[1].id])
     collection = await world.db.get(Collection, result["id"])
     collection.owners = [world.users["student"]]
     await world.db.commit()
@@ -594,7 +613,7 @@ async def test_hidden_slot_survives_student_replacement(world):
 
 
 async def test_source_changes_regenerate_original_snapshot(world):
-    result = await create(world, inuksuk_ids=[world.items[0].id])
+    result = await create(world, marker_ids=[world.items[0].id])
     link = await world.db.get(CollectionImage, result["images"][0]["slot"]["id"])
     original_view = dict(link.viewport_state)
     world.items[0].x += .2
@@ -605,17 +624,17 @@ async def test_source_changes_regenerate_original_snapshot(world):
 
 
 async def test_flag_off_response_shape_legacy_payloads_and_caps(world, monkeypatch):
-    monkeypatch.setattr(settings, "inuksuks_enabled", False)
+    monkeypatch.setattr(settings, "markers_enabled", False)
     result = await create(world, image_ids=[world.image.id])
     assert "slot" not in result["images"][0]
     assert result["viewport_state"] == {}
     with pytest.raises(ValidationError):
         CollectionImagesUpdate(version=1)
-    monkeypatch.setattr(settings, "inuksuks_enabled", True)
-    too_many = await world.client.post("/api/collections", json={"name": "bad", "type": "synchronized", "inuksuk_ids": [world.items[0].id] * 5})
+    monkeypatch.setattr(settings, "markers_enabled", True)
+    too_many = await world.client.post("/api/collections", json={"name": "bad", "type": "synchronized", "marker_ids": [world.items[0].id] * 5})
     assert too_many.status_code == 422
     world.caller["role"] = "student"
-    too_many = await world.client.post("/api/collections", json={"name": "bad", "type": "sequence", "inuksuk_ids": [world.items[0].id] * 21})
+    too_many = await world.client.post("/api/collections", json={"name": "bad", "type": "sequence", "marker_ids": [world.items[0].id] * 21})
     assert too_many.status_code == 422
 
 

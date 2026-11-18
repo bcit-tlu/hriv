@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from collections.abc import Iterator
 
-SNAPSHOT_NAMESPACES = ("inuksuks", "collection_slots")
+SNAPSHOT_NAMESPACES = ("markers", "collection_slots")
 
 
 def snapshot_files(tiles: Path) -> Iterator[Path]:

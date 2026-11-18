@@ -532,9 +532,9 @@ assert_contains "$backend_default_rebuild_enabled" 'value: "false"' \
   "backend deployment should default durable parallel rebuilding to disabled"
 assert_contains "$backend_mode_default_deployment" 'name: COLLECTIONS_ENABLED' \
   "backend deployment should render the collections dark-launch flag"
-backend_default_inuksuks_enabled="$(grep -F -A1 'name: INUKSUKS_ENABLED' <<<"$backend_mode_default_deployment")"
-assert_contains "$backend_default_inuksuks_enabled" 'value: "false"' \
-  "backend deployment should default inuksuks to disabled"
+backend_default_markers_enabled="$(grep -F -A1 'name: MARKERS_ENABLED' <<<"$backend_mode_default_deployment")"
+assert_contains "$backend_default_markers_enabled" 'value: "false"' \
+  "backend deployment should default markers to disabled"
 backend_default_collections_enabled="$(grep -F -A1 'name: COLLECTIONS_ENABLED' <<<"$backend_mode_default_deployment")"
 assert_contains "$backend_default_collections_enabled" 'value: "false"' \
   "backend deployment should default collections to disabled"
@@ -601,7 +601,7 @@ backend_required_manifest="$(helm template test charts/backend \
   --set tasks.rebuild.parallelism=3 \
   --set tasks.rebuild.pumpCadenceSeconds=120 \
   --set collections.enabled=true \
-  --set inuksuks.enabled=true \
+  --set markers.enabled=true \
   --set collections.studentAccess=false \
   --set collections.homeShelf=true \
   --set redis.enabled=true \
@@ -620,9 +620,9 @@ backend_required_rebuild_enabled="$(grep -F -A1 'name: REBUILD_PARALLEL_ENABLED'
 assert_contains "$backend_required_rebuild_enabled" 'value: "true"' \
   "backend deployment should permit durable rebuilding in required mode"
 backend_required_collections_enabled="$(grep -F -A1 'name: COLLECTIONS_ENABLED' <<<"$backend_required_api")"
-backend_required_inuksuks_enabled="$(grep -F -A1 'name: INUKSUKS_ENABLED' <<<"$backend_required_api")"
-assert_contains "$backend_required_inuksuks_enabled" 'value: "true"' \
-  "backend deployment should render INUKSUKS_ENABLED=true when inuksuks.enabled is set"
+backend_required_markers_enabled="$(grep -F -A1 'name: MARKERS_ENABLED' <<<"$backend_required_api")"
+assert_contains "$backend_required_markers_enabled" 'value: "true"' \
+  "backend deployment should render MARKERS_ENABLED=true when markers.enabled is set"
 assert_contains "$backend_required_collections_enabled" 'value: "true"' \
   "backend deployment should render COLLECTIONS_ENABLED=true when collections.enabled is set"
 backend_required_home_shelf="$(grep -F -A1 'name: COLLECTIONS_HOME_SHELF' <<<"$backend_required_api")"

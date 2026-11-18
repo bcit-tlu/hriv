@@ -36,7 +36,7 @@ import {
 } from './imageViewerUtils'
 
 export interface SequenceCollectionViewerProps {
-  inuksuksEnabled?: boolean
+  markersEnabled?: boolean
   collection: Collection
   /** `?item={image_id}` — desired current image; falls back to the first visible image. */
   itemId: number | null
@@ -123,7 +123,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 export default function SequenceCollectionViewer({
-  inuksuksEnabled = false,
+  markersEnabled = false,
   collection,
   itemId,
   slotId = null,
@@ -145,9 +145,9 @@ export default function SequenceCollectionViewer({
   // fading back out after a short idle. The buttons stay mounted (opacity +
   // pointer-events only) so keyboard focus can reveal them.
   const [navVisible, setNavVisible] = useState(false)
-  const [inuksuksDrawerOpen, setInuksuksDrawerOpen] = useState(false)
+  const [markersDrawerOpen, setMarkersDrawerOpen] = useState(false)
   const [viewerPanelWidth, setViewerPanelWidth] = useState(0)
-  const navShown = navVisible && !inuksuksDrawerOpen
+  const navShown = navVisible && !markersDrawerOpen
   const navHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Focus inside the nav holds it open regardless of pointer idle/leave.
   const navFocusedRef = useRef(false)
@@ -211,21 +211,21 @@ export default function SequenceCollectionViewer({
   const currentIndex = useMemo(() => {
     if (available.length === 0) return 0
     let idx =
-      inuksuksEnabled && slotId != null ? available.findIndex((img) => img.slot?.id === slotId) : -1
+      markersEnabled && slotId != null ? available.findIndex((img) => img.slot?.id === slotId) : -1
     if (idx < 0 && itemId != null) idx = available.findIndex((img) => img.id === itemId)
     return idx >= 0 ? idx : 0
-  }, [available, itemId, slotId, inuksuksEnabled])
+  }, [available, itemId, slotId, markersEnabled])
   const selectMember = useCallback(
     (image: Collection['images'][number]) => {
-      if (inuksuksEnabled && image.slot) onSelectItem(image.id, image.slot.id)
+      if (markersEnabled && image.slot) onSelectItem(image.id, image.slot.id)
       else onSelectItem(image.id)
     },
-    [inuksuksEnabled, onSelectItem],
+    [markersEnabled, onSelectItem],
   )
   const current = available[currentIndex] ?? null
   const initialSlotViewport = useStableJson(
-    JSON.stringify(inuksuksEnabled ? current?.slot?.viewport_state : null),
-    () => viewportStateFromSaved(inuksuksEnabled ? current?.slot?.viewport_state : undefined),
+    JSON.stringify(markersEnabled ? current?.slot?.viewport_state : null),
+    () => viewportStateFromSaved(markersEnabled ? current?.slot?.viewport_state : undefined),
   )
   // Notes dialog open state; closed on every image change (same
   // adjust-during-render pattern as the App's image-details drawer).
@@ -513,7 +513,7 @@ export default function SequenceCollectionViewer({
               type="button"
               onClick={() => selectMember(img)}
               disabled={isFailed}
-              aria-label={`Go to ${inuksuksEnabled ? img.slot?.label || img.name : img.name}`}
+              aria-label={`Go to ${markersEnabled ? img.slot?.label || img.name : img.name}`}
               aria-current={isCurrent ? 'true' : undefined}
               sx={{
                 ...stripThumbRing(isCurrent),
@@ -530,14 +530,14 @@ export default function SequenceCollectionViewer({
               <RenewingThumbnail
                 image={{
                   ...img,
-                  thumb: inuksuksEnabled ? img.slot?.thumb || img.thumb : img.thumb,
+                  thumb: markersEnabled ? img.slot?.thumb || img.thumb : img.thumb,
                 }}
                 renewThumb={
-                  inuksuksEnabled && img.slot?.thumb
+                  markersEnabled && img.slot?.thumb
                     ? () => renewSlotThumbnail(collection.id, img)
                     : undefined
                 }
-                alt={inuksuksEnabled && img.slot?.label ? '' : img.name}
+                alt={markersEnabled && img.slot?.label ? '' : img.name}
                 onImageRenewed={onImageRenewed}
                 draggable={false}
                 sx={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 1 }}
@@ -575,8 +575,8 @@ export default function SequenceCollectionViewer({
           disabled={canvasEditActive}
         >
           <ImageViewer
-            inuksuksEnabled={inuksuksEnabled}
-            onInuksuksDrawerOpenChange={setInuksuksDrawerOpen}
+            markersEnabled={markersEnabled}
+            onMarkersDrawerOpenChange={setMarkersDrawerOpen}
             onViewerPanelWidthChange={setViewerPanelWidth}
             sidePanelDetails={<CollectionImageDetailsPanel />}
             key={memberKey(current)}
@@ -607,10 +607,10 @@ export default function SequenceCollectionViewer({
             measurement={measurement}
             onTileSourceRenewed={onImageRenewed}
             onError={handleViewerError}
-            viewportControl={inuksuksEnabled ? null : <CollectionImageDetailsTrigger />}
+            viewportControl={markersEnabled ? null : <CollectionImageDetailsTrigger />}
             viewportOverlay={
               <>
-                {!inuksuksEnabled && <CollectionImageDetailsDrawer />}
+                {!markersEnabled && <CollectionImageDetailsDrawer />}
                 <ViewportDialog
                   open={noteDialogOpen}
                   title="Notes"
@@ -647,7 +647,7 @@ export default function SequenceCollectionViewer({
             onClick={() => goTo(currentIndex - 1)}
             disabled={currentIndex <= 0}
             aria-label="Previous image"
-            tabIndex={inuksuksDrawerOpen ? -1 : 0}
+            tabIndex={markersDrawerOpen ? -1 : 0}
             style={{ pointerEvents: navShown ? 'auto' : 'none' }}
             sx={{ ...navEdgeButton, left: 8 }}
           >
@@ -657,7 +657,7 @@ export default function SequenceCollectionViewer({
             onClick={() => goTo(currentIndex + 1)}
             disabled={currentIndex >= available.length - 1}
             aria-label="Next image"
-            tabIndex={inuksuksDrawerOpen ? -1 : 0}
+            tabIndex={markersDrawerOpen ? -1 : 0}
             style={{ pointerEvents: navShown ? 'auto' : 'none' }}
             sx={{ ...navEdgeButton, right: 8 }}
           >
@@ -669,7 +669,7 @@ export default function SequenceCollectionViewer({
           member name + note left, the position readout + Open image right. */}
       <ImageCaptionRow
         key={`caption-${memberKey(current)}`}
-        name={inuksuksEnabled ? current.slot?.label || current.name : current.name}
+        name={markersEnabled ? current.slot?.label || current.name : current.name}
         active={current.active}
         note={current.note}
         noteDialogOpen={noteDialogOpen}

@@ -6,16 +6,25 @@ from sqlalchemy import DateTime, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import (
-    Board, BoardInuksuk, Inuksuk,
-    board_groups, board_owners, board_programs, inuksuk_owners,
+    Board, BoardMarker, Marker,
+    board_groups, board_owners, board_programs, marker_owners,
 )
 
 SAVED_VIEW_TABLES = (
-    Board.__table__, Inuksuk.__table__,
-    board_owners, board_programs, board_groups, inuksuk_owners,
-    BoardInuksuk.__table__,
+    Board.__table__, Marker.__table__,
+    board_owners, board_programs, board_groups, marker_owners,
+    BoardMarker.__table__,
 )
-SAVED_VIEW_ID_TABLES = ("boards", "inuksuks")
+SAVED_VIEW_ID_TABLES = ("boards", "markers")
+
+# Archives written before the Marker rename keyed saved-view tables and their
+# FK column by the former names; keep them importable.
+LEGACY_TABLE_KEYS = {
+    "markers": "inuksuks",
+    "board_markers": "board_inuksuks",
+    "marker_owners": "inuksuk_owners",
+}
+LEGACY_COLUMN_KEYS = {"inuksuk_id": "marker_id"}
 
 
 async def export_saved_views(db: AsyncSession, image_ids: set[int]) -> dict[str, list[dict]]:
@@ -26,11 +35,11 @@ async def export_saved_views(db: AsyncSession, image_ids: set[int]) -> dict[str,
             {key: value.isoformat() if isinstance(value, datetime) else value
              for key, value in row.items()}
             for row in rows
-            if table.name != "inuksuks" or row["image_id"] in image_ids
+            if table.name != "markers" or row["image_id"] in image_ids
         ]
-    item_ids = {row["id"] for row in result["inuksuks"]}
-    for name in ("inuksuk_owners", "board_inuksuks"):
-        result[name] = [row for row in result[name] if row["inuksuk_id"] in item_ids]
+    item_ids = {row["id"] for row in result["markers"]}
+    for name in ("marker_owners", "board_markers"):
+        result[name] = [row for row in result[name] if row["marker_id"] in item_ids]
     return result
 
 
@@ -41,13 +50,19 @@ async def clear_saved_views(db: AsyncSession) -> None:
 
 async def import_saved_views(db: AsyncSession, dump: dict) -> None:
     for table in SAVED_VIEW_TABLES:
+        dump_rows = dump.get(table.name)
+        if dump_rows is None:
+            dump_rows = dump.get(LEGACY_TABLE_KEYS.get(table.name, ""), [])
         rows = [
             {column.name: (
                 datetime.fromisoformat(row[column.name])
                 if isinstance(column.type, DateTime) and isinstance(row[column.name], str)
                 else row[column.name]
             ) for column in table.columns if column.name in row}
-            for row in dump.get(table.name, [])
+            for row in (
+                {LEGACY_COLUMN_KEYS.get(key, key): value for key, value in dump_row.items()}
+                for dump_row in dump_rows
+            )
         ]
         if rows:
             await db.execute(table.insert(), rows)

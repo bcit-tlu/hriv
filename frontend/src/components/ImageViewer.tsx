@@ -7,18 +7,18 @@ import Alert from '@mui/material/Alert'
 import Snackbar from '@mui/material/Snackbar'
 import { copyViewLink } from '../useShareableImageState'
 import { AuthContext } from '../authContextValue'
-import type { ApiInuksuk, InuksukView } from '../types'
-import { useImageInuksuks } from '../useImageInuksuks'
-import { adjustInuksukPixelForFlip, navigateToInuksuk } from '../inuksukViewport'
-import { useInuksukVisibilityPrefs } from '../useInuksukVisibilityPrefs'
+import type { ApiMarker, MarkerView } from '../types'
+import { useImageMarkers } from '../useImageMarkers'
+import { adjustMarkerPixelForFlip, navigateToMarker } from '../markerViewport'
+import { useMarkerVisibilityPrefs } from '../useMarkerVisibilityPrefs'
 import { usePinnedDrawerState } from '../usePinnedDrawerState'
 import ViewerSidePanel, { ViewerPanelToggle } from './ViewerSidePanel'
 import { useViewerPanelState } from '../useViewerPanelState'
 import useMediaQuery from '@mui/material/useMediaQuery'
-import ImageInuksuksDrawer, { ImageInuksuksTrigger, ImageInuksuksList } from './ImageInuksuksDrawer'
-import InuksukFormDialog from './InuksukFormDialog'
-import InuksukMarkersLayer from './InuksukMarkersLayer'
-import InuksukInfoCard from './InuksukInfoCard'
+import ImageMarkersDrawer, { ImageMarkersTrigger, ImageMarkersList } from './ImageMarkersDrawer'
+import MarkerFormDialog from './MarkerFormDialog'
+import MarkersLayer from './MarkersLayer'
+import MarkerInfoCard from './MarkerInfoCard'
 import { useTheme } from '@mui/material/styles'
 import type { ResponsiveStyleValue } from '@mui/system'
 import {
@@ -95,8 +95,8 @@ const isViewportAtHome = (viewer: OpenSeadragon.Viewer) => {
 }
 
 interface ImageViewerProps {
-  inuksuksEnabled?: boolean
-  onInuksuksDrawerOpenChange?: (open: boolean) => void
+  markersEnabled?: boolean
+  onMarkersDrawerOpenChange?: (open: boolean) => void
   tileSources: OpenSeadragon.TileSourceOptions | string
   /** Id of the image being viewed; emitted as a structured telemetry field. */
   imageId?: number
@@ -165,8 +165,8 @@ interface DragState {
 }
 
 export default function ImageViewer({
-  inuksuksEnabled = false,
-  onInuksuksDrawerOpenChange,
+  markersEnabled = false,
+  onMarkersDrawerOpenChange,
   tileSources,
   imageId,
   categoryId,
@@ -200,48 +200,46 @@ export default function ImageViewer({
   const auth = useContext(AuthContext)
   const [shareCopied, setShareCopied] = useState(false)
   const shareOverlaysRef = useRef<OverlayRect[]>(initialOverlays ?? [])
-  const inuksuks = useImageInuksuks(imageId, inuksuksEnabled)
-  const visibilityPrefs = useInuksukVisibilityPrefs(auth?.currentUser?.id, inuksuksEnabled)
+  const markers = useImageMarkers(imageId, markersEnabled)
+  const visibilityPrefs = useMarkerVisibilityPrefs(auth?.currentUser?.id, markersEnabled)
   const drawerId = useId()
-  const panelEnabled = inuksuksEnabled && viewerPanel && imageId != null
+  const panelEnabled = markersEnabled && viewerPanel && imageId != null
   const panelState = useViewerPanelState(auth?.currentUser?.id, panelEnabled)
   const drawerIdentity = `${auth?.currentUser?.id ?? 'session'}:${imageId}`
   const drawerState = usePinnedDrawerState(
     auth?.currentUser?.id != null ? String(auth.currentUser.id) : 'anonymous',
-    'inuksuks-drawer',
-    inuksuksEnabled && !viewerPanel,
+    'markers-drawer',
+    markersEnabled && !viewerPanel,
   )
   const [drawerFor, setDrawerFor] = useState<string | null>(null)
-  const setInuksuksDrawerOpen = (open: boolean) => {
+  const setMarkersDrawerOpen = (open: boolean) => {
     drawerState.setOpen(open)
     setDrawerFor(open ? drawerIdentity : null)
   }
-  const inuksuksTriggerRef = useRef<HTMLButtonElement>(null)
+  const markersTriggerRef = useRef<HTMLButtonElement>(null)
   const [leftControlWrapper, setLeftControlWrapper] = useState<HTMLDivElement | null>(null)
-  const [inuksukDraft, setInuksukDraft] = useState<{ imageId: number; view: InuksukView } | null>(
-    null,
-  )
-  const [editingInuksuk, setEditingInuksuk] = useState<ApiInuksuk | null>(null)
-  const [selectedInuksukId, setSelectedInuksukId] = useState<number | null>(null)
-  const [focusInuksukId, setFocusInuksukId] = useState<number | null>(null)
-  const [infoInuksukId, setInfoInuksukId] = useState<number | null>(null)
-  const [draftTitle, setDraftTitle] = useState('New Inuksuk')
-  const [deletingInuksuk, setDeletingInuksuk] = useState(false)
-  const cancelInuksukDraft = useEffectEvent(() => {
-    if (!inuksukDraft || inuksukDraft.imageId !== imageId) return false
-    setInuksukDraft(null)
+  const [markerDraft, setMarkerDraft] = useState<{ imageId: number; view: MarkerView } | null>(null)
+  const [editingMarker, setEditingMarker] = useState<ApiMarker | null>(null)
+  const [selectedMarkerId, setSelectedMarkerId] = useState<number | null>(null)
+  const [focusMarkerId, setFocusMarkerId] = useState<number | null>(null)
+  const [infoMarkerId, setInfoMarkerId] = useState<number | null>(null)
+  const [draftTitle, setDraftTitle] = useState('New Marker')
+  const [deletingMarker, setDeletingMarker] = useState(false)
+  const cancelMarkerDraft = useEffectEvent(() => {
+    if (!markerDraft || markerDraft.imageId !== imageId) return false
+    setMarkerDraft(null)
     return true
   })
-  const placeInuksuk = useEffectEvent((view: InuksukView) => {
-    if (imageId == null || !inuksuksEnabled) return
-    if (editingInuksuk) return false
-    if (inuksukDraft?.imageId === imageId) return
-    setEditingInuksuk(null)
-    setInfoInuksukId(null)
-    setFocusInuksukId(null)
-    setDraftTitle('New Inuksuk')
-    setInuksukDraft({ imageId, view })
-    if (panelEnabled && panelState.open) panelState.setTab('inuksuks')
+  const placeMarker = useEffectEvent((view: MarkerView) => {
+    if (imageId == null || !markersEnabled) return
+    if (editingMarker) return false
+    if (markerDraft?.imageId === imageId) return
+    setEditingMarker(null)
+    setInfoMarkerId(null)
+    setFocusMarkerId(null)
+    setDraftTitle('New Marker')
+    setMarkerDraft({ imageId, view })
+    if (panelEnabled && panelState.open) panelState.setTab('markers')
     return true
   })
   const containerRef = useRef<HTMLDivElement>(null)
@@ -250,28 +248,28 @@ export default function ImageViewer({
   const [canvasEditMode, setCanvasEditMode] = useState(false)
   const mobilePanel = useMediaQuery(theme.breakpoints.down('sm'))
   const panelOpen = panelEnabled && panelState.open
-  const inuksuksDrawerOpen =
-    inuksuksEnabled &&
+  const markersDrawerOpen =
+    markersEnabled &&
     !viewerPanel &&
     imageId != null &&
     drawerState.open &&
     (drawerState.pinned || drawerFor === drawerIdentity) &&
     !canvasEditMode
   useEffect(() => {
-    onInuksuksDrawerOpenChange?.(inuksuksDrawerOpen)
-    return () => onInuksuksDrawerOpenChange?.(false)
-  }, [inuksuksDrawerOpen, onInuksuksDrawerOpenChange])
+    onMarkersDrawerOpenChange?.(markersDrawerOpen)
+    return () => onMarkersDrawerOpenChange?.(false)
+  }, [markersDrawerOpen, onMarkersDrawerOpenChange])
   const [panelHost, setPanelHost] = useState<HTMLElement | null>(null)
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
-  const beginInuksukEdit = (item: ApiInuksuk, deleting = false) => {
-    if (!viewerInstance || (editingInuksuk && editingInuksuk.id !== item.id)) return
-    navigateToInuksuk(viewerInstance, item)
-    setSelectedInuksukId(item.id)
-    setFocusInuksukId(item.id)
-    setInuksukDraft(null)
-    setInfoInuksukId(item.id)
-    setDeletingInuksuk(deleting)
-    setEditingInuksuk(item)
+  const beginMarkerEdit = (item: ApiMarker, deleting = false) => {
+    if (!viewerInstance || (editingMarker && editingMarker.id !== item.id)) return
+    navigateToMarker(viewerInstance, item)
+    setSelectedMarkerId(item.id)
+    setFocusMarkerId(item.id)
+    setMarkerDraft(null)
+    setInfoMarkerId(item.id)
+    setDeletingMarker(deleting)
+    setEditingMarker(item)
   }
   useEffect(() => {
     const width = panelOpen && !mobilePanel ? 256 : 0
@@ -290,12 +288,12 @@ export default function ImageViewer({
         ? theme.transitions.duration.enteringScreen
         : theme.transitions.duration.leavingScreen,
     })
-    container.style.setProperty('--hriv-inuksuk-panel-right', panelOpen ? '8px' : '56px')
+    container.style.setProperty('--hriv-marker-panel-right', panelOpen ? '8px' : '56px')
     container.dataset.viewerImageArea = 'true'
     return () => {
       container.style.width = previousWidth
       container.style.transition = previousTransition
-      container.style.removeProperty('--hriv-inuksuk-panel-right')
+      container.style.removeProperty('--hriv-marker-panel-right')
       delete container.dataset.viewerImageArea
     }
   }, [viewerInstance, panelEnabled, panelOpen, mobilePanel, theme])
@@ -880,18 +878,18 @@ export default function ImageViewer({
     viewer.addControl(selectionButton.element, {
       anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
     })
-    let inuksukMode = false
-    let pendingInuksukPlacement = false
-    let inuksukButton: OpenSeadragon.Button | null = null
-    const setInuksukMode = (active: boolean) => {
+    let markerMode = false
+    let pendingMarkerPlacement = false
+    let markerButton: OpenSeadragon.Button | null = null
+    const setMarkerMode = (active: boolean) => {
       if (active && canvasEditModeRef.current && canvasCancelRef.current) {
-        pendingInuksukPlacement = true
+        pendingMarkerPlacement = true
         pendingPresentationTool = null
         void canvasCancelRef.current()
         return
       }
-      pendingInuksukPlacement = false
-      inuksukMode = active
+      pendingMarkerPlacement = false
+      markerMode = active
       if (active) {
         setPresentationTool(null)
         selectionModeRef.current = false
@@ -899,37 +897,37 @@ export default function ImageViewer({
         setButtonIcons(selectionButton, 'selection')
       }
       viewer.canvas.style.cursor = active ? 'crosshair' : ''
-      if (inuksukButton) {
-        inuksukButton.element.setAttribute('aria-pressed', String(active))
-        if (active) setButtonIcons(inuksukButton, 'inuksuk_active')
-        else setButtonIcons(inuksukButton, 'inuksuk')
+      if (markerButton) {
+        markerButton.element.setAttribute('aria-pressed', String(active))
+        if (active) setButtonIcons(markerButton, 'marker_active')
+        else setButtonIcons(markerButton, 'marker')
       }
       syncMouseNav()
     }
-    if (inuksuksEnabled && imageId != null) {
-      inuksukButton = new OpenSeadragon.Button({
-        tooltip: 'Add Inuksuk',
-        srcRest: prefix + 'inuksuk_rest.svg',
-        srcGroup: prefix + 'inuksuk_grouphover.svg',
-        srcHover: prefix + 'inuksuk_hover.svg',
-        srcDown: prefix + 'inuksuk_pressed.svg',
-        onClick: () => setInuksukMode(!inuksukMode),
+    if (markersEnabled && imageId != null) {
+      markerButton = new OpenSeadragon.Button({
+        tooltip: 'Add Marker',
+        srcRest: prefix + 'marker_rest.svg',
+        srcGroup: prefix + 'marker_grouphover.svg',
+        srcHover: prefix + 'marker_hover.svg',
+        srcDown: prefix + 'marker_pressed.svg',
+        onClick: () => setMarkerMode(!markerMode),
       })
-      inuksukButton.element.style.lineHeight = '0'
-      inuksukButton.element.setAttribute('role', 'button')
-      inuksukButton.element.setAttribute('aria-label', 'Add Inuksuk')
-      inuksukButton.element.setAttribute('aria-pressed', 'false')
-      inuksukButton.element.tabIndex = 0
-      inuksukButton.element.addEventListener('keydown', (event) => {
+      markerButton.element.style.lineHeight = '0'
+      markerButton.element.setAttribute('role', 'button')
+      markerButton.element.setAttribute('aria-label', 'Add Marker')
+      markerButton.element.setAttribute('aria-pressed', 'false')
+      markerButton.element.tabIndex = 0
+      markerButton.element.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()
-          setInuksukMode(!inuksukMode)
+          setMarkerMode(!markerMode)
         }
       })
-      viewer.addControl(inuksukButton.element, { anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT })
+      viewer.addControl(markerButton.element, { anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT })
     }
-    const handleInuksukClick = (event: OpenSeadragon.CanvasClickEvent) => {
-      if (!inuksukMode || !event.quick || !event.position) return
+    const handleMarkerClick = (event: OpenSeadragon.CanvasClickEvent) => {
+      if (!markerMode || !event.quick || !event.position) return
       const target = event.originalEvent?.target
       if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) return
       event.preventDefaultAction = true
@@ -940,25 +938,25 @@ export default function ImageViewer({
         zoom: viewer.viewport.getZoom(),
         rotation: viewer.viewport.getRotation(),
       }
-      if (placeInuksuk(view)) {
-        const pixel = adjustInuksukPixelForFlip(viewer, event.position)
+      if (placeMarker(view)) {
+        const pixel = adjustMarkerPixelForFlip(viewer, event.position)
         const width = viewer.container.clientWidth
         if (width > 0 && pixel.x > width - Math.min(320, width / 2 - 16) - 24 && pixel.y < 400) {
           viewer.viewport.panTo(new OpenSeadragon.Point(view.x, view.y))
         }
       }
     }
-    viewer.addHandler('canvas-click', handleInuksukClick)
-    const cancelInuksukPlacement = (event: KeyboardEvent) => {
+    viewer.addHandler('canvas-click', handleMarkerClick)
+    const cancelMarkerPlacement = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      if (cancelInuksukDraft()) {
+      if (cancelMarkerDraft()) {
         event.stopPropagation()
         event.preventDefault()
         return
       }
-      if (inuksukMode || pendingInuksukPlacement) setInuksukMode(false)
+      if (markerMode || pendingMarkerPlacement) setMarkerMode(false)
     }
-    document.addEventListener('keydown', cancelInuksukPlacement, true)
+    document.addEventListener('keydown', cancelMarkerPlacement, true)
 
     // --- Presentation pointer tools (epic #1876): laser pointer + ephemeral
     // ink, armed only in OSD full-page mode. Ink is never persisted.
@@ -1127,7 +1125,7 @@ export default function ImageViewer({
       if (leaving === 'ink') finishInkStroke()
       viewer.canvas.style.cursor = ''
       if (tool != null) {
-        setInuksukMode(false)
+        setMarkerMode(false)
         if (selectionModeRef.current) {
           selectionModeRef.current = false
           setSelectionDrawing(false)
@@ -1150,7 +1148,7 @@ export default function ImageViewer({
     }
 
     const toggleSelectionMode = () => {
-      setInuksukMode(false)
+      setMarkerMode(false)
       selectionModeRef.current = !selectionModeRef.current
       emitToolbarAction(selectionModeRef.current ? 'selection_mode_on' : 'selection_mode_off')
       if (selectionModeRef.current) setPresentationTool(null)
@@ -1256,9 +1254,9 @@ export default function ImageViewer({
     // dirty-draft discard prompt — but only while still in full-page, since
     // the buttons are hidden otherwise.
     notifyCanvasEditExitedRef.current = () => {
-      if (pendingInuksukPlacement) {
-        pendingInuksukPlacement = false
-        setInuksukMode(true)
+      if (pendingMarkerPlacement) {
+        pendingMarkerPlacement = false
+        setMarkerMode(true)
         return
       }
       const pending = pendingPresentationTool
@@ -1300,12 +1298,12 @@ export default function ImageViewer({
       // — and preventDefault the pointerdown, which suppresses focus and
       // breaks the toolbar's arrow-key nudge. preventGesture skips both.
       preProcessEventHandler: (event: OpenSeadragon.PreProcessMouseTrackerEvent) => {
-        if (inuksukMode) {
+        if (markerMode) {
           event.preventGesture = true
           event.preventDefault = false
           return
         }
-        if (event.eventType === 'click' && !inuksukMode) event.preventDefault = false
+        if (event.eventType === 'click' && !markerMode) event.preventDefault = false
         const target = event.originalEvent?.target
         if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) {
           event.preventGesture = true
@@ -1552,7 +1550,7 @@ export default function ImageViewer({
             return
           }
           canvasEditModeRef.current = entering
-          if (entering) setInuksukMode(false)
+          if (entering) setMarkerMode(false)
           setCanvasEditMode(entering)
           if (entering) setPresentationTool(null)
           syncMouseNav()
@@ -1589,7 +1587,7 @@ export default function ImageViewer({
     topRightControl.style.display = 'inline-block'
     topRightControl.style.lineHeight = '0'
     const topLeftControl =
-      inuksuksEnabled && !viewerPanel && imageId != null ? document.createElement('div') : null
+      markersEnabled && !viewerPanel && imageId != null ? document.createElement('div') : null
     if (topLeftControl) {
       topLeftControl.style.display = 'inline-block'
       topLeftControl.style.lineHeight = '0'
@@ -1892,7 +1890,7 @@ export default function ImageViewer({
       }
       selectionTracker.destroy()
       document.removeEventListener('keydown', handleToolbarKey)
-      document.removeEventListener('keydown', cancelInuksukPlacement, true)
+      document.removeEventListener('keydown', cancelMarkerPlacement, true)
       mountedViewerElements.delete(viewer.element)
       topRightControl.removeEventListener('focusin', keepControlsEnabled)
       topRightControl.removeEventListener('focusout', releaseControls)
@@ -1932,7 +1930,7 @@ export default function ImageViewer({
       viewerRef.current = null
     }
   }, [
-    inuksuksEnabled,
+    markersEnabled,
     viewerPanel,
     imageId,
     initialViewport,
@@ -2020,18 +2018,18 @@ export default function ImageViewer({
         onClose={() => setShareCopied(false)}
         message="Link copied to clipboard"
       />
-      {viewerInstance && imageId != null && inuksuksEnabled && (
+      {viewerInstance && imageId != null && markersEnabled && (
         <>
           {leftControlWrapper &&
             createPortal(
-              <ImageInuksuksTrigger
-                open={inuksuksDrawerOpen}
-                count={inuksuks.items.length}
+              <ImageMarkersTrigger
+                open={markersDrawerOpen}
+                count={markers.items.length}
                 disabled={canvasEditMode}
                 drawerId={drawerId}
-                triggerRef={inuksuksTriggerRef}
+                triggerRef={markersTriggerRef}
                 pinned={drawerState.pinned}
-                onOpenChange={setInuksuksDrawerOpen}
+                onOpenChange={setMarkersDrawerOpen}
               />,
               leftControlWrapper,
             )}
@@ -2043,7 +2041,7 @@ export default function ImageViewer({
                   onTabChange={panelState.setTab}
                   onClose={() => {
                     panelState.setOpen(false)
-                    requestAnimationFrame(() => inuksuksTriggerRef.current?.focus())
+                    requestAnimationFrame(() => markersTriggerRef.current?.focus())
                   }}
                   panelId={drawerId}
                   details={sidePanelDetails}
@@ -2069,27 +2067,27 @@ export default function ImageViewer({
                       copyViewLink(url.href, () => setShareCopied(true), imageId, categoryId)
                     })
                   }
-                  inuksuks={
-                    <ImageInuksuksList
+                  markers={
+                    <ImageMarkersList
                       key={drawerIdentity}
                       drawerId={drawerId + '-list'}
-                      items={inuksuks.items}
-                      draftTitle={inuksukDraft?.imageId === imageId ? draftTitle : undefined}
+                      items={markers.items}
+                      draftTitle={markerDraft?.imageId === imageId ? draftTitle : undefined}
                       prefs={visibilityPrefs}
-                      selectedId={selectedInuksukId}
-                      focusId={focusInuksukId}
-                      error={inuksuks.error}
+                      selectedId={selectedMarkerId}
+                      focusId={focusMarkerId}
+                      error={markers.error}
                       onSelect={(item) => {
-                        if (editingInuksuk) return
-                        navigateToInuksuk(viewerInstance, item)
-                        setSelectedInuksukId(item.id)
-                        setFocusInuksukId(null)
+                        if (editingMarker) return
+                        navigateToMarker(viewerInstance, item)
+                        setSelectedMarkerId(item.id)
+                        setFocusMarkerId(null)
                       }}
                       onEdit={(item) => {
-                        beginInuksukEdit(item)
+                        beginMarkerEdit(item)
                       }}
                       onDelete={(item) => {
-                        beginInuksukEdit(item, true)
+                        beginMarkerEdit(item, true)
                       }}
                     />
                   }
@@ -2097,121 +2095,121 @@ export default function ImageViewer({
                 panelHost,
               )
             : createPortal(
-                <ImageInuksuksDrawer
+                <ImageMarkersDrawer
                   key={drawerIdentity}
-                  items={inuksuks.items}
-                  draftTitle={inuksukDraft?.imageId === imageId ? draftTitle : undefined}
-                  open={inuksuksDrawerOpen}
+                  items={markers.items}
+                  draftTitle={markerDraft?.imageId === imageId ? draftTitle : undefined}
+                  open={markersDrawerOpen}
                   pinned={drawerState.pinned}
                   onPinnedChange={(pinned) => {
                     drawerState.setPinned(pinned)
                     setDrawerFor(drawerIdentity)
                   }}
-                  onOpenChange={setInuksuksDrawerOpen}
-                  triggerRef={inuksuksTriggerRef}
+                  onOpenChange={setMarkersDrawerOpen}
+                  triggerRef={markersTriggerRef}
                   drawerId={drawerId}
                   prefs={visibilityPrefs}
-                  selectedId={selectedInuksukId}
-                  focusId={focusInuksukId}
-                  error={inuksuks.error}
+                  selectedId={selectedMarkerId}
+                  focusId={focusMarkerId}
+                  error={markers.error}
                   onSelect={(item) => {
-                    if (editingInuksuk) return
-                    navigateToInuksuk(viewerInstance, item)
-                    setSelectedInuksukId(item.id)
-                    setFocusInuksukId(null)
+                    if (editingMarker) return
+                    navigateToMarker(viewerInstance, item)
+                    setSelectedMarkerId(item.id)
+                    setFocusMarkerId(null)
                   }}
                   onEdit={(item) => {
-                    beginInuksukEdit(item)
+                    beginMarkerEdit(item)
                   }}
                   onDelete={(item) => {
-                    beginInuksukEdit(item, true)
+                    beginMarkerEdit(item, true)
                   }}
                 />,
                 viewerInstance.container,
               )}
-          <InuksukMarkersLayer
+          <MarkersLayer
             viewer={viewerInstance}
             items={[
-              ...inuksuks.items.map((item) => ({
+              ...markers.items.map((item) => ({
                 ...item,
                 ...visibilityPrefs.visibilityFor(item),
               })),
-              ...(inuksukDraft?.imageId === imageId
-                ? [{ ...inuksukDraft.view, id: -1, title: draftTitle || 'New Inuksuk' }]
+              ...(markerDraft?.imageId === imageId
+                ? [{ ...markerDraft.view, id: -1, title: draftTitle || 'New Marker' }]
                 : []),
             ]}
-            selectedId={selectedInuksukId}
+            selectedId={selectedMarkerId}
             onSelect={(marker) => {
-              if (editingInuksuk) return
-              const item = inuksuks.items.find((value) => value.id === marker.id)
+              if (editingMarker) return
+              const item = markers.items.find((value) => value.id === marker.id)
               if (!item) return
-              setSelectedInuksukId(item.id)
-              setFocusInuksukId(null)
-              setInuksukDraft(null)
-              setEditingInuksuk(null)
-              setInfoInuksukId(item.id)
+              setSelectedMarkerId(item.id)
+              setFocusMarkerId(null)
+              setMarkerDraft(null)
+              setEditingMarker(null)
+              setInfoMarkerId(item.id)
             }}
           />
-          {infoInuksukId != null &&
-            inuksuks.items
-              .filter((item) => item.id === infoInuksukId)
+          {infoMarkerId != null &&
+            markers.items
+              .filter((item) => item.id === infoMarkerId)
               .map((item) => (
-                <InuksukInfoCard
+                <MarkerInfoCard
                   key={item.id}
                   item={item}
                   container={viewerInstance.container}
-                  editing={editingInuksuk?.id === item.id}
-                  initialDelete={deletingInuksuk}
+                  editing={editingMarker?.id === item.id}
+                  initialDelete={deletingMarker}
                   userId={auth?.currentUser?.id}
-                  onChanged={inuksuks.reload}
-                  onCancelEdit={() => setEditingInuksuk(null)}
+                  onChanged={markers.reload}
+                  onCancelEdit={() => setEditingMarker(null)}
                   onClose={() => {
-                    setInfoInuksukId(null)
-                    setSelectedInuksukId(null)
-                    setFocusInuksukId(null)
-                    setEditingInuksuk(null)
+                    setInfoMarkerId(null)
+                    setSelectedMarkerId(null)
+                    setFocusMarkerId(null)
+                    setEditingMarker(null)
                   }}
                   onEdit={(current) => {
-                    beginInuksukEdit(current)
+                    beginMarkerEdit(current)
                   }}
                 />
               ))}
-          {inuksukDraft?.imageId === imageId && (
-            <InuksukFormDialog
+          {markerDraft?.imageId === imageId && (
+            <MarkerFormDialog
               key="new"
               imageId={imageId}
-              view={inuksukDraft.view}
+              view={markerDraft.view}
               userId={auth?.currentUser?.id}
               placement
               onTitleChange={setDraftTitle}
               container={viewerInstance.container}
               onChanged={async (created) => {
-                await inuksuks.reload()
+                await markers.reload()
                 if (!created) return
-                setSelectedInuksukId(created.id)
-                setInfoInuksukId(created.id)
-                setFocusInuksukId(created.id)
+                setSelectedMarkerId(created.id)
+                setInfoMarkerId(created.id)
+                setFocusMarkerId(created.id)
                 if (panelEnabled) {
-                  panelState.setTab('inuksuks')
+                  panelState.setTab('markers')
                   panelState.setOpen(true)
                 } else {
-                  setInuksuksDrawerOpen(true)
+                  setMarkersDrawerOpen(true)
                 }
               }}
               onClose={() => {
-                setEditingInuksuk(null)
-                setInuksukDraft(null)
+                setEditingMarker(null)
+                setMarkerDraft(null)
               }}
             />
           )}
-          {inuksuks.error &&
+          {markers.error &&
             createPortal(
               <Alert
                 severity="error"
                 data-hriv-canvas-ui
                 sx={{ position: 'absolute', bottom: 64, left: 8, zIndex: 25 }}
               >
-                {inuksuks.error}
+                {markers.error}
               </Alert>,
               viewerInstance.container,
             )}
@@ -2246,7 +2244,7 @@ export default function ImageViewer({
               <ViewerPanelToggle
                 open={false}
                 panelId={drawerId}
-                triggerRef={inuksuksTriggerRef}
+                triggerRef={markersTriggerRef}
                 disabled={canvasEditMode}
                 onToggle={() => panelState.setOpen(true)}
               />

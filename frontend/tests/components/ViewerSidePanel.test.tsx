@@ -6,7 +6,7 @@ import type { ViewerPanelTab } from '../../src/useViewerPanelState'
 
 function Example({ error = false, onShareView }: { error?: boolean; onShareView?: () => void }) {
   const [open, setOpen] = useState(false)
-  const [tab, setTab] = useState<ViewerPanelTab>('inuksuks')
+  const [tab, setTab] = useState<ViewerPanelTab>('markers')
   return (
     <div>
       {!open && <ViewerPanelToggle open={false} onToggle={() => setOpen(true)} panelId="panel" />}
@@ -17,12 +17,8 @@ function Example({ error = false, onShareView }: { error?: boolean; onShareView?
         onTabChange={setTab}
         onClose={() => setOpen(false)}
         onShareView={onShareView}
-        inuksuks={
-          error ? (
-            <div role="alert">Unable to load Inuksuks.</div>
-          ) : (
-            <p>No Inuksuks on this image.</p>
-          )
+        markers={
+          error ? <div role="alert">Unable to load Markers.</div> : <p>No Markers on this image.</p>
         }
       />
     </div>
@@ -36,11 +32,11 @@ it('toggles with accessible controls, retains a selected tab, and never closes o
   expect(toggle).toHaveAttribute('aria-controls', 'panel')
   expect(screen.queryByRole('complementary')).toBeNull()
   fireEvent.click(toggle)
-  expect(screen.queryByRole('heading', { name: /^Inuksuks/ })).not.toBeInTheDocument()
-  expect(screen.getByText('No Inuksuks on this image.')).toBeVisible()
-  expect(screen.getByRole('region', { name: 'About Inuksuks' })).toHaveAttribute('tabindex', '0')
-  expect(screen.getByRole('region', { name: 'About Inuksuks' })).toHaveTextContent(
-    'Inuksuks save a location and zoom level',
+  expect(screen.queryByRole('heading', { name: /^Markers/ })).not.toBeInTheDocument()
+  expect(screen.getByText('No Markers on this image.')).toBeVisible()
+  expect(screen.getByRole('region', { name: 'About Markers' })).toHaveAttribute('tabindex', '0')
+  expect(screen.getByRole('region', { name: 'About Markers' })).toHaveTextContent(
+    'Markers save a location and zoom level',
   )
   fireEvent.click(screen.getByRole('button', { name: 'Show image details' }))
   fireEvent.click(screen.getByRole('button', { name: 'Show image details' }))
@@ -68,10 +64,10 @@ it('toggles with accessible controls, retains a selected tab, and never closes o
 it('surfaces list loading errors without removing the panel controls', () => {
   render(<Example error />)
   fireEvent.click(screen.getByRole('button', { name: 'Open viewer panel' }))
-  expect(screen.getByRole('alert')).toHaveTextContent('Unable to load Inuksuks.')
+  expect(screen.getByRole('alert')).toHaveTextContent('Unable to load Markers.')
   expect(screen.getByRole('button', { name: 'Close viewer panel' })).toBeEnabled()
 })
-it('places Shared View between Inuksuks and Details and invokes the existing copy action', () => {
+it('places Shared View between Markers and Details and invokes the existing copy action', () => {
   const copy = vi.fn()
   render(<Example onShareView={copy} />)
   fireEvent.click(screen.getByRole('button', { name: 'Open viewer panel' }))
@@ -80,7 +76,7 @@ it('places Shared View between Inuksuks and Details and invokes the existing cop
     .getByRole('group', { name: 'Viewer panel content' })
     .querySelectorAll('button')
   expect([...tabs].map((tab) => tab.getAttribute('aria-label'))).toEqual([
-    'Show Inuksuks',
+    'Show Markers',
     'Show Shared View',
     'Show image details',
   ])

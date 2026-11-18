@@ -35,11 +35,11 @@ API for the [password-management validation flow](docs/password-management.md).
 | ------------------------------------------------------------- | ----- | ---------- | ----- | ------- |
 | Browse categories & view images                               | Yes   | Yes        | Yes   | Yes†    |
 | Count objects in a selection                                  | Yes   | Yes        | Yes   | Yes†    |
-| Search visible Boards/Inuksuks (Inuksuks flag)                | Yes   | Yes        | Yes   | Yes†    |
-| Seed Collections from saved views (Inuksuks flag)             | Yes   | Yes        | Yes   | Yes¶    |
-| View Boards and Inuksuks (feature-gated API)                  | Yes   | Yes        | Yes   | Yes†    |
+| Search visible Boards/Markers (Markers flag)                  | Yes   | Yes        | Yes   | Yes†    |
+| Seed Collections from saved views (Markers flag)              | Yes   | Yes        | Yes   | Yes¶    |
+| View Boards and Markers (feature-gated API)                   | Yes   | Yes        | Yes   | Yes†    |
 | All Boards discovery, including others' private Boards (flag) | Yes   | Yes        | Yes   | No      |
-| Create/edit owned Boards and Inuksuks (feature-gated API)     | Yes   | Yes        | Yes   | Yes     |
+| Create/edit owned Boards and Markers (feature-gated API)      | Yes   | Yes        | Yes   | Yes     |
 | View image uploader name                                      | Yes   | Yes        | No    | No      |
 | View collections (API; student deployment gate¶)              | Yes   | Yes        | Yes   | Yes¶    |
 | Create collections‖                                           | Yes   | Yes        | Yes   | Yes     |
@@ -186,7 +186,7 @@ reconciliation model for both environments.
 | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | [docs/groups.md](docs/groups.md)                                                           | Groups model, authorization, API surface, and frontend behaviour                 |
 | [docs/collections.md](docs/collections.md)                                                 | Collections model, ownership, visibility/authorization rules, and API surface    |
-| [docs/inuksuks-and-boards.md](docs/inuksuks-and-boards.md)                                 | Inuksuk and Board schema, read API, visibility, thumbnails and dark-launch flag  |
+| [docs/markers-and-boards.md](docs/markers-and-boards.md)                                   | Marker and Board schema, read API, visibility, thumbnails and dark-launch flag   |
 | [docs/announcements.md](docs/announcements.md)                                             | Announcements model, audience union rule, kinds, seen-state, reactions, API      |
 | [docs/object-counting.md](docs/object-counting.md)                                         | Object counting: selection stitching, ephemeral Redis jobs, count-job API        |
 | [docs/presentation-tools.md](docs/presentation-tools.md)                                   | Full-screen laser pointer and ephemeral ink tools for presenting images          |

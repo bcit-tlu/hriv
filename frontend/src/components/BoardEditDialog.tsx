@@ -257,7 +257,7 @@ export default function BoardEditDialog({
                     color="error"
                     sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
                   >
-                    Delete “{baseline.name}”? Its links will be removed. Inuksuks only on this Board
+                    Delete “{baseline.name}”? Its links will be removed. Markers only on this Board
                     will be permanently deleted. This action cannot be undone.
                   </Typography>
                 )}
