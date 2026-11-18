@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { AuthContext } from '../../src/authContextValue'
 import MarkerFormDialog from '../../src/components/MarkerFormDialog'
 import { BOARD_FIXTURE, MARKER_FIXTURE } from '../../src/components/markerFixtures'
+import { BOARD_AUTH } from '../../src/components/boardsFixtures'
 import { ApiError } from '../../src/api'
 
 function services() {
@@ -24,6 +26,34 @@ function services() {
 
       markers: [],
     }),
+    fetchPrograms: vi.fn().mockResolvedValue([
+      {
+        id: 1,
+        name: 'Design',
+        oidc_group: null,
+        created_at: MARKER_FIXTURE.created_at,
+        updated_at: MARKER_FIXTURE.updated_at,
+      },
+      {
+        id: 2,
+        name: 'Engineering',
+        oidc_group: null,
+        created_at: MARKER_FIXTURE.created_at,
+        updated_at: MARKER_FIXTURE.updated_at,
+      },
+    ]),
+    fetchGroups: vi.fn().mockResolvedValue([
+      {
+        id: 1,
+        name: 'Studio A',
+        description: null,
+        created_by_user_id: 9,
+        member_ids: [],
+        instructor_ids: [9],
+        created_at: MARKER_FIXTURE.created_at,
+        updated_at: MARKER_FIXTURE.updated_at,
+      },
+    ]),
     createMarker: vi.fn().mockResolvedValue(MARKER_FIXTURE),
     updateMarker: vi.fn().mockResolvedValue(MARKER_FIXTURE),
     deleteMarker: vi.fn().mockResolvedValue(undefined),
@@ -36,22 +66,25 @@ async function setup(props: Partial<React.ComponentProps<typeof MarkerFormDialog
   const onChanged = vi.fn()
   const onClose = vi.fn()
   render(
-    <MarkerFormDialog
-      imageId={42}
-      view={MARKER_FIXTURE}
-      userId={9}
-      onChanged={onChanged}
-      onClose={onClose}
-      services={api}
-      {...props}
-    />,
+    <AuthContext.Provider value={BOARD_AUTH}>
+      <MarkerFormDialog
+        imageId={42}
+        view={MARKER_FIXTURE}
+        userId={9}
+        onChanged={onChanged}
+        onClose={onClose}
+        services={api}
+        {...props}
+      />
+    </AuthContext.Provider>,
   )
   if (!props.item || props.item.permissions.can_edit)
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
   return { api, onChanged, onClose, user: userEvent.setup() }
 }
 async function openCreate(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: '+ Create new board' }))
+  await user.click(screen.getByRole('combobox', { name: 'Boards' }))
+  await user.click(screen.getByRole('button', { name: 'Add Board' }))
 }
 describe('MarkerFormDialog', () => {
   it.each([null, MARKER_FIXTURE.description])(
@@ -110,12 +143,14 @@ describe('MarkerFormDialog', () => {
     await user.click(field)
     await user.type(field, 'My new Board')
     expect(screen.queryByRole('option')).toBeNull()
-    await user.keyboard('{Escape}')
+    expect(screen.getByRole('button', { name: 'Add Board' })).toBeVisible()
     await openCreate(user)
-    await user.type(screen.getByLabelText('New private Board name'), 'My new Board')
+    await user.type(screen.getByLabelText('Name *'), 'My new Board')
     await user.click(screen.getByRole('button', { name: 'Create Board' }))
     await waitFor(() =>
-      expect(api.createBoard).toHaveBeenCalledWith({ name: 'My new Board', visibility: 'private' }),
+      expect(api.createBoard).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'My new Board', visibility: 'private' }),
+      ),
     )
     expect(screen.getByRole('button', { name: 'Favourite' })).toHaveAttribute(
       'aria-pressed',
@@ -160,7 +195,7 @@ describe('MarkerFormDialog', () => {
       const { user, onClose, onChanged } = await setup({ services: api, item: MARKER_FIXTURE })
       expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
       await openCreate(user)
-      await user.type(screen.getByLabelText('New private Board name'), 'My new Board')
+      await user.type(screen.getByLabelText('Name *'), 'My new Board')
       await user.click(screen.getByRole('button', { name: 'Create Board' }))
       await waitFor(() => expect(screen.getByText(/My new Board/)).toBeVisible())
       expect(screen.getByText(/Existing Board assignments could not be loaded/)).toBeInTheDocument()
@@ -180,7 +215,7 @@ describe('MarkerFormDialog', () => {
     await user.type(screen.getByLabelText('Title *'), 'A view')
     expect(screen.getByRole('button', { name: 'Save to Board' })).toBeDisabled()
     await openCreate(user)
-    expect(screen.getByLabelText('New private Board name')).toHaveFocus()
+    expect(screen.getByLabelText('Name *')).toHaveFocus()
   })
   it('selects only editable Boards, captures all form values and persists the last Board', async () => {
     const { api, user, onChanged, onClose } = await setup()
@@ -233,10 +268,12 @@ describe('MarkerFormDialog', () => {
     const { api, user } = await setup()
     await user.type(screen.getByLabelText('Title *'), 'New view')
     await openCreate(user)
-    await user.type(screen.getByLabelText('New private Board name'), 'My new Board')
+    await user.type(screen.getByLabelText('Name *'), 'My new Board')
     await user.click(screen.getByRole('button', { name: 'Create Board' }))
     await waitFor(() => expect(screen.getByText('My new Board')).toBeVisible())
-    expect(api.createBoard).toHaveBeenCalledWith({ name: 'My new Board', visibility: 'private' })
+    expect(api.createBoard).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'My new Board', visibility: 'private' }),
+    )
     await user.click(screen.getByRole('button', { name: 'Save to Board' }))
     await waitFor(() =>
       expect(api.createMarker).toHaveBeenCalledWith(
@@ -247,7 +284,7 @@ describe('MarkerFormDialog', () => {
   it('supports multiple Boards and preserves existing Board assignments on edit', async () => {
     const { api, user } = await setup({ item: MARKER_FIXTURE })
     await openCreate(user)
-    await user.type(screen.getByLabelText('New private Board name'), 'My new Board')
+    await user.type(screen.getByLabelText('Name *'), 'My new Board')
     await user.click(screen.getByRole('button', { name: 'Create Board' }))
     await waitFor(() =>
       expect(screen.getByText('Architecture inspiration, My new Board')).toBeVisible(),
@@ -315,18 +352,73 @@ describe('MarkerFormDialog', () => {
     expect(screen.queryByRole('button', { name: /Save|Delete/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled()
   })
+  it('pins Add Board at the bottom of the Boards menu outside the scrollable listbox', async () => {
+    const { user } = await setup()
+    const field = screen.getByRole('combobox', { name: 'Boards' })
+    await user.click(field)
+    const listbox = screen.getByRole('listbox')
+    const add = screen.getByRole('button', { name: 'Add Board' })
+    expect(add).toBeVisible()
+    expect(within(listbox).queryByText('Add Board')).toBeNull()
+    await user.type(field, 'zzz')
+    expect(screen.queryByRole('option')).toBeNull()
+    // Emptying the options inserts a "no options" node that remounts the
+    // pinned footer, so re-query rather than reusing the earlier element.
+    expect(screen.getByRole('button', { name: 'Add Board' })).toBeVisible()
+  })
+  it('opens the Add Board pane over the form, returns via back or Escape, and keeps the draft', async () => {
+    const { user, onClose } = await setup()
+    await user.type(screen.getByLabelText('Title *'), 'Draft title')
+    await openCreate(user)
+    expect(screen.getByRole('heading', { name: 'New Board' })).toBeVisible()
+    expect(screen.queryByRole('textbox', { name: /^Title/ })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Back to Marker' }))
+    expect(screen.getByRole('textbox', { name: /^Title/ })).toHaveValue('Draft title')
+    await openCreate(user)
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('textbox', { name: /^Title/ })).toHaveValue('Draft title')
+    expect(onClose).not.toHaveBeenCalled()
+  })
+  it('loads Program and Group chips lazily for restricted Boards and requires one of each scope', async () => {
+    const { api, user } = await setup()
+    expect(api.fetchPrograms).not.toHaveBeenCalled()
+    expect(api.fetchGroups).not.toHaveBeenCalled()
+    await openCreate(user)
+    await user.click(screen.getByRole('radio', { name: /^Restricted/ }))
+    await waitFor(() => expect(api.fetchPrograms).toHaveBeenCalledOnce())
+    expect(api.fetchGroups).toHaveBeenCalledOnce()
+    await user.type(screen.getByLabelText('Name *'), 'Studio Board')
+    const create = screen.getByRole('button', { name: 'Create Board' })
+    expect(create).toBeDisabled()
+    const program = await screen.findByRole('button', { name: 'Design' })
+    expect(screen.queryByRole('button', { name: 'Engineering' })).toBeNull()
+    await user.click(await screen.findByRole('button', { name: 'Studio A' }))
+    expect(create).toBeEnabled()
+    await user.click(program)
+    await user.click(create)
+    await waitFor(() =>
+      expect(api.createBoard).toHaveBeenCalledWith(
+        expect.objectContaining({
+          visibility: 'restricted',
+          program_ids: [1],
+          group_ids: [1],
+        }),
+      ),
+    )
+  })
   it('surfaces Board load, inline-create and save errors without closing', async () => {
     const api = services()
     api.fetchBoards.mockRejectedValue(new ApiError(403, 'Cannot load Boards'))
     const { user, onClose } = await setup({ services: api })
     expect(screen.getByRole('alert')).toHaveTextContent('Cannot load Boards')
     await openCreate(user)
-    await user.type(screen.getByLabelText('New private Board name'), 'Test Board')
+    await user.type(screen.getByLabelText('Name *'), 'Test Board')
     api.createBoard.mockRejectedValueOnce(new ApiError(422, 'Board limit reached'))
     await user.click(screen.getByRole('button', { name: 'Create Board' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Board limit reached')
     api.createBoard.mockResolvedValueOnce(BOARD_FIXTURE)
     await user.click(screen.getByRole('button', { name: 'Create Board' }))
+    await waitFor(() => expect(screen.getByLabelText('Title *')).toBeVisible())
     await user.type(screen.getByLabelText('Title *'), 'A view')
     api.createMarker.mockRejectedValueOnce(new ApiError(422, 'Marker limit reached'))
     await user.click(screen.getByRole('button', { name: 'Save to Board' }))

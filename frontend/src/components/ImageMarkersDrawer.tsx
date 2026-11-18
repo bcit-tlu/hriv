@@ -5,6 +5,7 @@ import type { PopoverActions } from '@mui/material/Popover'
 import {
   Alert,
   Box,
+  Button,
   Collapse,
   IconButton,
   List,
@@ -23,9 +24,9 @@ import {
   Room,
   Edit,
   Delete,
-  MoreVert,
   ExpandLess,
   ExpandMore,
+  MoreVert,
   Visibility,
   VisibilityOff,
   Label,
@@ -33,7 +34,8 @@ import {
   PushPin,
   PushPinOutlined,
 } from '@mui/icons-material'
-import type { ApiMarker, MarkerSource } from '../types'
+import type { ApiBoardSummary, ApiMarker, User } from '../types'
+import { ownsBoard } from '../boardUtils'
 import type { MarkerVisibilityPrefs } from '../useMarkerVisibilityPrefs'
 
 interface TriggerProps {
@@ -44,6 +46,7 @@ interface TriggerProps {
   drawerId: string
   onOpenChange: (open: boolean) => void
   triggerRef: RefObject<HTMLButtonElement | null>
+  tooltipContainer?: HTMLElement | null
 }
 export function ImageMarkersTrigger({
   open,
@@ -53,9 +56,15 @@ export function ImageMarkersTrigger({
   drawerId,
   onOpenChange,
   triggerRef,
+  tooltipContainer,
 }: TriggerProps) {
   return (
-    <Tooltip title="Markers" slotProps={{ popper: { disablePortal: true } }}>
+    <Tooltip
+      title="Markers"
+      slotProps={{
+        popper: tooltipContainer ? { container: tooltipContainer } : { disablePortal: true },
+      }}
+    >
       <span>
         <IconButton
           ref={triggerRef}
@@ -85,6 +94,10 @@ export function ImageMarkersTrigger({
 }
 export interface ImageMarkersListProps {
   items: ApiMarker[]
+  /** Boards used to group the rows; `undefined` while the list is loading. */
+  boards?: ApiBoardSummary[]
+  /** Viewer identity used to split owned/instructor Boards from shared Boards. */
+  currentUser?: User | null
   drawerId: string
   prefs: MarkerVisibilityPrefs
   selectedId?: number | null
@@ -93,6 +106,8 @@ export interface ImageMarkersListProps {
   onSelect: (item: ApiMarker) => void
   onEdit: (item: ApiMarker) => void
   onDelete?: (item: ApiMarker) => void
+  /** Opens the Board dialog for a group heading (same as the Boards page tile). */
+  onOpenBoard?: (boardId: number) => void
   draftTitle?: string
 }
 
@@ -105,14 +120,18 @@ interface Props extends ImageMarkersListProps {
   triggerRef: RefObject<HTMLButtonElement | null>
 }
 
-const groups: { source: MarkerSource; title: string }[] = [
-  { source: 'mine', title: 'My Markers' },
-  { source: 'instructor', title: 'Instructor Markers' },
-  { source: 'public', title: 'Public Markers' },
-]
+interface DrawerGroup {
+  key: string
+  title: string
+  boardId: number | null
+  rows: ApiMarker[]
+  draft?: boolean
+}
 export default function ImageMarkersDrawer({
   embedded = false,
   items,
+  boards,
+  currentUser = null,
   open,
   pinned,
   onPinnedChange,
@@ -126,22 +145,53 @@ export default function ImageMarkersDrawer({
   onSelect,
   onEdit,
   onDelete,
+  onOpenBoard,
   draftTitle,
 }: Props) {
   const [menu, setMenu] = useState<{
     anchor: HTMLElement
-    item?: ApiMarker
-    source?: MarkerSource
-    title: string
+    item: ApiMarker
   } | null>(null)
-  const [expanded, setExpanded] = useState({ mine: true, instructor: true, public: false })
-  const [focusRequest, setFocusRequest] = useState(focusId)
-  if (focusId !== focusRequest) {
-    setFocusRequest(focusId)
-    const source = items.find((item) => item.id === focusId)?.source
-    if (source) setExpanded((value) => ({ ...value, [source]: true }))
-  }
-  const hasDraft = draftTitle !== undefined
+  const knownIds = new Set((boards ?? []).map((board) => board.id))
+  const instructorOwned = (board: ApiBoardSummary) =>
+    board.owner_program_id != null ||
+    board.owners.some((owner) => owner.role === 'admin' || owner.role === 'instructor')
+  const prominentBoards = (boards ?? []).filter(
+    (board) => ownsBoard(board, currentUser) || instructorOwned(board),
+  )
+  const sharedBoards = (boards ?? []).filter(
+    (board) => !ownsBoard(board, currentUser) && !instructorOwned(board),
+  )
+  const boardGroup = (board: ApiBoardSummary): DrawerGroup => ({
+    key: `board:${board.id}`,
+    title: board.name,
+    boardId: board.id,
+    rows: items.filter((item) => item.board_ids.includes(board.id)),
+  })
+  const prominentGroups = prominentBoards.map(boardGroup).filter((group) => group.rows.length > 0)
+  const sharedGroups = sharedBoards.map(boardGroup).filter((group) => group.rows.length > 0)
+  const sharedRows = [
+    ...new Map(sharedGroups.flatMap((group) => group.rows).map((row) => [row.id, row])).values(),
+  ]
+  const groups: DrawerGroup[] = [
+    ...(draftTitle !== undefined
+      ? [{ key: 'unsaved', title: 'Unsaved', boardId: null, rows: [], draft: true }]
+      : []),
+    ...prominentGroups,
+  ]
+  const otherGroup: DrawerGroup | null =
+    boards !== undefined && items.some((item) => !item.board_ids.some((id) => knownIds.has(id)))
+      ? {
+          key: 'other',
+          title: 'Other',
+          boardId: null,
+          rows: items.filter((item) => !item.board_ids.some((id) => knownIds.has(id))),
+        }
+      : null
+  const [sharedOpen, setSharedOpen] = useState(false)
+  const focusIsShared =
+    focusId != null && sharedGroups.some((group) => group.rows.some((row) => row.id === focusId))
+  const boardsLoading = boards === undefined && items.length > 0
   const closeRef = useRef<HTMLButtonElement>(null)
   const drawerRef = useRef<HTMLElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -153,6 +203,7 @@ export default function ImageMarkersDrawer({
       return
     }
     if (focusedId.current === focusId || !open) return
+    if (focusIsShared) setSharedOpen(true)
     const row = drawerRef.current?.querySelector<HTMLButtonElement>(
       `[data-marker-row="${focusId}"]`,
     )
@@ -160,7 +211,168 @@ export default function ImageMarkersDrawer({
     row.focus()
     row.scrollIntoView?.({ block: 'nearest' })
     focusedId.current = focusId
-  }, [focusId, items, expanded, open])
+  }, [focusId, items, boards, open, sharedOpen, focusIsShared])
+  const visibilityToggles = (rows: ApiMarker[], title: string) => {
+    const markerAll = rows.every((item) => prefs.visibilityFor(item).markerVisible)
+    const markerSome = rows.some((item) => prefs.visibilityFor(item).markerVisible)
+    const labelAll = rows.every((item) => prefs.visibilityFor(item).labelVisible)
+    const labelSome = rows.some((item) => prefs.visibilityFor(item).labelVisible)
+    return (
+      <>
+        <Tooltip title={markerAll ? 'Hide markers' : 'Show markers'}>
+          <span>
+            <IconButton
+              size="small"
+              aria-label={`${title} markers`}
+              aria-pressed={!markerAll && markerSome ? 'mixed' : markerAll}
+              onClick={() => prefs.setItems(rows, 'markerVisible', !markerAll)}
+            >
+              {markerAll ? <Visibility fontSize="small" /> : <VisibilityOff fontSize="small" />}
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip
+          title={
+            !markerSome
+              ? 'Labels follow marker visibility'
+              : labelAll
+                ? 'Hide labels'
+                : 'Show labels'
+          }
+        >
+          <span>
+            <IconButton
+              size="small"
+              aria-label={`${title} labels`}
+              aria-pressed={markerSome ? (!labelAll && labelSome ? 'mixed' : labelAll) : false}
+              disabled={!markerSome}
+              onClick={() => prefs.setItems(rows, 'labelVisible', !labelAll)}
+            >
+              {markerSome && labelAll ? <Label fontSize="small" /> : <LabelOff fontSize="small" />}
+            </IconButton>
+          </span>
+        </Tooltip>
+      </>
+    )
+  }
+  const renderGroup = (group: DrawerGroup) => {
+    const rows = group.rows
+    return (
+      <Box
+        component="section"
+        key={group.key}
+        aria-label={group.title}
+        sx={{ borderBottom: 1, borderColor: 'divider' }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            px: 1,
+            py: 0.5,
+            bgcolor: 'action.hover',
+          }}
+        >
+          {group.boardId != null && onOpenBoard ? (
+            <Button
+              onClick={() => onOpenBoard(group.boardId as number)}
+              aria-label={`Open Board: ${group.title}`}
+              sx={{
+                p: 0.5,
+                minWidth: 0,
+                flex: 1,
+                textTransform: 'none',
+                justifyContent: 'flex-start',
+              }}
+            >
+              <Typography component="h3" variant="body2" noWrap title={group.title}>
+                {group.title}
+              </Typography>
+            </Button>
+          ) : (
+            <Typography
+              component="h3"
+              variant="body2"
+              noWrap
+              title={group.title}
+              sx={{ flex: 1, minWidth: 0, px: 0.5 }}
+            >
+              {group.title}
+            </Typography>
+          )}
+          {rows.length > 0 && visibilityToggles(rows, group.title)}
+        </Box>
+        <List dense disablePadding>
+          {group.draft && (
+            <ListItem>
+              <ListItemText
+                primary={draftTitle || 'New Marker'}
+                slotProps={{ primary: { noWrap: true, variant: 'caption' } }}
+              />
+            </ListItem>
+          )}
+          {rows.map((item) => {
+            const visible = prefs.visibilityFor(item)
+            return (
+              <ListItem
+                key={item.id}
+                disablePadding
+                sx={{
+                  '&:hover': { bgcolor: 'action.hover' },
+                  ...(item.id === selectedId && { bgcolor: 'action.selected' }),
+                }}
+              >
+                <ListItemButton
+                  data-marker-row={item.id}
+                  onClick={() => onSelect(item)}
+                  aria-label={`View Marker: ${item.title}${visible.markerVisible ? '' : ' (marker hidden)'}`}
+                  aria-pressed={item.id === selectedId}
+                  sx={{
+                    minWidth: 0,
+                    width: '100%',
+                    pl: 2,
+                    pr: 5,
+                    py: 0.5,
+                    '&:hover': { bgcolor: 'transparent' },
+                  }}
+                >
+                  <ListItemText
+                    primary={item.title}
+                    slotProps={{
+                      primary: {
+                        noWrap: true,
+                        variant: 'caption',
+                        title: item.title,
+                        color: visible.markerVisible ? undefined : 'text.disabled',
+                        sx: visible.markerVisible
+                          ? undefined
+                          : {
+                              color: (theme) =>
+                                theme.palette.mode === 'light'
+                                  ? theme.palette.text.secondary
+                                  : theme.palette.text.disabled,
+                            },
+                      },
+                    }}
+                  />
+                </ListItemButton>
+                <Box sx={{ position: 'absolute', right: 8, display: 'flex' }}>
+                  <IconButton
+                    size="small"
+                    aria-label={`${item.title} options`}
+                    aria-haspopup="menu"
+                    onClick={(event) => setMenu({ anchor: event.currentTarget, item })}
+                  >
+                    <MoreVert fontSize="small" />
+                  </IconButton>
+                </Box>
+              </ListItem>
+            )
+          })}
+        </List>
+      </Box>
+    )
+  }
   const close = () => {
     setMenu(null)
     onOpenChange(false)
@@ -268,143 +480,52 @@ export default function ImageMarkersDrawer({
             No Markers on this image yet. Use Add Marker to save a view.
           </Typography>
         )}
-        {groups.map(({ source, title }) => {
-          const rows = items.filter((item) => item.source === source)
-          const groupExpanded = expanded[source] || (source === 'mine' && hasDraft)
-          if (rows.length === 0 && !(source === 'mine' && draftTitle !== undefined)) return null
-          return (
+        {boardsLoading && (
+          <Typography variant="caption" component="p" sx={{ p: 1.5 }} color="text.secondary">
+            Loading Boards…
+          </Typography>
+        )}
+        {groups.map(renderGroup)}
+        {sharedGroups.length > 0 && (
+          <Box
+            component="section"
+            aria-label="Public & Shared"
+            sx={{ borderBottom: 1, borderColor: 'divider' }}
+          >
             <Box
-              component="section"
-              key={source}
-              aria-label={title}
-              sx={{ borderBottom: 1, borderColor: 'divider' }}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                px: 1,
+                py: 0.5,
+                bgcolor: 'action.hover',
+              }}
             >
-              <Box
+              <Button
+                onClick={() => setSharedOpen((value) => !value)}
+                aria-expanded={sharedOpen}
+                aria-controls={`${drawerId}-shared`}
                 sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  px: 1,
-                  py: 0.5,
-                  bgcolor: 'action.hover',
+                  p: 0.5,
+                  minWidth: 0,
+                  flex: 1,
+                  textTransform: 'none',
+                  justifyContent: 'flex-start',
                 }}
               >
-                <ListItemButton
-                  onClick={() => setExpanded((value) => ({ ...value, [source]: !value[source] }))}
-                  aria-expanded={groupExpanded}
-                  aria-controls={`${drawerId}-${source}`}
-                  aria-label={title}
-                  aria-describedby={`${drawerId}-${source}-count`}
-                  dense
-                  sx={{ px: 0.5, py: 0.5, flex: 1, minWidth: 120 }}
-                >
-                  {groupExpanded ? (
-                    <ExpandLess fontSize="small" />
-                  ) : (
-                    <ExpandMore fontSize="small" />
-                  )}
-                  <Typography component="h3" variant="body2">
-                    {title}{' '}
-                    <Box
-                      component="span"
-                      id={`${drawerId}-${source}-count`}
-                      sx={{ color: 'text.secondary' }}
-                    >
-                      ({rows.length})
-                    </Box>
-                  </Typography>
-                </ListItemButton>
-                <Tooltip title="Marker options">
-                  <span>
-                    <IconButton
-                      size="small"
-                      aria-label={`${title} options`}
-                      aria-haspopup="menu"
-                      onClick={(event) => setMenu({ anchor: event.currentTarget, source, title })}
-                    >
-                      <MoreVert fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              </Box>
-              <Collapse in={groupExpanded} unmountOnExit id={`${drawerId}-${source}`}>
-                <List dense disablePadding>
-                  {source === 'mine' && draftTitle !== undefined && (
-                    <ListItem>
-                      <ListItemText
-                        primary={draftTitle || 'New Marker'}
-                        slotProps={{ primary: { noWrap: true, variant: 'caption' } }}
-                      />
-                      <Typography variant="caption" color="text.secondary">
-                        Unsaved
-                      </Typography>
-                    </ListItem>
-                  )}
-                  {rows.map((item) => {
-                    const visible = prefs.visibilityFor(item)
-                    return (
-                      <ListItem
-                        key={item.id}
-                        disablePadding
-                        sx={{
-                          '&:hover': { bgcolor: 'action.hover' },
-                          ...(item.id === selectedId && { bgcolor: 'action.selected' }),
-                        }}
-                      >
-                        <ListItemButton
-                          data-marker-row={item.id}
-                          onClick={() => onSelect(item)}
-                          aria-label={`View Marker: ${item.title}${visible.markerVisible ? '' : ' (marker hidden)'}`}
-                          aria-pressed={item.id === selectedId}
-                          sx={{
-                            minWidth: 0,
-                            width: '100%',
-                            pl: 2,
-                            pr: 5,
-                            py: 0.5,
-                            '&:hover': { bgcolor: 'transparent' },
-                          }}
-                        >
-                          <ListItemText
-                            primary={item.title}
-                            slotProps={{
-                              primary: {
-                                noWrap: true,
-                                variant: 'caption',
-                                title: item.title,
-                                color: visible.markerVisible ? undefined : 'text.disabled',
-                                sx: visible.markerVisible
-                                  ? undefined
-                                  : {
-                                      color: (theme) =>
-                                        theme.palette.mode === 'light'
-                                          ? theme.palette.text.secondary
-                                          : theme.palette.text.disabled,
-                                    },
-                              },
-                            }}
-                          />
-                        </ListItemButton>
-                        <Box sx={{ position: 'absolute', right: 8, display: 'flex' }}>
-                          <IconButton
-                            size="small"
-                            aria-label={`${item.title} options`}
-                            aria-haspopup="menu"
-                            onClick={(event) =>
-                              setMenu({ anchor: event.currentTarget, item, title: item.title })
-                            }
-                          >
-                            <MoreVert fontSize="small" />
-                          </IconButton>
-                        </Box>
-                      </ListItem>
-                    )
-                  })}
-                </List>
-              </Collapse>
+                {sharedOpen ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
+                <Typography component="h3" variant="body2" noWrap title="Public & Shared">
+                  Public &amp; Shared
+                </Typography>
+              </Button>
+              {visibilityToggles(sharedRows, 'Public & Shared')}
             </Box>
-          )
-        })}
+            <Collapse in={sharedOpen} unmountOnExit id={`${drawerId}-shared`}>
+              {sharedGroups.map(renderGroup)}
+            </Collapse>
+          </Box>
+        )}
+        {otherGroup && renderGroup(otherGroup)}
       </Box>
       <Menu
         action={menuActions}
@@ -419,55 +540,41 @@ export default function ImageMarkersDrawer({
         container={() => drawerRef.current?.parentElement ?? null}
       >
         {menu &&
-          (() => {
-            const rows = items.filter((item) => item.source === menu.source)
-            return (['markerVisible', 'labelVisible'] as const).map((field) => {
-              const all = menu.item
-                ? prefs.visibilityFor(menu.item)[field]
-                : rows.every((item) => prefs.visibilityFor(item)[field])
-              const mixed =
-                !menu.item && !all && rows.some((item) => prefs.visibilityFor(item)[field])
-              const marker = field === 'markerVisible'
-              const label = marker
-                ? menu.item
-                  ? 'marker'
-                  : 'markers'
-                : menu.item
-                  ? 'label'
-                  : 'labels'
-              return (
-                <MenuItem
-                  key={field}
-                  aria-label={`${menu.title} ${marker ? (menu.item ? 'marker' : 'markers') : 'labels'}`}
-                  role="menuitemcheckbox"
-                  aria-checked={mixed ? 'mixed' : all}
-                  onClick={() => {
-                    if (menu.item) prefs.setItem(menu.item, field, !all)
-                    else if (menu.source) prefs.setGroup(menu.source, field, !all)
-                    setMenu(null)
-                  }}
-                >
-                  {marker ? (
-                    all ? (
-                      <Visibility fontSize="small" sx={{ mr: 1 }} />
-                    ) : (
-                      <VisibilityOff fontSize="small" sx={{ mr: 1 }} />
-                    )
-                  ) : all ? (
-                    <LabelOff fontSize="small" sx={{ mr: 1 }} />
+          (['markerVisible', 'labelVisible'] as const).map((field) => {
+            const visible = prefs.visibilityFor(menu.item)
+            const all = visible[field]
+            const marker = field === 'markerVisible'
+            return (
+              <MenuItem
+                key={field}
+                aria-label={`${menu.item.title} ${marker ? 'marker' : 'labels'}`}
+                role="menuitemcheckbox"
+                aria-checked={all}
+                disabled={!marker && !visible.markerVisible}
+                onClick={() => {
+                  prefs.setItem(menu.item, field, !all)
+                  setMenu(null)
+                }}
+              >
+                {marker ? (
+                  all ? (
+                    <Visibility fontSize="small" sx={{ mr: 1 }} />
                   ) : (
-                    <Label fontSize="small" sx={{ mr: 1 }} />
-                  )}
-                  {all ? 'Hide' : 'Show'} {label}
-                  {mixed ? ' (Mixed)' : ''}
-                </MenuItem>
-              )
-            })
-          })()}
-        {menu?.item?.permissions.can_edit && (
+                    <VisibilityOff fontSize="small" sx={{ mr: 1 }} />
+                  )
+                ) : all ? (
+                  <LabelOff fontSize="small" sx={{ mr: 1 }} />
+                ) : (
+                  <Label fontSize="small" sx={{ mr: 1 }} />
+                )}
+                {all ? 'Hide' : 'Show'} {marker ? 'marker' : 'label'}
+              </MenuItem>
+            )
+          })}
+        {menu?.item.permissions.can_edit && (
           <MenuItem
             onClick={() => {
-              onEdit(menu.item!)
+              onEdit(menu.item)
               setMenu(null)
             }}
           >
@@ -475,10 +582,10 @@ export default function ImageMarkersDrawer({
             Edit
           </MenuItem>
         )}
-        {menu?.item?.permissions.can_delete && (
+        {menu?.item.permissions.can_delete && (
           <MenuItem
             onClick={() => {
-              ;(onDelete ?? onEdit)(menu.item!)
+              ;(onDelete ?? onEdit)(menu.item)
               setMenu(null)
             }}
           >

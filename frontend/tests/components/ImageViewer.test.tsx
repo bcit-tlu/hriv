@@ -141,6 +141,7 @@ const apiMocks = vi.hoisted(() => ({
   startCount: vi.fn(),
   getCount: vi.fn(),
   cancelCount: vi.fn(),
+  deleteMarker: vi.fn(),
 }))
 
 vi.mock('../../src/observability', () => observabilityMocks)
@@ -156,6 +157,7 @@ vi.mock('../../src/api', async (importOriginal) => {
     startCount: apiMocks.startCount,
     getCount: apiMocks.getCount,
     cancelCount: apiMocks.cancelCount,
+    deleteMarker: apiMocks.deleteMarker,
   }
 })
 
@@ -384,10 +386,11 @@ vi.mock('../../src/components/CanvasOverlay', () => ({
 }))
 
 import ImageViewer from '../../src/components/ImageViewer'
-import { MARKER_FIXTURE } from '../../src/components/markerFixtures'
+import { BOARD_FIXTURE, MARKER_FIXTURE } from '../../src/components/markerFixtures'
 import type { MarkerFormDialogProps } from '../../src/components/MarkerFormDialog'
 const CREATED_MARKER = { ...MARKER_FIXTURE, id: 99, title: 'New saved view' }
-vi.mock('../../src/components/MarkerFormDialog', () => ({
+vi.mock('../../src/components/MarkerFormDialog', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/components/MarkerFormDialog')>()),
   default: ({ view, item, onChanged, onClose, inline }: MarkerFormDialogProps) => (
     <div role={inline ? 'form' : 'dialog'} aria-label={inline ? 'Edit Marker' : 'Add Marker'}>
       <span>
@@ -410,6 +413,8 @@ vi.mock('../../src/components/MarkerFormDialog', () => ({
 }))
 import type { ApiImage } from '../../src/api'
 import { resetTileTokenRenewalCacheForTests } from '../../src/tileTokenRenewal'
+import { resetViewerPanelPrefsForTests } from '../../src/useViewerPanelState'
+import { resetMarkerVisibilityPrefsForTests } from '../../src/useMarkerVisibilityPrefs'
 
 const viewer = () => osdState.viewers[osdState.viewers.length - 1]
 const buttonByTooltip = (tooltip: string) => {
@@ -458,10 +463,14 @@ beforeEach(() => {
   osdState.initError = null
   canvasOverlayMockState.cancelKeepsEditing = false
   resetTileTokenRenewalCacheForTests()
+  resetViewerPanelPrefsForTests()
+  resetMarkerVisibilityPrefsForTests()
   setFullscreenElement(null)
   vi.useRealTimers()
   vi.clearAllMocks()
   apiMocks.fetchImageMarkers.mockReset().mockResolvedValue([])
+  apiMocks.fetchBoards.mockReset().mockResolvedValue([BOARD_FIXTURE])
+  apiMocks.deleteMarker.mockReset().mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -481,35 +490,226 @@ afterEach(() => {
 
 describe('Marker viewer tool', () => {
   it.each([true, false])(
-    'scopes list and markers to own and instructor views, permanent panel=%s',
+    'keeps own and instructor views prominent while classmate views collapse hidden, panel=%s',
     async (viewerPanel) => {
+      const classmateBoard = {
+        ...BOARD_FIXTURE,
+        id: 4,
+        name: 'Classmate picks',
+        visibility: 'public' as const,
+        owners: [{ user_id: 42, program_id: null, name: 'Sam', role: 'student' as const }],
+        permissions: {
+          can_edit: false,
+          can_change_scope: false,
+          can_delete: false,
+          can_transfer: false,
+        },
+      }
+      apiMocks.fetchBoards.mockResolvedValue([BOARD_FIXTURE, classmateBoard])
       apiMocks.fetchImageMarkers.mockResolvedValue([
         MARKER_FIXTURE,
         { ...MARKER_FIXTURE, id: 8, title: 'Instructor view', source: 'instructor' },
-        { ...MARKER_FIXTURE, id: 9, title: 'Other student view', source: 'public' },
+        {
+          ...MARKER_FIXTURE,
+          id: 9,
+          title: 'Other student view',
+          source: 'public',
+          board_ids: [4],
+          permissions: { can_edit: false, can_delete: false },
+        },
       ])
       const rendered = render(
-        <ImageViewer
-          tileSources="/test.dzi"
-          imageId={42}
-          markersEnabled
-          viewerPanel={viewerPanel}
-        />,
+        <AuthContext.Provider value={BOARD_AUTH}>
+          <ImageViewer
+            tileSources="/test.dzi"
+            imageId={42}
+            markersEnabled
+            viewerPanel={viewerPanel}
+          />
+        </AuthContext.Provider>,
       )
       rendered.container.appendChild(viewer().element)
       await waitFor(() =>
         expect(viewer().container.querySelector('[data-marker-id="8"]')).not.toBeNull(),
       )
-      expect(viewer().container.querySelector('[data-marker-id="9"]')).toBeNull()
+      // Classmate markers default to canvas-hidden until the drawer opts in.
+      expect(viewer().container.querySelector('[data-marker-id="9"] button')).toBeNull()
       fireEvent.click(
         await within(viewer().container).findByRole('button', {
-          name: viewerPanel ? 'Open viewer panel' : 'Markers (2)',
+          name: viewerPanel ? 'Open viewer panel' : 'Markers (3)',
         }),
       )
       const list = within(await screen.findByRole('complementary'))
       expect(list.getByRole('button', { name: 'View Marker: Rose window' })).toBeVisible()
       expect(list.getByRole('button', { name: 'View Marker: Instructor view' })).toBeVisible()
       expect(list.queryByText('Other student view')).not.toBeInTheDocument()
+      fireEvent.click(list.getByRole('button', { name: 'Public & Shared' }))
+      expect(
+        list.getByRole('button', { name: 'View Marker: Other student view (marker hidden)' }),
+      ).toBeInTheDocument()
+      fireEvent.click(list.getByRole('button', { name: 'Public & Shared markers' }))
+      await waitFor(() =>
+        expect(viewer().container.querySelector('[data-marker-id="9"] button')).not.toBeNull(),
+      )
+    },
+  )
+  it.each([true, false])(
+    'routes Board group headings through onOpenBoard, permanent panel=%s',
+    async (viewerPanel) => {
+      apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE])
+      const onOpenBoard = vi.fn()
+      const rendered = render(
+        <AuthContext.Provider value={BOARD_AUTH}>
+          <ImageViewer
+            tileSources="/test.dzi"
+            imageId={42}
+            markersEnabled
+            viewerPanel={viewerPanel}
+            onOpenBoard={onOpenBoard}
+          />
+        </AuthContext.Provider>,
+      )
+      rendered.container.appendChild(viewer().element)
+      await waitFor(() =>
+        expect(viewer().container.querySelector('[data-marker-id="7"]')).not.toBeNull(),
+      )
+      fireEvent.click(
+        await within(viewer().container).findByRole('button', {
+          name: viewerPanel ? 'Open viewer panel' : 'Markers (1)',
+        }),
+      )
+      const list = within(await screen.findByRole('complementary'))
+      fireEvent.click(
+        await list.findByRole('button', { name: 'Open Board: Architecture inspiration' }),
+      )
+      expect(onOpenBoard).toHaveBeenCalledWith(1)
+    },
+  )
+  it.each([true, false])(
+    'reveals, navigates to and focuses a hidden marker passed through markerFocus, panel=%s',
+    async (viewerPanel) => {
+      const classmateBoard = {
+        ...BOARD_FIXTURE,
+        id: 4,
+        name: 'Classmate picks',
+        visibility: 'public' as const,
+        owners: [{ user_id: 42, program_id: null, name: 'Sam', role: 'student' as const }],
+        permissions: {
+          can_edit: false,
+          can_change_scope: false,
+          can_delete: false,
+          can_transfer: false,
+        },
+      }
+      apiMocks.fetchBoards.mockResolvedValue([BOARD_FIXTURE, classmateBoard])
+      apiMocks.fetchImageMarkers.mockResolvedValue([
+        MARKER_FIXTURE,
+        {
+          ...MARKER_FIXTURE,
+          id: 9,
+          title: 'Other student view',
+          source: 'public',
+          board_ids: [4],
+          permissions: { can_edit: false, can_delete: false },
+        },
+      ])
+      const rendered = render(
+        <AuthContext.Provider value={BOARD_AUTH}>
+          <ImageViewer
+            tileSources="/test.dzi"
+            imageId={42}
+            markersEnabled
+            viewerPanel={viewerPanel}
+            markerFocus={{ id: 9, imageId: 42 }}
+          />
+        </AuthContext.Provider>,
+      )
+      rendered.container.appendChild(viewer().element)
+      // The canvas-hidden marker is revealed once markers and the viewer are ready.
+      await waitFor(() =>
+        expect(viewer().container.querySelector('[data-marker-id="9"] button')).not.toBeNull(),
+      )
+      expect(viewer().viewport.panTo).toHaveBeenCalled()
+      // Only the target marker gets a visibility override — nothing else leaks.
+      const stored = JSON.parse(localStorage.getItem('hriv.markerVisibility.9') ?? '{}') as {
+        items?: { id: number; markerVisible?: boolean }[]
+      }
+      expect(stored.items).toContainEqual(expect.objectContaining({ id: 9, markerVisible: true }))
+      expect(stored.items?.find((row) => row.id === 7)).toBeUndefined()
+      // The drawer reports the focused marker and auto-expands the shared tier.
+      fireEvent.click(
+        await within(viewer().container).findByRole('button', {
+          name: viewerPanel ? 'Open viewer panel' : 'Markers (2)',
+        }),
+      )
+      const list = within(await screen.findByRole('complementary'))
+      expect(list.getByRole('button', { name: 'Public & Shared' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      )
+      expect(list.getByRole('button', { name: 'View Marker: Other student view' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+    },
+  )
+  it.each([true, false])(
+    'reveals a canvas-hidden marker when its drawer row is selected, panel=%s',
+    async (viewerPanel) => {
+      const classmateBoard = {
+        ...BOARD_FIXTURE,
+        id: 4,
+        name: 'Classmate picks',
+        visibility: 'public' as const,
+        owners: [{ user_id: 42, program_id: null, name: 'Sam', role: 'student' as const }],
+        permissions: {
+          can_edit: false,
+          can_change_scope: false,
+          can_delete: false,
+          can_transfer: false,
+        },
+      }
+      apiMocks.fetchBoards.mockResolvedValue([BOARD_FIXTURE, classmateBoard])
+      apiMocks.fetchImageMarkers.mockResolvedValue([
+        MARKER_FIXTURE,
+        {
+          ...MARKER_FIXTURE,
+          id: 9,
+          title: 'Other student view',
+          source: 'public',
+          board_ids: [4],
+          permissions: { can_edit: false, can_delete: false },
+        },
+      ])
+      const rendered = render(
+        <AuthContext.Provider value={BOARD_AUTH}>
+          <ImageViewer
+            tileSources="/test.dzi"
+            imageId={42}
+            markersEnabled
+            viewerPanel={viewerPanel}
+          />
+        </AuthContext.Provider>,
+      )
+      rendered.container.appendChild(viewer().element)
+      await waitFor(() =>
+        expect(viewer().container.querySelector('[data-marker-id="7"] button')).not.toBeNull(),
+      )
+      expect(viewer().container.querySelector('[data-marker-id="9"] button')).toBeNull()
+      fireEvent.click(
+        await within(viewer().container).findByRole('button', {
+          name: viewerPanel ? 'Open viewer panel' : 'Markers (2)',
+        }),
+      )
+      const list = within(await screen.findByRole('complementary'))
+      fireEvent.click(list.getByRole('button', { name: 'Public & Shared' }))
+      fireEvent.click(
+        list.getByRole('button', { name: 'View Marker: Other student view (marker hidden)' }),
+      )
+      await waitFor(() =>
+        expect(viewer().container.querySelector('[data-marker-id="9"] button')).not.toBeNull(),
+      )
+      expect(viewer().viewport.panTo).toHaveBeenCalled()
     },
   )
   it('copies the live image view and rectangles from the Shared View tab', async () => {
@@ -680,13 +880,16 @@ describe('Marker viewer tool', () => {
     'selects and focuses the created row, opening the Markers tab when needed, panelOpen=%s',
     async (keepOpen) => {
       apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE])
-      render(<ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled />)
+      render(
+        <AuthContext.Provider value={BOARD_AUTH}>
+          <ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled />
+        </AuthContext.Provider>,
+      )
       fireEvent.click(
         await within(viewer().container).findByRole('button', { name: 'Open viewer panel' }),
       )
       const previous = await screen.findByRole('button', { name: 'View Marker: Rose window' })
       fireEvent.click(previous)
-      fireEvent.click(screen.getByRole('button', { name: 'My Markers', exact: true }))
       fireEvent.click(
         screen.getByRole('button', {
           name: keepOpen ? 'Show image details' : 'Close viewer panel',
@@ -695,8 +898,17 @@ describe('Marker viewer tool', () => {
       act(() => buttonByTooltip('Add Marker').options.onClick())
       act(() => viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }))
       apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE, CREATED_MARKER])
+      const pans = viewer().viewport.panTo.mock.calls.length
       fireEvent.click(screen.getByRole('button', { name: 'Create Marker' }))
       const created = await screen.findByRole('button', { name: 'View Marker: New saved view' })
+      // Creating a Marker re-orients the viewport onto it.
+      expect(viewer().viewport.panTo.mock.calls.length).toBe(pans + 1)
+      expect(viewer().viewport.panTo).toHaveBeenLastCalledWith(
+        expect.objectContaining({ x: 0.46, y: 0.29 }),
+        false,
+      )
+      expect(viewer().viewport.zoomTo).toHaveBeenLastCalledWith(2.5, undefined, false)
+      expect(viewer().viewport.setRotation).toHaveBeenLastCalledWith(0, false)
       await waitFor(() => expect(created).toHaveFocus())
       expect(created).toHaveAttribute('aria-pressed', 'true')
       expect(screen.getByRole('button', { name: 'View Marker: Rose window' })).toHaveAttribute(
@@ -707,6 +919,55 @@ describe('Marker viewer tool', () => {
         within(viewer().container).getByRole('region', { name: 'Marker information' }),
       ).toHaveTextContent('New saved view')
       expect(buttonByTooltip('Add Marker').element).toHaveAttribute('aria-pressed', 'true')
+    },
+  )
+  it.each([true, false])(
+    'confirms drawer Delete without the information card, panelOpen=%s',
+    async (viewerPanel) => {
+      apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE])
+      render(
+        <AuthContext.Provider value={BOARD_AUTH}>
+          <ImageViewer
+            tileSources="/test.dzi"
+            imageId={42}
+            markersEnabled
+            viewerPanel={viewerPanel}
+          />
+        </AuthContext.Provider>,
+      )
+      fireEvent.click(
+        await within(viewer().container).findByRole('button', {
+          name: viewerPanel ? 'Open viewer panel' : 'Markers (1)',
+        }),
+      )
+      // The panel drawer mounts in the page, but the legacy drawer, its menu
+      // and the confirmation all portal into the (detached) viewer container.
+      const drawerScope = viewerPanel ? screen : within(viewer().container)
+      const canvas = within(viewer().container)
+      fireEvent.click(await drawerScope.findByRole('button', { name: 'Rose window options' }))
+      fireEvent.click(drawerScope.getByRole('menuitem', { name: 'Delete' }))
+      // Named queries can't resolve aria-labelledby inside the detached
+      // viewer container, so assert the title text instead.
+      const confirmation = canvas.getByRole('dialog')
+      expect(within(confirmation).getByText('Delete Marker?')).toBeTruthy()
+      expect(within(confirmation).getByText(/permanently deleted from all its Boards/)).toBeTruthy()
+      expect(canvas.queryByRole('region', { name: 'Marker information' })).toBeNull()
+      expect(canvas.queryByRole('form', { name: 'Edit Marker' })).toBeNull()
+      expect(canvas.queryByText('Editing Marker 7')).toBeNull()
+      expect(viewer().viewport.panTo).not.toHaveBeenCalled()
+      fireEvent.click(within(confirmation).getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(canvas.queryByRole('dialog')).toBeNull())
+      expect(apiMocks.deleteMarker).not.toHaveBeenCalled()
+      fireEvent.click(drawerScope.getByRole('button', { name: 'Rose window options' }))
+      fireEvent.click(drawerScope.getByRole('menuitem', { name: 'Delete' }))
+      fireEvent.click(
+        within(canvas.getByRole('dialog')).getByRole('button', {
+          name: 'Delete',
+        }),
+      )
+      await waitFor(() => expect(apiMocks.deleteMarker).toHaveBeenCalledWith(7, 3))
+      await waitFor(() => expect(apiMocks.fetchImageMarkers).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(canvas.queryByRole('dialog')).toBeNull())
     },
   )
   it('keeps the mode armed after save, lists the draft and cancels it before Escape disarms the tool', async () => {
@@ -755,34 +1016,33 @@ describe('Marker viewer tool', () => {
       fireEvent.click(button)
       expect(commits.mock.calls.length).toBeLessThan(8)
     }
-    const markerMenu = (name: string, group = false) => {
+    const markerMenu = (name: string) => {
       click(drawer.getByRole('button', { name: `${name} options` }))
-      return canvas.getByRole('menuitemcheckbox', {
-        name: `${name} ${group ? 'markers' : 'marker'}`,
-      })
+      return canvas.getByRole('menuitemcheckbox', { name: `${name} marker` })
     }
-    click(markerMenu('My Markers', true))
+    const groupMarkers = drawer.getByRole('button', {
+      name: 'Architecture inspiration markers',
+    })
+    const groupLabels = drawer.getByRole('button', { name: 'Architecture inspiration labels' })
+    click(groupMarkers)
     expect(instance.container.querySelector('[data-marker-id="7"] button')).toBeNull()
-    expect(instance.container.querySelector('[data-marker-id="7"] span')).not.toBeNull()
+    // A hidden marker always hides its label, so the anchor renders nothing.
+    expect(instance.container.querySelector('[data-marker-id="7"] span')).toBeNull()
+    expect(groupLabels).toBeDisabled()
     click(markerMenu('Rose window'))
-    expect(markerMenu('My Markers', true)).toHaveAttribute('aria-checked', 'mixed')
-    click(canvas.getByRole('menuitemcheckbox', { name: 'My Markers markers' }))
-    expect(markerMenu('My Markers', true)).toHaveAttribute('aria-checked', 'true')
-    fireEvent.keyDown(canvas.getByRole('menu'), { key: 'Escape' })
+    expect(groupMarkers).toHaveAttribute('aria-pressed', 'mixed')
+    click(groupMarkers)
+    expect(groupMarkers).toHaveAttribute('aria-pressed', 'true')
     const labels = (name: string) => {
       click(drawer.getByRole('button', { name: `${name} options` }))
       click(canvas.getByRole('menuitemcheckbox', { name: `${name} labels` }))
     }
-    labels('My Markers')
+    click(groupLabels)
     expect(instance.container.querySelector('[data-marker-id="7"] span')).toBeNull()
     expect(instance.container.querySelector('[data-marker-id="7"] button')).not.toBeNull()
     labels('Rose window')
-    click(drawer.getByRole('button', { name: 'My Markers options' }))
-    expect(canvas.getByRole('menuitemcheckbox', { name: 'My Markers labels' })).toHaveAttribute(
-      'aria-checked',
-      'mixed',
-    )
-    click(canvas.getByRole('menuitemcheckbox', { name: 'My Markers labels' }))
+    expect(groupLabels).toHaveAttribute('aria-pressed', 'mixed')
+    click(groupLabels)
     expect(instance.container.querySelector('[data-marker-id="8"] span')).not.toBeNull()
     expect(osdState.viewers).toHaveLength(1)
     expect(apiMocks.fetchImageMarkers).toHaveBeenCalledTimes(1)
@@ -791,12 +1051,14 @@ describe('Marker viewer tool', () => {
     apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE])
     const onOpenChange = vi.fn()
     render(
-      <ImageViewer
-        tileSources="/test.dzi"
-        imageId={42}
-        markersEnabled
-        onViewerPanelWidthChange={onOpenChange}
-      />,
+      <AuthContext.Provider value={BOARD_AUTH}>
+        <ImageViewer
+          tileSources="/test.dzi"
+          imageId={42}
+          markersEnabled
+          onViewerPanelWidthChange={onOpenChange}
+        />
+      </AuthContext.Provider>,
     )
     const canvas = screen
     const trigger = await within(viewer().container).findByRole('button', {
@@ -822,11 +1084,18 @@ describe('Marker viewer tool', () => {
     ).toBe(true)
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
     fireEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
-    fireEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window labels' }))
+    // Hiding the marker suppresses its label too — no separate label action needed.
     expect(viewer().container.querySelector('[data-marker-id="7"]')).toBeEmptyDOMElement()
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Rose window labels' }))
+    expect(canvas.getByRole('menuitemcheckbox', { name: 'Rose window labels' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(canvas.getByRole('menuitemcheckbox', { name: 'Rose window labels' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    fireEvent.keyDown(canvas.getByRole('menu'), { key: 'Escape' })
     expect(
       within(drawer).getByRole('button', { name: 'View Marker: Rose window (marker hidden)' }),
     ).toBeDefined()
@@ -927,7 +1196,11 @@ describe('Marker viewer tool', () => {
   )
   it('dismisses marker information and selection on outside presses, and opens drawer edits in place', async () => {
     apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE])
-    render(<ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled />)
+    render(
+      <AuthContext.Provider value={BOARD_AUTH}>
+        <ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled />
+      </AuthContext.Provider>,
+    )
     const marker = await within(viewer().container).findByRole('button', {
       name: 'View Marker: Rose window',
     })

@@ -758,6 +758,28 @@ vi.mock('../src/components/BoardsPage', () => ({
       </div>
     ) : null,
 }))
+vi.mock('../src/components/BoardDialog', () => ({
+  default: ({
+    boardId,
+    onClose,
+    onOpenMarker,
+    onManage,
+  }: {
+    boardId: number | null
+    onClose: () => void
+    onOpenMarker: (item: ApiMarker) => void
+    onManage?: (id: number) => void
+  }) =>
+    boardId != null ? (
+      <div data-testid="board-dialog" data-board={String(boardId)}>
+        <button onClick={onClose}>Close Board dialog</button>
+        <button onClick={() => onManage?.(boardId)}>Manage Board dialog</button>
+        <button onClick={() => onOpenMarker({ ...MARKER_FIXTURE, image_id: 101, rotation: 90 })}>
+          Open dialog saved view
+        </button>
+      </div>
+    ) : null,
+}))
 const addToCollectionMocks = vi.hoisted(() => ({
   addImagesToCollection: vi.fn(),
   createCollectionWithImages: vi.fn(),
@@ -3728,6 +3750,39 @@ describe('Boards navigation', () => {
       expect(screen.getByTestId('boards-page')).toHaveAttribute('data-board', '5'),
     )
     expect(window.location.search).toBe('?page=boards&board=5')
+  })
+  it('focuses the selected Marker and carries it in the URL', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    expect(imageViewerProps.current?.markerFocus).toMatchObject({ id: 7, imageId: 101 })
+    expect(window.location.search).toContain('marker=7')
+  })
+  it('opens the Board dialog over the viewer when the viewer requests a Board', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    act(() => {
+      ;(imageViewerProps.current?.onOpenBoard as (id: number) => void)(7)
+    })
+    expect(await screen.findByTestId('board-dialog')).toHaveAttribute('data-board', '7')
+    // The viewer stays mounted and the URL stays on the image — no Boards navigation.
+    expect(screen.getByText(/Image Viewer 101/)).toBeInTheDocument()
+    expect(window.location.search).not.toContain('page=boards')
+  })
+  it('reaches the Boards page through the dialog manage link', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    act(() => {
+      ;(imageViewerProps.current?.onOpenBoard as (id: number) => void)(7)
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage Board dialog' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('boards-page')).toHaveAttribute('data-board', '7'),
+    )
+    expect(window.location.search).toBe('?page=boards&board=7')
+    expect(screen.queryByTestId('board-dialog')).not.toBeInTheDocument()
   })
   it('does not navigate after a late image fetch if the user left Boards', async () => {
     let finish: (image: ApiImage) => void = () => {}

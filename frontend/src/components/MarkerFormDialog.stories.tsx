@@ -14,6 +14,27 @@ const services = {
 
     markers: [],
   }),
+  fetchPrograms: async () => [
+    {
+      id: 1,
+      name: 'Medical Laboratory Science',
+      oidc_group: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+  ],
+  fetchGroups: async () => [
+    {
+      id: 1,
+      name: 'Cohort A',
+      description: null,
+      created_by_user_id: 9,
+      member_ids: [],
+      instructor_ids: [9],
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+  ],
   createMarker: async () => MARKER_FIXTURE,
   updateMarker: async () => MARKER_FIXTURE,
   deleteMarker: async () => {},
@@ -71,15 +92,18 @@ export const BoardsMenu: Story = {
     await waitFor(() => expect(page.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
     await userEvent.click(page.getByRole('combobox', { name: 'Boards' }))
     await expect(page.getAllByRole('option')[0]).toHaveTextContent(BOARD_FIXTURE.name)
-    await expect(page.getByRole('button', { name: '+ Create new board' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Add Board' })).toBeVisible()
   },
 }
 export const CreatePrivateBoard: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
     await waitFor(() => expect(page.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
-    await userEvent.click(page.getByRole('button', { name: '+ Create new board' }))
-    await userEvent.type(page.getByLabelText('New private Board name'), 'Architecture favourites')
+    await userEvent.click(page.getByRole('combobox', { name: 'Boards' }))
+    await userEvent.click(page.getByRole('button', { name: 'Add Board' }))
+    await expect(page.getByRole('heading', { name: 'New Board' })).toBeVisible()
+    await userEvent.type(page.getByLabelText('Name *', { exact: true }), 'Architecture favourites')
+    await expect(page.getByRole('button', { name: 'Create Board' })).toBeEnabled()
   },
 }
 export const ReadOnly: Story = {

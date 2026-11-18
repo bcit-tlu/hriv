@@ -19,6 +19,13 @@ describe('useMarkerVisibilityPrefs', () => {
     const { result } = renderHook(() => useMarkerVisibilityPrefs(9))
     expect(result.current.visibilityFor(item)).toEqual({ markerVisible: true, labelVisible: true })
   })
+  it('hides public markers by default while leaving their labels enabled', () => {
+    const { result } = renderHook(() => useMarkerVisibilityPrefs(9))
+    expect(result.current.visibilityFor({ id: 7, source: 'public' })).toEqual({
+      markerVisible: false,
+      labelVisible: true,
+    })
+  })
   it('persists independent overrides across remounts; group resets only its own dimension', () => {
     const first = renderHook(() => useMarkerVisibilityPrefs(9))
     act(() => first.result.current.setGroup('mine', 'markerVisible', false))
@@ -38,6 +45,27 @@ describe('useMarkerVisibilityPrefs', () => {
     })
     act(() => result.current.setGroup('mine', 'labelVisible', true))
     expect(result.current.visibilityFor(item)).toEqual({ markerVisible: false, labelVisible: true })
+  })
+  it('setItems batches overrides in one write, keeps other dimensions, and skips sourceless rows', () => {
+    const other = { id: 8, source: 'instructor' as const }
+    const { result } = renderHook(() => useMarkerVisibilityPrefs(9))
+    act(() => result.current.setItem(item, 'labelVisible', false))
+    act(() =>
+      result.current.setItems([item, other, { id: 9, source: null }], 'markerVisible', false),
+    )
+    expect(result.current.visibilityFor(item)).toEqual({
+      markerVisible: false,
+      labelVisible: false,
+    })
+    expect(result.current.visibilityFor(other)).toEqual({
+      markerVisible: false,
+      labelVisible: true,
+    })
+    const stored = JSON.parse(localStorage.getItem('hriv.markerVisibility.9')!)
+    expect(stored.items).toHaveLength(2)
+    expect(stored.items).not.toContainEqual(expect.objectContaining({ id: 9 }))
+    act(() => result.current.setItems([item], 'markerVisible', true))
+    expect(result.current.visibilityFor(item).markerVisible).toBe(true)
   })
   it('isolates user changes immediately, syncs mounted panes, and consumes storage events', () => {
     const a = renderHook(({ id }) => useMarkerVisibilityPrefs(id), { initialProps: { id: 9 } })

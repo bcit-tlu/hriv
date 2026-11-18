@@ -14,7 +14,6 @@ export default function MarkerInfoCard({
   onClose,
   onEdit,
   editing = false,
-  initialDelete = false,
   userId,
   onCancelEdit,
   onChanged,
@@ -24,7 +23,6 @@ export default function MarkerInfoCard({
   onClose: () => void
   onEdit: (item: ApiMarker) => void
   editing?: boolean
-  initialDelete?: boolean
   userId?: number
   onCancelEdit?: () => void
   onChanged?: () => Promise<void> | void
@@ -119,7 +117,6 @@ export default function MarkerInfoCard({
           view={item}
           userId={userId}
           container={container}
-          initialDelete={initialDelete}
           onChanged={() => onChanged?.()}
           onClose={onCancelEdit ?? onClose}
           onEscape={onClose}

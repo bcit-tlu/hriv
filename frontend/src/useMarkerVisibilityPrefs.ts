@@ -16,7 +16,7 @@ const defaults = (): Preferences => ({
   groups: {
     mine: { markerVisible: true, labelVisible: true },
     instructor: { markerVisible: true, labelVisible: true },
-    public: { markerVisible: true, labelVisible: true },
+    public: { markerVisible: false, labelVisible: true },
   },
   items: [],
 })
@@ -82,6 +82,10 @@ function write(key: string, persist: boolean, value: Preferences) {
   window.dispatchEvent(new Event(eventName))
 }
 
+export function resetMarkerVisibilityPrefsForTests() {
+  fallback.clear()
+}
+
 export function useMarkerVisibilityPrefs(userId?: number, enabled = true) {
   const key = `hriv.markerVisibility.${userId ?? 'session'}`
   const persist = userId != null
@@ -138,6 +142,28 @@ export function useMarkerVisibilityPrefs(userId?: number, enabled = true) {
       )
       next.items = next.items.filter((entry) => entry.id !== item.id)
       next.items.push({ ...existing, id: item.id, source: item.source, [kind]: visible })
+      next.items = next.items.slice(-MAX_MARKER_VISIBILITY_ENTRIES)
+      write(key, persist, next)
+    },
+    setItems(rows: Pick<ApiMarker, 'id' | 'source'>[], kind: VisibilityKind, visible: boolean) {
+      if (!enabled) return
+      const eligible = rows.filter(
+        (item): item is { id: number; source: MarkerSource } => item.source != null,
+      )
+      if (!eligible.length) return
+      const next = parse(read(key, persist))
+      const ids = new Set(eligible.map((item) => item.id))
+      const previous = new Map(
+        next.items.filter((entry) => ids.has(entry.id)).map((entry) => [entry.id, entry]),
+      )
+      next.items = next.items.filter((entry) => !ids.has(entry.id))
+      for (const item of eligible)
+        next.items.push({
+          ...previous.get(item.id),
+          id: item.id,
+          source: item.source,
+          [kind]: visible,
+        })
       next.items = next.items.slice(-MAX_MARKER_VISIBILITY_ENTRIES)
       write(key, persist, next)
     },
