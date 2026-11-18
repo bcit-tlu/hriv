@@ -10,7 +10,7 @@ import { copyViewLink } from '../useShareableImageState'
 import { AuthContext } from '../authContextValue'
 import type { ApiMarker, MarkerView } from '../types'
 import { useImageMarkers } from '../useImageMarkers'
-import { adjustMarkerPixelForFlip, navigateToMarker } from '../markerViewport'
+import { adjustMarkerPixelForFlip, navigateToMarker, navigateToView } from '../markerViewport'
 import { useMarkerVisibilityPrefs } from '../useMarkerVisibilityPrefs'
 import { usePinnedDrawerState } from '../usePinnedDrawerState'
 import ViewerSidePanel, { ViewerPanelToggle } from './ViewerSidePanel'
@@ -107,7 +107,12 @@ interface ImageViewerProps {
    * focus even for the same marker id. `navigate` re-centres on the marker's
    * saved view — omitted when an explicit shared viewport should win.
    */
-  markerFocus?: { id: number; imageId: number; navigate?: boolean } | null
+  markerFocus?: {
+    id: number
+    imageId: number
+    navigate?: boolean
+    viewport?: ViewportState
+  } | null
   /** Bumped when Marker/Board data mutates elsewhere (in-place Board dialog) — reloads markers. */
   markersReloadSignal?: number
   tileSources: OpenSeadragon.TileSourceOptions | string
@@ -330,6 +335,7 @@ export default function ImageViewer({
     if (!item) return
     navigatedFocus.current = appliedFocus
     if (appliedFocus.navigate !== false) navigateToMarker(viewerInstance, item)
+    else if (appliedFocus.viewport) navigateToView(viewerInstance, appliedFocus.viewport)
     if (visibilityPrefs.visibilityFor(item).markerVisible === false)
       visibilityPrefs.setItem(item, 'markerVisible', true)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- visibilityPrefs churns identity; only marker identity matters

@@ -682,6 +682,34 @@ describe('Marker viewer tool', () => {
     expect(viewer().viewport.panTo).not.toHaveBeenCalled()
     expect(viewer().viewport.zoomTo).not.toHaveBeenCalled()
   })
+  it('applies the recorded viewport when navigate=false carries one', async () => {
+    apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE])
+    const rendered = render(
+      <AuthContext.Provider value={BOARD_AUTH}>
+        <ImageViewer
+          tileSources="/test.dzi"
+          imageId={42}
+          markersEnabled
+          markerFocus={{
+            id: 7,
+            imageId: 42,
+            navigate: false,
+            viewport: { x: 0.3, y: 0.4, zoom: 5, rotation: 90 },
+          }}
+        />
+      </AuthContext.Provider>,
+    )
+    rendered.container.appendChild(viewer().element)
+    // A same-image history pop cannot rely on initialViewport (keyed by
+    // image id) — the focus payload restores the recorded view instead.
+    await waitFor(() => expect(viewer().viewport.panTo).toHaveBeenCalled())
+    expect(viewer().viewport.panTo).toHaveBeenCalledWith(
+      expect.objectContaining({ x: 0.3, y: 0.4 }),
+      false,
+    )
+    expect(viewer().viewport.zoomTo).toHaveBeenCalledWith(5, undefined, false)
+    expect(viewer().viewport.setRotation).toHaveBeenCalledWith(90, false)
+  })
   it('reloads markers when markersReloadSignal changes', async () => {
     apiMocks.fetchImageMarkers.mockResolvedValue([MARKER_FIXTURE])
     const rendered = render(

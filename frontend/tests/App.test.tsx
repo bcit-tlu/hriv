@@ -786,6 +786,21 @@ vi.mock('../src/components/BoardDialog', () => ({
         <button onClick={() => onOpenMarker({ ...MARKER_FIXTURE, image_id: 101, rotation: 90 })}>
           Open dialog saved view
         </button>
+        <button
+          onClick={() =>
+            onOpenMarker({
+              ...MARKER_FIXTURE,
+              id: 8,
+              image_id: 101,
+              x: 0.7,
+              y: 0.6,
+              zoom: 4,
+              rotation: 45,
+            })
+          }
+        >
+          Open dialog other view
+        </button>
       </div>
     ) : null,
 }))
@@ -3811,7 +3826,8 @@ describe('Boards navigation', () => {
     await screen.findByText(/Image Viewer 101/)
     expect(imageViewerProps.current?.markerFocus).toMatchObject({ id: 7, navigate: true })
     // Leaving for Boards pushes a second entry; Back pops to the recorded
-    // `?marker=7&x/y/zoom` entry — the shared viewport wins, so no re-centre.
+    // `?marker=7&x/y/zoom` entry — the shared viewport wins, so no re-centre;
+    // the recorded coords ride along so the mounted viewer can restore them.
     fireEvent.click(screen.getByRole('button', { name: 'Shell Boards' }))
     await screen.findByTestId('boards-page')
     await goBack()
@@ -3820,8 +3836,45 @@ describe('Boards navigation', () => {
         id: 7,
         imageId: 101,
         navigate: false,
+        viewport: { x: 0.46, y: 0.29, zoom: 2.5, rotation: 90 },
       }),
     )
+  })
+  it('restores the recorded viewport when popping between markers on one image', async () => {
+    const goBack = async () => {
+      await act(async () => {
+        const popped = new Promise<void>((resolve) =>
+          window.addEventListener('popstate', () => resolve(), { once: true }),
+        )
+        window.history.back()
+        await popped
+      })
+    }
+    render(<App />)
+    // Marker A from Boards, then marker B via the in-place Board dialog on
+    // the same image — two history entries (Devin Review scenario).
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    expect(imageViewerProps.current?.markerFocus).toMatchObject({ id: 7, navigate: true })
+    act(() => {
+      ;(imageViewerProps.current?.onOpenBoard as (id: number) => void)(7)
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Open dialog other view' }))
+    await waitFor(() =>
+      expect(imageViewerProps.current?.markerFocus).toMatchObject({ id: 8, navigate: true }),
+    )
+    // Back pops to A's entry: same image stays mounted, so the recorded
+    // viewport must ride along in the focus payload to be restored.
+    await goBack()
+    await waitFor(() =>
+      expect(imageViewerProps.current?.markerFocus).toMatchObject({
+        id: 7,
+        imageId: 101,
+        navigate: false,
+        viewport: { x: 0.46, y: 0.29, zoom: 2.5, rotation: 90 },
+      }),
+    )
+    expect(screen.getByText(/Image Viewer 101/)).toBeInTheDocument()
   })
   it('signals the mounted viewer to reload markers after a Board dialog change', async () => {
     render(<App />)

@@ -160,6 +160,7 @@ import BoardDialog from './components/BoardDialog'
 import BoardsPage from './components/BoardsPage'
 import { markerViewParams, parseBoardLocation } from './boardUtils'
 import type { ApiMarker } from './types'
+import type { ViewportState } from './components/imageViewerUtils'
 import { useCanvasAnnotations } from './useCanvasAnnotations'
 import type { CanvasDraftHandle } from './useCanvasAnnotations'
 import { useOverlayPersistence } from './useOverlayPersistence'
@@ -289,14 +290,22 @@ export default function App() {
   // deep links and history entries carry the target marker. `navigate`
   // re-centres on the marker's saved view — skipped when the URL carries
   // explicit viewport coords (a shared current view wins over the marker's).
+  // `viewport` then carries those coords so a mounted viewer can restore
+  // them on a same-image history pop, where initialViewport cannot.
   const [markerFocus, setMarkerFocus] = useState<{
     id: number
     imageId: number
     navigate?: boolean
+    viewport?: ViewportState
   } | null>(() => {
     const parsed = parseShareableUrlParams()
     return parsed.markerId != null && parsed.imageId != null
-      ? { id: parsed.markerId, imageId: parsed.imageId, navigate: parsed.viewport == null }
+      ? {
+          id: parsed.markerId,
+          imageId: parsed.imageId,
+          navigate: parsed.viewport == null,
+          viewport: parsed.viewport,
+        }
       : null
   })
   // Board opened from a viewer drawer heading — stays on the current image.
@@ -1171,7 +1180,12 @@ export default function App() {
       setViewportState(popped.viewport)
       setMarkerFocus(
         popped.markerId != null && imageId != null
-          ? { id: popped.markerId, imageId, navigate: popped.viewport == null }
+          ? {
+              id: popped.markerId,
+              imageId,
+              navigate: popped.viewport == null,
+              viewport: popped.viewport,
+            }
           : null,
       )
       setOverlays([])
