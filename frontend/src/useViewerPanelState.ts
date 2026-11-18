@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 
-export type ViewerPanelTab = 'inuksuks' | 'share' | 'details'
+export type ViewerPanelTab = 'markers' | 'share' | 'details'
 interface Preference {
   open: boolean
   tab: ViewerPanelTab
 }
-const defaults: Preference = { open: false, tab: 'inuksuks' }
+const defaults: Preference = { open: false, tab: 'markers' }
 const preferences = new Map<string, Preference>()
 
 function load(key: string | null): Preference {
@@ -16,7 +16,7 @@ function load(key: string | null): Preference {
     const value = JSON.parse(stored)
     return {
       open: value?.open === true,
-      tab: value?.tab === 'details' || value?.tab === 'share' ? value.tab : 'inuksuks',
+      tab: value?.tab === 'details' || value?.tab === 'share' ? value.tab : 'markers',
     }
   } catch {
     return preferences.get(key) ?? defaults

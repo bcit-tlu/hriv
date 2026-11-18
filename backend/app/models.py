@@ -664,14 +664,14 @@ SYNCHRONIZED_COLLECTION_MAX_IMAGES = 4
 STUDENT_SEQUENCE_MAX_IMAGES = 20
 STUDENT_MAX_COLLECTIONS_PER_TYPE = 10
 STUDENT_MAX_BOARDS = 10
-STUDENT_MAX_INUKSUKS = 200
+STUDENT_MAX_MARKERS = 200
 
 
-inuksuk_owners = Table(
-    "inuksuk_owners", Base.metadata,
-    Column("inuksuk_id", Integer, ForeignKey("inuksuks.id", ondelete="CASCADE"), primary_key=True),
+marker_owners = Table(
+    "marker_owners", Base.metadata,
+    Column("marker_id", Integer, ForeignKey("markers.id", ondelete="CASCADE"), primary_key=True),
     Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-    Index("idx_inuksuk_owners_user", "user_id"),
+    Index("idx_marker_owners_user", "user_id"),
 )
 
 board_owners = Table(
@@ -694,9 +694,9 @@ board_groups = Table(
 )
 
 
-class Inuksuk(Base):
-    __tablename__ = "inuksuks"
-    __table_args__ = (Index("idx_inuksuks_image", "image_id"),)
+class Marker(Base):
+    __tablename__ = "markers"
+    __table_args__ = (Index("idx_markers_image", "image_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     image_id: Mapped[int] = mapped_column(
@@ -751,7 +751,7 @@ class Inuksuk(Base):
     creator: Mapped["User | None"] = relationship("User", lazy="selectin")
     owners: Mapped[list["User"]] = relationship(
         "User",
-        secondary=inuksuk_owners,
+        secondary=marker_owners,
         lazy="selectin",
     )
 
@@ -820,27 +820,27 @@ class Board(Base):
         secondary=board_groups,
         lazy="selectin",
     )
-    inuksuk_links: Mapped[list["BoardInuksuk"]] = relationship(
-        "BoardInuksuk",
+    marker_links: Mapped[list["BoardMarker"]] = relationship(
+        "BoardMarker",
         back_populates="board",
         cascade="all, delete-orphan",
-        order_by="BoardInuksuk.sort_order",
+        order_by="BoardMarker.sort_order",
         lazy="selectin",
     )
 
 
-class BoardInuksuk(Base):
-    __tablename__ = "board_inuksuks"
+class BoardMarker(Base):
+    __tablename__ = "board_markers"
     __table_args__ = (
-        Index("idx_board_inuksuks_order", "board_id", "sort_order"),
+        Index("idx_board_markers_order", "board_id", "sort_order"),
     )
 
     board_id: Mapped[int] = mapped_column(
         ForeignKey("boards.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    inuksuk_id: Mapped[int] = mapped_column(
-        ForeignKey("inuksuks.id", ondelete="CASCADE"),
+    marker_id: Mapped[int] = mapped_column(
+        ForeignKey("markers.id", ondelete="CASCADE"),
         primary_key=True,
     )
     sort_order: Mapped[int] = mapped_column(
@@ -850,8 +850,8 @@ class BoardInuksuk(Base):
         server_default="0",
     )
 
-    board: Mapped["Board"] = relationship("Board", back_populates="inuksuk_links")
-    inuksuk: Mapped["Inuksuk"] = relationship("Inuksuk", lazy="selectin")
+    board: Mapped["Board"] = relationship("Board", back_populates="marker_links")
+    marker: Mapped["Marker"] = relationship("Marker", lazy="selectin")
 
 
 class Collection(Base):

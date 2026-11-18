@@ -1,4 +1,4 @@
-import { draftMembersFromInuksuks, memberKey, renewSlotThumbnail } from '../collectionMembers'
+import { draftMembersFromMarkers, memberKey, renewSlotThumbnail } from '../collectionMembers'
 import { useBoardsData } from '../useBoardsData'
 import TextField from '@mui/material/TextField'
 import MenuItem from '@mui/material/MenuItem'
@@ -66,7 +66,7 @@ export type ManageStageResult =
 export type StageAddImages = (images: ImageItem[]) => ManageStageResult
 
 export interface CollectionManageDialogProps {
-  inuksuksEnabled?: boolean
+  markersEnabled?: boolean
   open: boolean
   onClose: () => void
   /** Detail record — `null` renders an empty dialog (kept mounted for DnD). */
@@ -575,7 +575,7 @@ export default function CollectionManageDialog({
   onClose,
   collection,
   onSaveMembers,
-  inuksuksEnabled = false,
+  markersEnabled = false,
   onAddImages,
   onImageRenewed,
   onError,
@@ -591,7 +591,7 @@ export default function CollectionManageDialog({
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerBoardId, setPickerBoardId] = useState<number | null>(null)
   const [pickerBusy, setPickerBusy] = useState(false)
-  const pickerData = useBoardsData(pickerBoardId, false, pickerOpen && inuksuksEnabled)
+  const pickerData = useBoardsData(pickerBoardId, false, pickerOpen && markersEnabled)
   const draftRef = useRef<ImageItem[]>(draft)
   const seededFor = useRef<number | null>(null)
   // The member list as it stood when the draft was seeded — the Done diff
@@ -721,10 +721,10 @@ export default function CollectionManageDialog({
         .filter((img) => {
           const alreadyPresent = seen.has(img.id)
           seen.add(img.id)
-          return img.inuksukId != null || !alreadyPresent
+          return img.markerId != null || !alreadyPresent
         })
         .map((img) => {
-          if (!inuksuksEnabled || (img.slot && img.slot.id > 0)) return img
+          if (!markersEnabled || (img.slot && img.slot.id > 0)) return img
           const key = nextDraftKey.current--
           return { ...img, draftKey: key, ...(img.slot ? { slot: { ...img.slot, id: key } } : {}) }
         })
@@ -745,7 +745,7 @@ export default function CollectionManageDialog({
       updateDraft([...prev, ...fresh])
       return { status: 'added', addedCount: fresh.length }
     },
-    [collection, currentUser?.role, hiddenRestrictedCount, updateDraft, inuksuksEnabled],
+    [collection, currentUser?.role, hiddenRestrictedCount, updateDraft, markersEnabled],
   )
 
   const remove = useCallback(
@@ -823,7 +823,7 @@ export default function CollectionManageDialog({
         ...draftRef.current.filter((img) => !externalRemoves.has(memberKey(img))),
         ...externalAdds.filter((img) => !draftIds.has(memberKey(img))),
       ]
-      if (inuksuksEnabled) await onSaveMembers(merged.map(memberKey), merged)
+      if (markersEnabled) await onSaveMembers(merged.map(memberKey), merged)
       else await onSaveMembers(merged.map(memberKey))
       onClose()
     } catch (err) {
@@ -832,7 +832,7 @@ export default function CollectionManageDialog({
     } finally {
       setSaving(false)
     }
-  }, [collection, dirty, baselineIds, onSaveMembers, onClose, onError, inuksuksEnabled])
+  }, [collection, dirty, baselineIds, onSaveMembers, onClose, onError, markersEnabled])
 
   /** Esc/backdrop discard the draft — guarded when edits are staged. */
   const handleRequestClose = useCallback(() => {
@@ -882,7 +882,7 @@ export default function CollectionManageDialog({
                 Multi-select
               </Button>
             )}
-            {inuksuksEnabled && (
+            {markersEnabled && (
               <Button
                 size="small"
                 variant="outlined"
@@ -1089,7 +1089,7 @@ export default function CollectionManageDialog({
         </DialogActions>
       </Dialog>
       <Dialog
-        open={pickerOpen && open && inuksuksEnabled}
+        open={pickerOpen && open && markersEnabled}
         onClose={() => !pickerBusy && setPickerOpen(false)}
         maxWidth="sm"
         fullWidth
@@ -1130,12 +1130,12 @@ export default function CollectionManageDialog({
             Cancel
           </Button>
           <Button
-            disabled={pickerBusy || pickerData.loading || !pickerData.board?.inuksuks.length}
+            disabled={pickerBusy || pickerData.loading || !pickerData.board?.markers.length}
             onClick={async () => {
-              const items = pickerData.board?.inuksuks ?? []
+              const items = pickerData.board?.markers ?? []
               setPickerBusy(true)
               try {
-                const result = stageAdd(await draftMembersFromInuksuks(items))
+                const result = stageAdd(await draftMembersFromMarkers(items))
                 if (result.status === 'full')
                   throw new Error('These saved views exceed the collection capacity.')
                 setPickerOpen(false)

@@ -15,9 +15,9 @@ implemented.
 
 ## Feature flags (`COLLECTIONS_ENABLED`, `COLLECTIONS_HOME_SHELF`, `COLLECTIONS_STUDENT_ACCESS`)
 
-The independent Inuksuks and Boards dark launch uses `INUKSUKS_ENABLED`
-(default false), Helm `inuksuks.enabled`, and the `inuksuks` features response
-field. See [Inuksuks and Boards](inuksuks-and-boards.md).
+The independent Markers and Boards dark launch uses `MARKERS_ENABLED`
+(default false), Helm `markers.enabled`, and the `markers` features response
+field. See [Markers and Boards](markers-and-boards.md).
 
 Collections are **dark-launched** so the rest of the app can keep releasing
 (patch/minor bumps via release-please, `stable` re-pins) while the epic lands
@@ -1948,7 +1948,7 @@ the shared group-chip palette.
 
 ## Collection slots (#1770, backend)
 
-With `INUKSUKS_ENABLED=true`, every member response retains its ImageOut fields
+With `MARKERS_ENABLED=true`, every member response retains its ImageOut fields
 and additionally carries `slot: {id, viewport_state, thumb, label}`. Repeated
 image IDs represent distinct ordered slots. Covers remain image-based; graph
 and reverse-lookup Collection references are deduplicated. Student image
@@ -1956,18 +1956,18 @@ visibility filters slots before thumbnail token issuance; `member_count` is
 the visible slot count. The frontend slot-identity follow-up is #1774.
 
 POST and PUT `/api/collections/{id}/images` accept `image_ids` followed by
-`slots: [{id?, image_id, inuksuk_id?, viewport_state?, label?}]`, then optional
-`source_board_id` seeds and `inuksuk_ids` in supplied order.
+`slots: [{id?, image_id, marker_id?, viewport_state?, label?}]`, then optional
+`source_board_id` seeds and `marker_ids` in supplied order.
 Board seeds follow member order.
 An existing slot ID must belong to this collection and match its image. Omitted
 metadata survives; explicit null clears it. Legacy IDs reuse the first unused
 matching slot. Invisible existing members survive replacement as before.
 
 The caller must see the source Board; inaccessible Board members are skipped.
-Explicit inaccessible Inuksuks return 404. Seeding snapshots geometry, title,
-and an independent JPEG; it never changes or retains a link to the Inuksuk.
+Explicit inaccessible Markers return 404. Seeding snapshots geometry, title,
+and an independent JPEG; it never changes or retains a link to the Marker.
 Student Sequence limits count slots and distinguish additions by slot identity.
-Synchronized creation from `inuksuk_ids` or `source_board_id` requires 2–4 slots. Plain `slots` and legacy `image_ids`
+Synchronized creation from `marker_ids` or `source_board_id` requires 2–4 slots. Plain `slots` and legacy `image_ids`
 payloads retain the 0–4 member bounds on create and update, including the
 empty/single-member editing, removal, and undo workflows. Source-based updates
 also allow 0–4 slots; the two-slot minimum applies only to seeded creation.
@@ -1976,7 +1976,7 @@ PUT `/api/collections/{id}/viewport` also accepts
 `{version, slot_viewports: {"<slot_id>": {x,y,zoom,rotation?}|null}}` under the
 existing edit permission and OCC. Coordinates must be finite numbers and zoom
 positive. The legacy `viewport_state` dictionary is replaced only when supplied.
-Slot edits do not mutate Inuksuks. Removed slots/Collections/Images clean up
+Slot edits do not mutate Markers. Removed slots/Collections/Images clean up
 their snapshots after commit. Image replacement retains slots and labels but
 clears their geometry and thumbnail, and invalidates the Collection version.
 
@@ -2001,10 +2001,10 @@ are collected again after locking so racing snapshots are removed after commit.
 
 ## Board-based curation and multi-slot viewers (#1774)
 
-With `features.inuksuks`, a Board header can create a Sequence
+With `features.markers`, a Board header can create a Sequence
 Collection using the existing collection form. Select mode offers Sequence
 create/add for any non-empty selection and Synchronized create/add for 2–4
-Inuksuks. Existing collection destinations use the normal Add to Collection
+Markers. Existing collection destinations use the normal Add to Collection
 dialog. Creating opens the new collection; adding keeps the Board open.
 
 The Manage dialog stages **Add from Board**,
@@ -2013,7 +2013,7 @@ membership merging identify saved slots independently. Draft additions have
 temporary negative keys and do not allocate persisted slots until Done. Save
 retains existing slot ids; cancelling discards all staged additions.
 Whole-image search picks deduplicate by their source image id, including picks
-already staged in the draft. Board/Inuksuk picks may intentionally add further
+already staged in the draft. Board/Marker picks may intentionally add further
 slots for that same image.
 
 Sequence filmstrips display slot crops without visible text underneath and open
@@ -2026,12 +2026,12 @@ remains the real-image fallback. Image APIs always receive the real image id.
 Synchronized panes register, link, unlink and restore by slot identity. Their
 initial positions prefer slot snapshots, then the legacy image-keyed defaults.
 Set as default view sends separate `slot_viewports` and legacy
-`viewport_state` dictionaries; it never writes to the source Inuksuks.
+`viewport_state` dictionaries; it never writes to the source Markers.
 Slot crop renewal fetches the containing Collection to obtain a fresh
 authorized thumbnail token. Covers remain image-based, with one picker row per
 source image.
 
-Uncommitted Board picks renew their source Inuksuk thumbnail until Done
+Uncommitted Board picks renew their source Marker thumbnail until Done
 allocates a persisted slot. Renewal only reads the source; it never edits it.
 
 When the feature is disabled, the new controls are absent and writes retain the
@@ -2040,8 +2040,8 @@ visibility, capacity checks and optimistic concurrency remain authoritative.
 
 ### Search saved views into the Manage draft (#1775)
 
-With the Inuksuks flag enabled, Manage Collection's search picker also offers
-Boards and Inuksuks. A saved-view result stages one Inuksuk or the Board's visible
+With the Markers flag enabled, Manage Collection's search picker also offers
+Boards and Markers. A saved-view result stages one Marker or the Board's visible
 views (displayed Board member order), without navigating away
 or saving the Collection. Source images are fetched through the authorized image
 endpoint, and each view becomes an independently keyed temporary slot. Empty Boards
@@ -2056,7 +2056,7 @@ restoring and rebuilding DZI tiles does not replace those snapshots.
 
 Creation and membership replacement reload the complete member/image graph after
 committing slot snapshots. Responses must not rely on images retained in an async
-session's identity map. Fresh-request-session regressions cover Board/Inuksuk
+session's identity map. Fresh-request-session regressions cover Board/Marker
 seeding, direct slots and image IDs, including replacement and append flows.
 Create and add dialogs surface short, non-HTML backend error details when present;
 otherwise they show a retry-oriented fallback, without closing the failed draft.

@@ -504,7 +504,7 @@ describe('saved-view collection sources', () => {
     expect(result.images.map((image) => image.id)).toEqual([9, 9, 9])
     expect(result.images.map((image) => image.slot?.id)).toEqual([1, 2, 3])
   })
-  it('appends selected Inuksuks while preserving every existing slot id', async () => {
+  it('appends selected Markers while preserving every existing slot id', async () => {
     apiMocks.fetchCollection.mockResolvedValue(
       makeApiCollection({
         version: 4,
@@ -512,14 +512,14 @@ describe('saved-view collection sources', () => {
       }),
     )
     apiMocks.replaceCollectionImages.mockResolvedValue(makeApiCollection())
-    await addSourcesToCollection(5, { inuksuk_ids: [31, 32] })
+    await addSourcesToCollection(5, { marker_ids: [31, 32] })
     expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
       version: 4,
       slots: [
         { id: 1, image_id: 9 },
         { id: 2, image_id: 9 },
       ],
-      inuksuk_ids: [31, 32],
+      marker_ids: [31, 32],
     })
   })
   it('keeps source failures visible to the caller', async () => {

@@ -5,9 +5,9 @@ import * as StoriesModule from './ViewerSidePanel.stories'
 
 # Viewer side panel
 
-An Inuksuks-feature-only, permanent right-side panel for the image page and Sequence
+A Markers-feature-only, permanent right-side panel for the image page and Sequence
 viewer. One square OSD-style control opens it; the header's left-aligned exclusive
-Inuksuks, Shared View and Details buttons select content, and its right control closes it.
+Markers, Shared View and Details buttons select content, and its right control closes it.
 Selected buttons use MUI rounded-square action states, not navigation-rail pills.
 
 At sm and above the panel reserves 256px and OSD resizes its actual image container:
@@ -16,7 +16,7 @@ At xs it overlays the full frame. Outside presses and Escape never close the pan
 Escape still belongs to placement, editing and menus.
 
 Open state and selected content persist under `hrivpref:viewer-panel:user:<id>`.
-New users start closed on Inuksuks. Anonymous previews and storage failures use memory.
+New users start closed on Markers. Anonymous previews and storage failures use memory.
 The list reuses the existing grouped visibility and row menus with a stable menu
 portal container; the Details fields and Viewer controls reuse the legacy drawer's
 content. Flag-off viewers and Synchronized panes retain their previous UI.
@@ -25,15 +25,15 @@ other people's public views remain behind Public & shared Boards. The middle lin
 tab reuses the image page's copy action. Sequence copies a standalone image view
 with live viewport and selection boxes. SharedView demonstrates the copy action.
 
-Basic shows the closed control; Inuksuks and Details exercise content and menus;
-The Inuksuks story uses Chromatic light, dark and mobile modes to cover the alternate
+Basic shows the closed control; Markers and Details exercise content and menus;
+The Markers story uses Chromatic light, dark and mobile modes to cover the alternate
 palette and full-width overlay without duplicating stories.
 
 NewlySaved demonstrates the saved row's exclusive selection and DOM focus. Saving
-a new view opens Inuksuks if needed, expands its group and scrolls the row into view.
+a new view opens Markers if needed, expands its group and scrolls the row into view.
 Rows, metadata and help use footer-sized caption typography. Group headings use
 the slightly larger body2 hierarchy and show saved-view counts in parentheses.
-The Inuksuks tab no longer repeats a total-count heading below its controls;
+The Markers tab no longer repeats a total-count heading below its controls;
 Shared View and Details retain their section headings.
 
 <Primary />

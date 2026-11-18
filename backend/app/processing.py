@@ -33,11 +33,11 @@ from .board_memberships import bump_board_membership_versions
 from .collection_views import image_ids_in_collections
 from .database import async_session, settings
 from .measurement.service import scan_after_processing
-from .inuksuk_thumbs import remove_image_inuksuk_thumbnails
+from .marker_thumbs import remove_image_marker_thumbnails
 from .collection_slots import cleanup_slot_thumbs, image_slot_thumbs
 from .snapshot_files import SNAPSHOT_NAMESPACES
 from .auth_events import actor_log_fields
-from .models import Image, Inuksuk, MeasurementFinding, SourceImage, User
+from .models import Image, Marker, MeasurementFinding, SourceImage, User
 from .queue_metrics import collect_queue_state
 from .task_constants import (
     BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
@@ -1082,7 +1082,7 @@ async def process_replace_image(
                 await bump_board_membership_versions(db, image_ids=[img.id])
                 slot_paths = await image_slot_thumbs(db, [img.id], clear=True)
                 await db.execute(
-                    delete(Inuksuk).where(Inuksuk.image_id == img.id)
+                    delete(Marker).where(Marker.image_id == img.id)
                 )
 
                 # Clear old pyramid metadata before merging new
@@ -1144,7 +1144,7 @@ async def process_replace_image(
 
             # Remove old tiles only after the commit succeeds, so a
             # failure cannot leave the Image record pointing at deleted files.
-            await asyncio.to_thread(remove_image_inuksuk_thumbnails, old_thumbnail_image)
+            await asyncio.to_thread(remove_image_marker_thumbnails, old_thumbnail_image)
             await cleanup_slot_thumbs(slot_paths)
             if old_tile_dir and os.path.isdir(old_tile_dir):
                 shutil.rmtree(old_tile_dir, ignore_errors=True)

@@ -1,9 +1,9 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import Alert from '@mui/material/Alert'
 import SpaceDashboardOutlined from '@mui/icons-material/SpaceDashboardOutlined'
-import CompassCalibration from '@mui/icons-material/CompassCalibration'
+import Room from '@mui/icons-material/Room'
 import { fetchBoard, userMessage } from '../api'
-import { draftMembersFromInuksuks } from '../collectionMembers'
+import { draftMembersFromMarkers } from '../collectionMembers'
 import { useSavedViewSearch } from '../useSavedViewSearch'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -32,7 +32,7 @@ import SearchIcon from '@mui/icons-material/Search'
 import TextFieldsIcon from '@mui/icons-material/TextFields'
 import type {
   ApiBoardSummary,
-  ApiInuksuk,
+  ApiMarker,
   Category,
   CollectionSummary,
   ImageItem,
@@ -47,7 +47,7 @@ import RenewingThumbnail from './RenewingThumbnail'
 // ── Result types ───────────────────────────────────────
 
 type ResultKind =
-  'category' | 'image' | 'program' | 'user' | 'guide' | 'collection' | 'board' | 'inuksuk'
+  'category' | 'image' | 'program' | 'user' | 'guide' | 'collection' | 'board' | 'marker'
 
 interface FieldMatch {
   field: string
@@ -98,7 +98,7 @@ interface GroupedResult {
 }
 
 type SavedViewPayload =
-  { kind: 'board'; board: ApiBoardSummary } | { kind: 'inuksuk'; inuksuk: ApiInuksuk }
+  { kind: 'board'; board: ApiBoardSummary } | { kind: 'marker'; marker: ApiMarker }
 
 interface CategoryPayload {
   kind: 'category'
@@ -153,10 +153,10 @@ const TYPE_FILTERS: FilterDef<TypeFilter>[] = [
     tooltip: 'Search Board titles and descriptions',
   },
   {
-    key: 'inuksuk',
-    label: 'Inuksuks',
-    icon: <CompassCalibration fontSize="small" />,
-    tooltip: 'Search Inuksuk titles and descriptions',
+    key: 'marker',
+    label: 'Markers',
+    icon: <Room fontSize="small" />,
+    tooltip: 'Search Marker titles and descriptions',
   },
   {
     key: 'category',
@@ -201,7 +201,7 @@ const TYPE_FILTERS: FilterDef<TypeFilter>[] = [
  *  (e.g. Images searches image titles, Collections searches name + description). */
 const PRIMARY_FIELDS_BY_KIND: Record<ResultKind, readonly string[]> = {
   board: ['Title', 'Description'],
-  inuksuk: ['Title', 'Description'],
+  marker: ['Title', 'Description'],
   category: ['Name'],
   image: ['Name'],
   program: ['Name'],
@@ -283,8 +283,8 @@ function iconForKind(kind: ResultKind) {
   switch (kind) {
     case 'board':
       return <SpaceDashboardOutlined color="primary" />
-    case 'inuksuk':
-      return <CompassCalibration color="secondary" />
+    case 'marker':
+      return <Room color="secondary" />
     case 'category':
       return <CategoryIcon color="primary" />
     case 'image':
@@ -304,8 +304,8 @@ function labelForKind(kind: ResultKind): string {
   switch (kind) {
     case 'board':
       return 'Board'
-    case 'inuksuk':
-      return 'Inuksuk'
+    case 'marker':
+      return 'Marker'
     case 'category':
       return 'Category'
     case 'image':
@@ -562,9 +562,9 @@ interface SearchModalProps {
   /** Whether the collections feature is enabled — gates the Collections
    *  chip, collection results, and the placeholder copy. */
   collectionsEnabled?: boolean
-  inuksuksEnabled?: boolean
+  markersEnabled?: boolean
   onSelectBoard?: (boardId: number) => void
-  onSelectInuksuk?: (item: ApiInuksuk) => void
+  onSelectMarker?: (item: ApiMarker) => void
   /** Hide categories/images with a non-published status (students only). */
   excludeHidden: boolean
   /** Restrict results to categories/images — no program, user, or guide
@@ -606,9 +606,9 @@ export default function SearchModal({
   users,
   collections = [],
   collectionsEnabled = false,
-  inuksuksEnabled = false,
+  markersEnabled = false,
   onSelectBoard,
-  onSelectInuksuk,
+  onSelectMarker,
   excludeHidden,
   suppressExtendedResults,
   onSelectCategory,
@@ -630,7 +630,7 @@ export default function SearchModal({
   // the select layer.
   const selectMode = initialSelectMode && onAddImagesToCollection != null
   const [query, setQuery] = useState('')
-  const savedViews = useSavedViewSearch(open && inuksuksEnabled, query)
+  const savedViews = useSavedViewSearch(open && markersEnabled, query)
   const [stageError, setStageError] = useState<string | null>(null)
   const [staging, setStaging] = useState(false)
   const stageAbort = useRef<AbortController | null>(null)
@@ -641,7 +641,7 @@ export default function SearchModal({
     () =>
       new Set(
         selectMode
-          ? ['category', 'image', ...(inuksuksEnabled ? (['board', 'inuksuk'] as const) : [])]
+          ? ['category', 'image', ...(markersEnabled ? (['board', 'marker'] as const) : [])]
           : [],
       ),
   )
@@ -673,7 +673,7 @@ export default function SearchModal({
           new Set<TypeFilter>([
             'category',
             'image',
-            ...(inuksuksEnabled ? (['board', 'inuksuk'] as const) : []),
+            ...(markersEnabled ? (['board', 'marker'] as const) : []),
           ]),
         )
       else if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
@@ -726,7 +726,7 @@ export default function SearchModal({
       const terms = parseSearchQuery(q)
       if (terms.length === 0) return []
       const results: SearchResult[] = []
-      if (inuksuksEnabled) {
+      if (markersEnabled) {
         const entries: {
           payload: SavedViewPayload
           label: string
@@ -739,11 +739,11 @@ export default function SearchModal({
             id: board.id,
             description: board.description,
           })),
-          ...savedViews.inuksuks.map((inuksuk) => ({
-            payload: { kind: 'inuksuk' as const, inuksuk },
-            label: inuksuk.title,
-            id: inuksuk.id,
-            description: inuksuk.description,
+          ...savedViews.markers.map((marker) => ({
+            payload: { kind: 'marker' as const, marker },
+            label: marker.title,
+            id: marker.id,
+            description: marker.description,
           })),
         ]
         for (const entry of entries) {
@@ -850,9 +850,9 @@ export default function SearchModal({
       excludeHidden,
       suppressExtendedResults,
       programMap,
-      inuksuksEnabled,
+      markersEnabled,
       savedViews.boards,
-      savedViews.inuksuks,
+      savedViews.markers,
     ],
   )
 
@@ -1127,8 +1127,8 @@ export default function SearchModal({
       case 'board':
         onSelectBoard?.(result.payload.board.id)
         break
-      case 'inuksuk':
-        onSelectInuksuk?.(result.payload.inuksuk)
+      case 'marker':
+        onSelectMarker?.(result.payload.marker)
         break
       case 'category':
         onSelectCategory(result.payload.categoryPath)
@@ -1159,14 +1159,14 @@ export default function SearchModal({
     setStageError(null)
     try {
       const items =
-        payload.kind === 'inuksuk'
-          ? [payload.inuksuk]
-          : (await fetchBoard(payload.board.id, { signal: controller.signal })).inuksuks
+        payload.kind === 'marker'
+          ? [payload.marker]
+          : (await fetchBoard(payload.board.id, { signal: controller.signal })).markers
       if (!items.length) {
         setStageError('This Board has no visible saved views to add.')
         return
       }
-      const members = await draftMembersFromInuksuks(items)
+      const members = await draftMembersFromMarkers(items)
       if (controller.signal.aborted) return
       onClose()
       onAddImagesToCollection?.(members)
@@ -1199,9 +1199,9 @@ export default function SearchModal({
         {(savedViews.error || stageError) && (
           <Alert severity="error">{stageError || savedViews.error}</Alert>
         )}
-        {selectMode && inuksuksEnabled && (
+        {selectMode && markersEnabled && (
           <Typography variant="body2">
-            Click a Board or Inuksuk result to add its saved views to the draft.
+            Click a Board or Marker result to add its saved views to the draft.
           </Typography>
         )}
         <TextField
@@ -1238,8 +1238,8 @@ export default function SearchModal({
             {/* The picker offers only the two addable kinds — Categories and
                 Images, pre-applied — no other type or field chips (#1567). */}
             {TYPE_FILTERS.filter((f) =>
-              f.key === 'board' || f.key === 'inuksuk'
-                ? inuksuksEnabled
+              f.key === 'board' || f.key === 'marker'
+                ? markersEnabled
                 : selectMode
                   ? f.key === 'category' || f.key === 'image'
                   : (f.key !== 'collection' || collectionsEnabled) &&
@@ -1599,7 +1599,7 @@ export default function SearchModal({
                           disabled={staging}
                           onClick={() =>
                             selectMode &&
-                            (result.payload.kind === 'board' || result.payload.kind === 'inuksuk')
+                            (result.payload.kind === 'board' || result.payload.kind === 'marker')
                               ? void stageSavedViews(result.payload)
                               : handleSelect(result)
                           }
