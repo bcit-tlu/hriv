@@ -1158,6 +1158,8 @@ async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> No
     ]
     next(i for i in images if i.id == 9_400_005).instructor_note = "staff only"
     next(s for s in source_images if s.id == 812).instructor_note = "src staff only"
+    next(i for i in images if i.id == 9_400_005).description = "public text"
+    next(s for s in source_images if s.id == 812).description = "src public text"
     announcements = [
         SimpleNamespace(
             id=1,
@@ -1321,6 +1323,9 @@ async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> No
     assert [source["id"] for source in dump["source_images"]] == [1, 812]
     assert dump["images"][0]["instructor_note"] == "staff only"
     assert [s["instructor_note"] for s in dump["source_images"]] == [None, "src staff only"]
+    assert dump["images"][0]["description"] == "public text"
+    assert [s["description"] for s in dump["source_images"]] == [None, "src public text"]
+    assert all("note" not in row for row in dump["images"] + dump["source_images"])
     assert dump["source_images"][0]["uploaded_by"] == 1
     assert dump["collections"] == [
         {
