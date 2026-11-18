@@ -1581,7 +1581,7 @@ selection MouseTracker ignores their presses.
   its stable container prevents leftover modal backdrops. Pinned drawers ignore
   outside presses and Escape.
 - Markers are upright constant-size 27px white discs with blue glyphs and a subtle
-  contrast ring/shadow, using the shared marker-marker.svg asset. Labels retain
+  contrast ring/shadow, rendered as MUI `Room` icons. Labels retain
   their existing styling. The top-left pin has no badge and matches the adjacent
   white-on-dark OSD controls; the placement tool shares all normal toolbar states.
 
