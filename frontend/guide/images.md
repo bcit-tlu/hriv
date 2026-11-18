@@ -25,8 +25,10 @@ to open **Edit Details**.
 
 ![Editing image details](images/image-edit.png)
 
-- **Name**, **Category**, **Copyright**, and **Note** — the note shows
-  alongside the image for students.
+- **Name**, **Category**, **Copyright**, and **Description** — the
+  description shows alongside the image for everyone, students included.
+- **Instructor note** (marked with a lock) — for teaching notes such as quiz
+  answers. Instructors, staff and admins see it; students never do.
 - **Scale** and **Unit** — optional: pixels per real-world unit (e.g.
   `8` px per `um`). This unlocks measurement boxes in the viewer.
 
