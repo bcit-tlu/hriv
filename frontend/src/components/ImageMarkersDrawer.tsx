@@ -197,13 +197,23 @@ export default function ImageMarkersDrawer({
   const menuRef = useRef<HTMLDivElement>(null)
   const menuActions = useRef<PopoverActions>(null)
   const focusedId = useRef<number | null>(null)
+  // Expand Public & Shared when focus lands on a row inside it — render-phase
+  // adjustment so the section is mounted before the scroll/focus effect runs.
+  // Only consumes the focus while the drawer is open, matching the effect's
+  // old `!open` early return.
+  const [seenFocusId, setSeenFocusId] = useState<number | null>(null)
+  if (focusId == null) {
+    if (seenFocusId != null) setSeenFocusId(null)
+  } else if (open && focusIsShared && focusId !== seenFocusId) {
+    setSeenFocusId(focusId)
+    setSharedOpen(true)
+  }
   useEffect(() => {
     if (focusId == null) {
       focusedId.current = null
       return
     }
     if (focusedId.current === focusId || !open) return
-    if (focusIsShared) setSharedOpen(true)
     const row = drawerRef.current?.querySelector<HTMLButtonElement>(
       `[data-marker-row="${focusId}"]`,
     )
@@ -211,7 +221,7 @@ export default function ImageMarkersDrawer({
     row.focus()
     row.scrollIntoView?.({ block: 'nearest' })
     focusedId.current = focusId
-  }, [focusId, items, boards, open, sharedOpen, focusIsShared])
+  }, [focusId, items, boards, open, sharedOpen])
   const visibilityToggles = (rows: ApiMarker[], title: string) => {
     const markerAll = rows.every((item) => prefs.visibilityFor(item).markerVisible)
     const markerSome = rows.some((item) => prefs.visibilityFor(item).markerVisible)

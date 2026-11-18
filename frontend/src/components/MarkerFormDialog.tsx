@@ -179,6 +179,11 @@ export default function MarkerFormDialog({
   const boardsDescriptionId = useId()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const panesRef = useRef<HTMLDivElement>(null)
+  const [panesEl, setPanesEl] = useState<HTMLDivElement | null>(null)
+  const setPanesRef = useCallback((el: HTMLDivElement | null) => {
+    panesRef.current = el
+    setPanesEl(el)
+  }, [])
   const boardsInputRef = useRef<HTMLInputElement>(null)
   const editable = !baseline || baseline.permissions.can_edit
 
@@ -666,7 +671,7 @@ export default function MarkerFormDialog({
     </>
   )
   const boardPaneContent = (
-    <Slide in={boardPane} direction="left" container={panesRef.current} mountOnEnter unmountOnExit>
+    <Slide in={boardPane} direction="left" container={panesEl} mountOnEnter unmountOnExit>
       <Box
         sx={{
           position: 'absolute',
@@ -742,7 +747,7 @@ export default function MarkerFormDialog({
   )
   const panes = (
     <Box
-      ref={panesRef}
+      ref={setPanesRef}
       sx={{
         position: 'relative',
         overflow: 'hidden',

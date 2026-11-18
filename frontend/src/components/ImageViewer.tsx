@@ -299,20 +299,36 @@ export default function ImageViewer({
     setDeleteConflict(false)
     setDeletingMarker(item)
   }
-  const appliedMarkerFocus = useRef<{ id: number; imageId: number } | null>(null)
+  // Consume an externally requested marker focus (Boards & Markers click,
+  // `?marker=` link): selecting is render-phase adjustment per "adjusting
+  // state when a prop changes"; navigation/reveal stay in the effect below.
+  // A fresh object re-triggers the focus even for the same marker id.
+  const [appliedFocus, setAppliedFocus] = useState<typeof markerFocus>(null)
+  if (markerFocus && markerFocus !== appliedFocus) {
+    const item = markers.items.find((value) => value.id === markerFocus.id)
+    if (item) {
+      setAppliedFocus(markerFocus)
+      setSelectedMarkerId(item.id)
+      setFocusMarkerId(item.id)
+    }
+  } else if (!markerFocus && appliedFocus) {
+    setAppliedFocus(null)
+  }
+  const navigatedFocus = useRef<typeof appliedFocus>(null)
   useEffect(() => {
-    if (markerFocus == null) {
-      appliedMarkerFocus.current = null
+    if (!appliedFocus) {
+      navigatedFocus.current = null
       return
     }
-    if (appliedMarkerFocus.current === markerFocus) return
-    const item = markers.items.find((value) => value.id === markerFocus.id)
-    if (!item || !viewerInstance) return
-    appliedMarkerFocus.current = markerFocus
+    if (navigatedFocus.current === appliedFocus || !viewerInstance) return
+    const item = markers.items.find((value) => value.id === appliedFocus.id)
+    if (!item) return
+    navigatedFocus.current = appliedFocus
     navigateToMarker(viewerInstance, item)
-    selectMarker(item, true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectMarker reads visibilityPrefs; only marker identity matters
-  }, [markerFocus, markers.items, viewerInstance])
+    if (visibilityPrefs.visibilityFor(item).markerVisible === false)
+      visibilityPrefs.setItem(item, 'markerVisible', true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- visibilityPrefs churns identity; only marker identity matters
+  }, [appliedFocus, markers.items, viewerInstance])
   const clearDelete = () => {
     setDeletingMarker(null)
     setDeleteError(null)
