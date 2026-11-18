@@ -1847,6 +1847,42 @@ async def test_run_db_import_restores_instructor_note(tmp_path) -> None:
     assert [s.instructor_note for s in sources] == ["src staff only"]
 
 
+async def test_run_db_import_reads_description_then_legacy_keys(tmp_path) -> None:
+    """``description`` wins; older dumps fall back to ``note`` then ``origin``."""
+    dump = {
+        "users": [{"id": 1, "name": "U", "email": "u@e.com"}],
+        "categories": [{"id": 1, "label": "root", "parent_id": None}],
+        "images": [
+            {"id": 1, "name": "a", "thumb": "/t1", "tile_sources": "/ts1",
+             "description": "current", "note": "ignored"},
+            {"id": 2, "name": "b", "thumb": "/t2", "tile_sources": "/ts2",
+             "note": "from note", "origin": "ignored"},
+            {"id": 3, "name": "c", "thumb": "/t3", "tile_sources": "/ts3",
+             "origin": "from origin"},
+        ],
+        "source_images": [
+            {"id": 1, "original_filename": "a.tiff", "stored_path": "/s1",
+             "image_id": 1, "description": "src current", "note": "ignored"},
+            {"id": 2, "original_filename": "b.tiff", "stored_path": "/s2",
+             "image_id": 2, "note": "src from note"},
+        ],
+    }
+    input_file = tmp_path / "dump.json"
+    input_file.write_text(json.dumps(dump))
+    task = _make_import_task(str(input_file))
+    mock_session, factory = _make_import_session(task)
+
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_db_import(1)
+
+    assert task.status == "completed"
+    added = [c.args[0] for c in mock_session.add.call_args_list]
+    images = {o.id: o.description for o in added if type(o).__name__ == "Image"}
+    sources = {o.id: o.description for o in added if type(o).__name__ == "SourceImage"}
+    assert images == {1: "current", 2: "from note", 3: "from origin"}
+    assert sources == {1: "src current", 2: "src from note"}
+
+
 async def test_run_db_import_circular_categories(tmp_path) -> None:
     """Category rows that can't be topologically sorted surface a clear error."""
     dump = {
