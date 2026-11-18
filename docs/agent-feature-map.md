@@ -140,6 +140,9 @@ trigger, grouped controls and rows; `frontend/src/useMarkerVisibilityPrefs.ts`
 owns bounded, per-user marker/label defaults and overrides shared across panes.
 `ImageViewer.tsx` hosts the TOP_LEFT control and reuses `useImageMarkers`;
 `SequenceCollectionViewer.tsx` hides conflicting navigation arrows while open.
+Board headings open `components/BoardDialog.tsx` over the image (#1942);
+`?marker={id}` focus links (select, reveal and recentre) flow through
+`useShareableImageState.ts`, `App.tsx` and `ImageViewer.tsx`.
 See [the drawer contract](markers-and-boards.md#markers-drawer-1773).
 
 ### Boards page (#1771)
