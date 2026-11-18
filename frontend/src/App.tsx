@@ -2760,6 +2760,7 @@ export default function App() {
               onCloseCollection={handleCloseCollection}
               onOpenImage={handleOpenCollectionImage}
               onOpenBoard={handleOpenBoardDialog}
+              markersReloadSignal={markersReloadTick}
               onOpenImageById={handleOpenGraphImage}
               selectedCollectionItemId={selectedCollectionItemId}
               selectedCollectionSlotId={features?.markers ? selectedCollectionSlotId : null}

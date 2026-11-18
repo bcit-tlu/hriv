@@ -145,6 +145,9 @@ export interface CollectionsPageProps {
   /** Opens the Board dialog for a collection viewer's drawer group heading;
    * carries the viewer's container for full-page mode. */
   onOpenBoard?: (boardId: number, container?: HTMLElement | null) => void
+  /** Bumped when the in-place Board dialog mutates Marker/Board data so a
+   * mounted collection viewer reloads its markers. */
+  markersReloadSignal?: number
   /** Graph-view image clicks carry only an id (#1629) — the caller fetches
    *  the record and takes the normal `?image={id}` viewer path. */
   onOpenImageById?: (imageId: number) => void
@@ -687,6 +690,7 @@ export default function CollectionsPage({
   onCloseCollection,
   onOpenImage,
   onOpenBoard,
+  markersReloadSignal,
   selectedCollectionItemId,
   selectedCollectionSlotId = null,
   onSelectCollectionItem,
@@ -1239,6 +1243,7 @@ export default function CollectionsPage({
             onSelectItem={onSelectCollectionItem}
             onOpenImage={onOpenImage}
             onOpenBoard={onOpenBoard}
+            markersReloadSignal={markersReloadSignal}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
             memberInfoNames={memberInfoNames}
@@ -1279,6 +1284,7 @@ export default function CollectionsPage({
             }
             onOpenImage={onOpenImage}
             onOpenBoard={onOpenBoard}
+            markersReloadSignal={markersReloadSignal}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
             memberInfoNames={memberInfoNames}

@@ -3887,6 +3887,17 @@ describe('Boards navigation', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Trigger Board change' }))
     await waitFor(() => expect(imageViewerProps.current?.markersReloadSignal).not.toBe(before))
   })
+  it('signals a mounted collection viewer to reload markers after a Board change', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Shell tab collections' }))
+    await screen.findByTestId('collections-page')
+    const before = collectionsPageProps.current?.markersReloadSignal
+    act(() => {
+      ;(collectionsPageProps.current?.onOpenBoard as (id: number) => void)(7)
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Trigger Board change' }))
+    await waitFor(() => expect(collectionsPageProps.current?.markersReloadSignal).not.toBe(before))
+  })
   it('reaches the Boards page through the dialog manage link', async () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
