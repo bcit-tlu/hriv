@@ -4,15 +4,15 @@ Applies to both ``images`` and ``source_images``. The rename keeps every
 existing value (still public); ``instructor_note`` starts empty and is
 scrubbed from student payloads at serialization time.
 
-Revision ID: 0049_image_description_split
-Revises: 0048_remove_board_sections
+Revision ID: 0050_image_description_split
+Revises: 0049_inuksuks_to_markers
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0049_image_description_split"
-down_revision = "0048_remove_board_sections"
+revision = "0050_image_description_split"
+down_revision = "0049_inuksuks_to_markers"
 branch_labels = None
 depends_on = None
 

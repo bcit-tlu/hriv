@@ -82,7 +82,7 @@ characters each; blank normalizes to `null`):
 
 | Field             | Visible to                    | Writable by       | Notes                                                                 |
 | ----------------- | ----------------------------- | ----------------- | --------------------------------------------------------------------- |
-| `description`     | All roles, including students | admin, instructor | Renamed from `note` (migration `0049_image_description_split`).       |
+| `description`     | All roles, including students | admin, instructor | Renamed from `note` (migration `0050_image_description_split`).       |
 | `instructor_note` | admin, instructor, staff      | admin, instructor | `null` in every student payload; scrubbed server-side, not in the UI. |
 
 Scrubbing happens in `collection_views.image_out(img, scrub_instructor_note=...)`
