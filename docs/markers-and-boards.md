@@ -325,8 +325,8 @@ If a new point would sit beneath the panel, the viewer pans it clear of the pane
 `MarkersLayer` portals into `viewer.container` under
 `data-hriv-canvas-ui`, independently of Fabric. White circular discs with vibrant
 blue pin glyphs are 27 CSS pixels and titles use 13-pixel text; neither scales nor rotates with the image.
-Saved and draft markers share `frontend/public/marker-marker.svg`, with a subtle
-contrast ring and shadow. Title-label styling is unchanged.
+Saved and draft markers share the same glyph — MUI's `Room` pin icon on a
+white disc with a subtle ring and shadow. Title-label styling is unchanged.
 The layer reprojects anchors on animation, animation-finish, open, resize,
 rotate and flip. Each marker accepts `markerVisible` and
 `labelVisible` props, both true by default. A hidden marker always hides its
