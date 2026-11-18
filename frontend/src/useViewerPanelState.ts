@@ -23,6 +23,10 @@ function load(key: string | null): Preference {
   }
 }
 
+export function resetViewerPanelPrefsForTests() {
+  preferences.clear()
+}
+
 export function useViewerPanelState(userId: number | undefined, enableStorageSync = true) {
   const key = enableStorageSync && userId != null ? `hrivpref:viewer-panel:user:${userId}` : null
   const [state, setState] = useState(() => ({ key, ...load(key) }))

@@ -7,11 +7,7 @@ import {
   createCollectionFromSources,
   useEditableCollections,
 } from '../useAddToCollection'
-import {
-  apiCollectionOwnerToOwner,
-  describeCollectionOwners,
-  studentTypesAtCap,
-} from '../collectionUtils'
+import { studentTypesAtCap } from '../collectionUtils'
 import type { Category, CollectionType } from '../types'
 import type { CollectionSources } from '../api'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -91,7 +87,7 @@ import {
   updateMarker,
   userMessage,
 } from '../api'
-import { moveBoardMember, ownsBoard } from '../boardUtils'
+import { boardManagerText, moveBoardMember, ownsBoard } from '../boardUtils'
 import type {
   ApiBoard,
   ApiBoardSummary,
@@ -119,19 +115,6 @@ interface BoardsPageProps {
   boardId: number | null
   onSelectBoard: (boardId: number | null) => void
   onOpenMarker: (item: ApiMarker) => void
-}
-
-function boardManagerText(board: ApiBoardSummary) {
-  const owners = board.owners.flatMap((owner) => {
-    const mapped = apiCollectionOwnerToOwner(owner)
-    return mapped ? [mapped] : []
-  })
-  const programOwner = owners.find((owner) => owner.kind === 'program')
-  return programOwner
-    ? `Managed by program ${programOwner.name}`
-    : owners.length
-      ? `Managed by ${describeCollectionOwners(owners)}`
-      : 'No owner'
 }
 
 type SortableFrameProps = {
@@ -287,8 +270,8 @@ function BoardCover({ board }: { board: ApiBoardSummary }) {
   return (
     <Box
       sx={{
-        width: 48,
-        height: 48,
+        width: 64,
+        height: 64,
         flexShrink: 0,
         bgcolor: 'action.hover',
         display: 'grid',
@@ -508,7 +491,8 @@ export default function BoardsPage({
   const [query, setQuery] = useState('')
   const [scopes, setScopes] = useState<string[]>([])
   const [owner, setOwner] = useState('any')
-  const [discovery, setDiscovery] = useState<'shared' | 'all' | null>(null)
+  const [discovery, setDiscovery] = useState<'all' | null>(null)
+  const [discoveryFilters, setDiscoveryFilters] = useState<('shared' | 'instructor')[]>([])
   const [notice, setNotice] = useState<{
     message: string
     severity: 'success' | 'info' | 'warning'
@@ -544,14 +528,21 @@ export default function BoardsPage({
     setConflict(false)
   }
   const own = data.boards.filter((row) => ownsBoard(row, currentUser))
-  const publicBoards = data.boards.filter(
-    (row) =>
-      (!ownsBoard(row, currentUser) || !row.permissions.can_edit) &&
-      (row.visibility !== 'private' || ownsBoard(row, currentUser)),
-  )
+  const isSharedBoard = (row: ApiBoardSummary) =>
+    (!ownsBoard(row, currentUser) || !row.permissions.can_edit) &&
+    (row.visibility !== 'private' || ownsBoard(row, currentUser))
+  const isInstructorBoard = (row: ApiBoardSummary) =>
+    row.owner_program_id != null ||
+    row.owners.some((owner) => owner.role === 'admin' || owner.role === 'instructor')
   const canBrowseAllBoards =
     currentUser != null && ['admin', 'instructor', 'staff'].includes(currentUser.role)
-  const discoveryBoards = discovery === 'all' && canBrowseAllBoards ? data.boards : publicBoards
+  const discoveryBoards = data.boards.filter(
+    (row) =>
+      discoveryFilters.length === 0 ||
+      discoveryFilters.some((filter) =>
+        filter === 'shared' ? isSharedBoard(row) : isInstructorBoard(row),
+      ),
+  )
   const reorderableBoards = own.filter((row) => row.permissions.can_edit)
   const needle = query.trim().toLocaleLowerCase()
   const ownerMatches = (item: ApiBoardSummary | ApiMarker) =>
@@ -721,13 +712,6 @@ export default function BoardsPage({
   }
   const itemBoards = (item: ApiMarker) =>
     data.boards.filter((row) => item.board_ids.includes(row.id))
-  const scopePills = (item: ApiMarker) => (
-    <Stack direction="row" gap={0.5} flexWrap="wrap">
-      {[...new Set(itemBoards(item).map((row) => row.visibility))].map((visibility) => (
-        <CollectionVisibilityChip key={visibility} visibility={visibility} />
-      ))}
-    </Stack>
-  )
   const favouriteAction = (item: ApiMarker) => {
     if (!item.permissions.can_edit)
       return item.favourite ? (
@@ -904,7 +888,6 @@ export default function BoardsPage({
           >
             {item.category_name ?? 'Uncategorized'}
           </Typography>
-          <Box sx={{ mt: 0.5 }}>{scopePills(item)}</Box>
           {selectionAction(item)}
         </CardContent>
       </Card>
@@ -920,7 +903,7 @@ export default function BoardsPage({
         >
           <TableRow>
             {selecting && <TableCell>Select</TableCell>}
-            {['Title', 'Category', 'Scope', 'Boards', 'Favourite', 'Actions'].map((label) => (
+            {['Title', 'Category', 'Boards', 'Favourite', 'Actions'].map((label) => (
               <TableCell key={label}>{label}</TableCell>
             ))}
           </TableRow>
@@ -950,7 +933,6 @@ export default function BoardsPage({
               )}
               <TableCell>{item.title}</TableCell>
               <TableCell>{item.category_name ?? 'Uncategorized'}</TableCell>
-              <TableCell>{scopePills(item)}</TableCell>
               <TableCell onClick={(event) => event.stopPropagation()}>
                 {itemBoards(item).map((row) => (
                   <Button
@@ -990,6 +972,43 @@ export default function BoardsPage({
       {selecting ? 'Cancel selection' : 'Select'}
     </Button>
   )
+  const selectionButtons = collectionsEnabled && selecting && (
+    <Box
+      role="toolbar"
+      aria-label="Selected Markers"
+      sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}
+    >
+      <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
+        {selectedIds.length} selected
+      </Typography>
+      {(['sequence', 'synchronized'] as const).map((type) => {
+        const items = (board ? board.markers : filteredItems).filter((item) =>
+          selectedIds.includes(item.id),
+        )
+        const valid =
+          items.length > 0 && (type === 'sequence' || (items.length >= 2 && items.length <= 4))
+        const label = type === 'sequence' ? 'Sequence' : 'Synchronized'
+        return (
+          <Box key={type} sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              variant="contained"
+              disabled={!valid}
+              onClick={() => beginCollection(items, type)}
+            >
+              Create {label} Collection
+            </Button>
+            <Button
+              variant="outlined"
+              disabled={!valid}
+              onClick={() => beginCollection(items, type, true)}
+            >
+              Add to {label} Collection
+            </Button>
+          </Box>
+        )
+      })}
+    </Box>
+  )
   const collageToolbar = (title: string) => (
     <Box sx={{ mb: 2 }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
@@ -1027,47 +1046,14 @@ export default function BoardsPage({
               </ToggleButton>
             </ToggleButtonGroup>
           )}
-          {boardId != null && selectAction}
+          {boardId != null && (
+            <>
+              {selectionButtons}
+              {selectAction}
+            </>
+          )}
         </Box>
       </Stack>
-      {collectionsEnabled && selecting && (
-        <Stack
-          role="toolbar"
-          aria-label="Selected Markers"
-          direction="row"
-          spacing={1}
-          flexWrap="wrap"
-          useFlexGap
-        >
-          <Typography sx={{ alignSelf: 'center' }}>{selectedIds.length} selected</Typography>
-          {(['sequence', 'synchronized'] as const).map((type) => {
-            const items = (board ? board.markers : filteredItems).filter((item) =>
-              selectedIds.includes(item.id),
-            )
-            const valid =
-              items.length > 0 && (type === 'sequence' || (items.length >= 2 && items.length <= 4))
-            const label = type === 'sequence' ? 'Sequence' : 'Synchronized'
-            return (
-              <Box key={type} sx={{ display: 'flex', gap: 1 }}>
-                <Button
-                  variant="contained"
-                  disabled={!valid}
-                  onClick={() => beginCollection(items, type)}
-                >
-                  Create {label} Collection
-                </Button>
-                <Button
-                  variant="outlined"
-                  disabled={!valid}
-                  onClick={() => beginCollection(items, type, true)}
-                >
-                  Add to {label} Collection
-                </Button>
-              </Box>
-            )
-          })}
-        </Stack>
-      )}
     </Box>
   )
   if (!enabled) return null
@@ -1088,11 +1074,14 @@ export default function BoardsPage({
           My Boards
         </Typography>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 1 }}>
-          <Button variant="outlined" onClick={() => setDiscovery('shared')}>
-            Public &amp; shared Boards
-          </Button>
           {canBrowseAllBoards && (
-            <Button variant="outlined" onClick={() => setDiscovery('all')}>
+            <Button
+              variant="outlined"
+              onClick={() => {
+                setDiscoveryFilters([])
+                setDiscovery('all')
+              }}
+            >
               All Boards
             </Button>
           )}
@@ -1189,8 +1178,8 @@ export default function BoardsPage({
             >
               <Box
                 sx={{
-                  width: 48,
-                  height: 48,
+                  width: 64,
+                  height: 64,
                   display: 'grid',
                   placeItems: 'center',
                   bgcolor: 'action.hover',
@@ -1231,22 +1220,29 @@ export default function BoardsPage({
                   <CardActionArea
                     onClick={() => onSelectBoard(row.id)}
                     aria-label={`Open Board: ${row.name}`}
-                    sx={{ display: 'flex', justifyContent: 'flex-start', gap: 1 }}
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'flex-start',
+                      alignItems: 'stretch',
+                      gap: 1,
+                    }}
                   >
                     <BoardCover board={row} />
-                    <Typography
-                      variant="body2"
-                      component="p"
-                      noWrap
-                      fontWeight={600}
-                      sx={{
-                        px: 1,
-                        py: 0.75,
-                      }}
-                      title={row.name}
+                    <Stack
+                      sx={{ justifyContent: 'center', gap: 0.5, px: 1, py: 0.5, minWidth: 0 }}
+                      alignItems="flex-start"
                     >
-                      {row.name}
-                    </Typography>
+                      <Typography
+                        variant="body2"
+                        component="p"
+                        noWrap
+                        fontWeight={600}
+                        title={row.name}
+                      >
+                        {row.name}
+                      </Typography>
+                      <CollectionVisibilityChip visibility={row.visibility} />
+                    </Stack>
                   </CardActionArea>
                 </Card>
               </DropArea>
@@ -1255,23 +1251,36 @@ export default function BoardsPage({
         </Box>
 
         <Dialog
-          open={discovery === 'shared' || (discovery === 'all' && canBrowseAllBoards)}
+          open={discovery === 'all' && canBrowseAllBoards}
           onClose={() => setDiscovery(null)}
           fullWidth
-          maxWidth="sm"
-          aria-labelledby="public-boards-title"
+          maxWidth="lg"
+          aria-labelledby="all-boards-title"
         >
-          <DialogTitle id="public-boards-title">
-            {discovery === 'all' ? 'All Boards' : 'Public & shared Boards'}
-          </DialogTitle>
+          <DialogTitle id="all-boards-title">All Boards</DialogTitle>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', px: 3, pb: 1 }}>
+            {(['shared', 'instructor'] as const).map((filter) => {
+              const active = discoveryFilters.includes(filter)
+              const toggle = () =>
+                setDiscoveryFilters((current) =>
+                  active ? current.filter((value) => value !== filter) : [...current, filter],
+                )
+              return (
+                <Chip
+                  key={filter}
+                  size="small"
+                  label={filter === 'shared' ? 'Public & Shared' : 'Instructor Boards'}
+                  variant={active ? 'filled' : 'outlined'}
+                  color={active ? 'primary' : 'default'}
+                  aria-pressed={active}
+                  onClick={toggle}
+                />
+              )
+            })}
+          </Box>
           <DialogContent>
             {data.loading ? (
-              <CircularProgress
-                aria-label={
-                  discovery === 'all' ? 'Loading all Boards' : 'Loading public and shared Boards'
-                }
-                size={24}
-              />
+              <CircularProgress aria-label="Loading all Boards" size={24} />
             ) : data.error ? (
               <Alert severity="error">{data.error}</Alert>
             ) : discoveryBoards.length ? (
@@ -1319,9 +1328,7 @@ export default function BoardsPage({
               </Box>
             ) : (
               <Typography color="text.secondary">
-                {discovery === 'all'
-                  ? 'No Boards available.'
-                  : 'No public or shared Boards available.'}
+                {discoveryFilters.length ? 'No matching Boards.' : 'No Boards available.'}
               </Typography>
             )}
           </DialogContent>
@@ -1332,7 +1339,14 @@ export default function BoardsPage({
         {!boardId && collageToolbar('My Markers')}
         <FilterBar
           ariaLabel="Filter Boards and Markers"
-          actions={boardId == null ? selectAction : undefined}
+          actions={
+            boardId == null ? (
+              <>
+                {selectionButtons}
+                {selectAction}
+              </>
+            ) : undefined
+          }
           clearAction={
             !mobile && filtered ? (
               <Button

@@ -5,7 +5,8 @@ import { expect, fn, userEvent, within } from 'storybook/test'
 import ViewerSidePanel, { ViewerPanelToggle } from './ViewerSidePanel'
 import { ImageMarkersList } from './ImageMarkersDrawer'
 import { ImageDetailsContent } from './ImageDetailsDrawer'
-import { MARKER_FIXTURE } from './markerFixtures'
+import { BOARD_FIXTURE, MARKER_FIXTURE } from './markerFixtures'
+import { BOARD_USER } from './boardsFixtures'
 import { useMarkerVisibilityPrefs } from '../useMarkerVisibilityPrefs'
 import type { ViewerPanelTab } from '../useViewerPanelState'
 
@@ -55,6 +56,8 @@ function Example({
         markers={
           <ImageMarkersList
             items={items}
+            boards={[BOARD_FIXTURE]}
+            currentUser={BOARD_USER}
             selectedId={saved ? 8 : null}
             focusId={saved ? 8 : null}
             drawerId="example-list"

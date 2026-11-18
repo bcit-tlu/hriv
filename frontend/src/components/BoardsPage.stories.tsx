@@ -17,7 +17,6 @@ const writes = fn()
 function Example({
   initialBoardId = null,
   state = 'ready',
-  readOnlyOwned = false,
   role = BOARD_USER.role,
 }: {
   initialBoardId?: number | null
@@ -29,7 +28,7 @@ function Example({
   const [selection, setSelection] = useState<{ boardId: number | null }>({
     boardId: initialBoardId,
   })
-  const currentUser = { ...BOARD_USER, role: readOnlyOwned ? ('student' as const) : role }
+  const currentUser = { ...BOARD_USER, role }
   return (
     <AuthContext.Provider value={{ ...BOARD_AUTH, currentUser }}>
       <BoardsPage
@@ -239,10 +238,14 @@ export const PublicSharedBoards: Story = {
   args: { role: 'admin', discoveryFixtures: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(await canvas.findByRole('button', { name: 'Public & shared Boards' }))
+    await expect(
+      canvas.queryByRole('button', { name: 'Public & shared Boards' }),
+    ).not.toBeInTheDocument()
+    await userEvent.click(await canvas.findByRole('button', { name: 'All Boards' }))
     const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
-      name: 'Public & shared Boards',
+      name: 'All Boards',
     })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Public & Shared' }))
     await waitFor(() =>
       expect(
         within(dialog).getByRole('button', { name: 'Open Board: Shared discoveries' }),
@@ -255,19 +258,14 @@ export const PublicSharedBoards: Story = {
     ).not.toBeInTheDocument()
   },
 }
-export const StudentPublicSharedBoards: Story = {
+export const StudentNoDiscovery: Story = {
   args: { role: 'student', discoveryFixtures: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
+    await canvas.findByRole('button', { name: 'Open Board: Architecture inspiration' })
     await expect(canvas.queryByRole('button', { name: 'All Boards' })).not.toBeInTheDocument()
-    await userEvent.click(await canvas.findByRole('button', { name: 'Public & shared Boards' }))
-    const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
-      name: 'Public & shared Boards',
-    })
-    await waitFor(() => expect(within(dialog).getByText('Managed by Morgan')).toBeVisible())
-    await expect(within(dialog).getByText('Managed by program Engineering')).toBeVisible()
     await expect(
-      within(dialog).queryByRole('button', { name: 'Open Board: Morgan’s private studies' }),
+      canvas.queryByRole('button', { name: 'Public & shared Boards' }),
     ).not.toBeInTheDocument()
   },
 }
@@ -279,6 +277,14 @@ export const AllBoards: Story = {
     const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
       name: 'All Boards',
     })
+    await expect(within(dialog).getByRole('button', { name: 'Public & Shared' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    await expect(within(dialog).getByRole('button', { name: 'Instructor Boards' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
     await waitFor(() =>
       expect(
         within(dialog).getByRole('button', { name: 'Open Board: Morgan’s private studies' }),
@@ -358,10 +364,11 @@ export const ReadOnlyOwnedBoard: Story = {
     )
     await expect(within(readOnly).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(2)
     await expectHorizontalBoardChips(readOnly)
-    await userEvent.click(canvas.getByRole('button', { name: 'Public & shared Boards' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'All Boards' }))
     const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
-      name: 'Public & shared Boards',
+      name: 'All Boards',
     })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Public & Shared' }))
     await waitFor(() =>
       expect(
         within(dialog).getByRole('button', { name: 'Open Board: Next studio project' }),

@@ -4,19 +4,20 @@ import { createPortal } from 'react-dom'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
+import Button from '@mui/material/Button'
 import Snackbar from '@mui/material/Snackbar'
 import { copyViewLink } from '../useShareableImageState'
 import { AuthContext } from '../authContextValue'
 import type { ApiMarker, MarkerView } from '../types'
 import { useImageMarkers } from '../useImageMarkers'
-import { adjustMarkerPixelForFlip, navigateToMarker } from '../markerViewport'
+import { adjustMarkerPixelForFlip, navigateToMarker, navigateToView } from '../markerViewport'
 import { useMarkerVisibilityPrefs } from '../useMarkerVisibilityPrefs'
 import { usePinnedDrawerState } from '../usePinnedDrawerState'
 import ViewerSidePanel, { ViewerPanelToggle } from './ViewerSidePanel'
 import { useViewerPanelState } from '../useViewerPanelState'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import ImageMarkersDrawer, { ImageMarkersTrigger, ImageMarkersList } from './ImageMarkersDrawer'
-import MarkerFormDialog from './MarkerFormDialog'
+import MarkerFormDialog, { MarkerDeleteDialog } from './MarkerFormDialog'
 import MarkersLayer from './MarkersLayer'
 import MarkerInfoCard from './MarkerInfoCard'
 import { useTheme } from '@mui/material/styles'
@@ -27,7 +28,7 @@ import {
   emitFrontendError,
   emitFrontendPerformance,
 } from '../observability'
-import { userMessage, type ApiImage } from '../api'
+import { ApiError, deleteMarker, userMessage, type ApiImage } from '../api'
 import { isTileTokenAuthorizationFailure, renewImageRecord } from '../tileTokenRenewal'
 import CanvasOverlay from './CanvasOverlay'
 import type { CanvasAnnotation } from './CanvasOverlay'
@@ -97,6 +98,23 @@ const isViewportAtHome = (viewer: OpenSeadragon.Viewer) => {
 interface ImageViewerProps {
   markersEnabled?: boolean
   onMarkersDrawerOpenChange?: (open: boolean) => void
+  /** Opens the Board dialog for a drawer group heading; carries this
+   * viewer's container so the dialog stays visible in full-page mode. */
+  onOpenBoard?: (boardId: number, container?: HTMLElement | null) => void
+  /**
+   * Marker an external flow wants selected and revealed (e.g. a Boards &
+   * Markers list click or a `?marker=` link). A fresh object re-triggers the
+   * focus even for the same marker id. `navigate` re-centres on the marker's
+   * saved view — omitted when an explicit shared viewport should win.
+   */
+  markerFocus?: {
+    id: number
+    imageId: number
+    navigate?: boolean
+    viewport?: ViewportState
+  } | null
+  /** Bumped when Marker/Board data mutates elsewhere (in-place Board dialog) — reloads markers. */
+  markersReloadSignal?: number
   tileSources: OpenSeadragon.TileSourceOptions | string
   /** Id of the image being viewed; emitted as a structured telemetry field. */
   imageId?: number
@@ -167,6 +185,9 @@ interface DragState {
 export default function ImageViewer({
   markersEnabled = false,
   onMarkersDrawerOpenChange,
+  onOpenBoard,
+  markerFocus,
+  markersReloadSignal,
   tileSources,
   imageId,
   categoryId,
@@ -224,7 +245,10 @@ export default function ImageViewer({
   const [focusMarkerId, setFocusMarkerId] = useState<number | null>(null)
   const [infoMarkerId, setInfoMarkerId] = useState<number | null>(null)
   const [draftTitle, setDraftTitle] = useState('New Marker')
-  const [deletingMarker, setDeletingMarker] = useState(false)
+  const [deletingMarker, setDeletingMarker] = useState<ApiMarker | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleteConflict, setDeleteConflict] = useState(false)
   const cancelMarkerDraft = useEffectEvent(() => {
     if (!markerDraft || markerDraft.imageId !== imageId) return false
     setMarkerDraft(null)
@@ -261,15 +285,102 @@ export default function ImageViewer({
   }, [markersDrawerOpen, onMarkersDrawerOpenChange])
   const [panelHost, setPanelHost] = useState<HTMLElement | null>(null)
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
-  const beginMarkerEdit = (item: ApiMarker, deleting = false) => {
+  // Selecting a marker always reveals it on the canvas: a hidden marker the
+  // user explicitly opened (drawer row, Boards & Markers, `?marker=` link)
+  // gets a `markerVisible` override so it doesn't land invisible.
+  const selectMarker = (item: ApiMarker, focus = false) => {
+    if (visibilityPrefs.visibilityFor(item).markerVisible === false)
+      visibilityPrefs.setItem(item, 'markerVisible', true)
+    setSelectedMarkerId(item.id)
+    setFocusMarkerId(focus ? item.id : null)
+  }
+  const beginMarkerEdit = (item: ApiMarker) => {
     if (!viewerInstance || (editingMarker && editingMarker.id !== item.id)) return
     navigateToMarker(viewerInstance, item)
-    setSelectedMarkerId(item.id)
-    setFocusMarkerId(item.id)
+    selectMarker(item, true)
     setMarkerDraft(null)
     setInfoMarkerId(item.id)
-    setDeletingMarker(deleting)
     setEditingMarker(item)
+  }
+  const beginMarkerDelete = (item: ApiMarker) => {
+    if (editingMarker) return
+    selectMarker(item, true)
+    setDeleteError(null)
+    setDeleteConflict(false)
+    setDeletingMarker(item)
+  }
+  // Consume an externally requested marker focus (Boards & Markers click,
+  // `?marker=` link): selecting is render-phase adjustment per "adjusting
+  // state when a prop changes"; navigation/reveal stay in the effect below.
+  // A fresh object re-triggers the focus even for the same marker id.
+  const [appliedFocus, setAppliedFocus] = useState<typeof markerFocus>(null)
+  if (markerFocus && markerFocus !== appliedFocus) {
+    const item = markers.items.find((value) => value.id === markerFocus.id)
+    if (item) {
+      setAppliedFocus(markerFocus)
+      setSelectedMarkerId(item.id)
+      setFocusMarkerId(item.id)
+    }
+  } else if (!markerFocus && appliedFocus) {
+    setAppliedFocus(null)
+  }
+  const navigatedFocus = useRef<typeof appliedFocus>(null)
+  useEffect(() => {
+    if (!appliedFocus) {
+      navigatedFocus.current = null
+      return
+    }
+    if (navigatedFocus.current === appliedFocus || !viewerInstance) return
+    const item = markers.items.find((value) => value.id === appliedFocus.id)
+    if (!item) return
+    navigatedFocus.current = appliedFocus
+    if (appliedFocus.navigate !== false) navigateToMarker(viewerInstance, item)
+    else if (appliedFocus.viewport) navigateToView(viewerInstance, appliedFocus.viewport)
+    if (visibilityPrefs.visibilityFor(item).markerVisible === false)
+      visibilityPrefs.setItem(item, 'markerVisible', true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- visibilityPrefs churns identity; only marker identity matters
+  }, [appliedFocus, markers.items, viewerInstance])
+  // Marker/Board data can mutate elsewhere while the viewer stays mounted
+  // (in-place Board dialog favourites, edits, deletes) — reload on the bump.
+  const seenReloadSignal = useRef(markersReloadSignal)
+  useEffect(() => {
+    if (markersReloadSignal == null || markersReloadSignal === seenReloadSignal.current) return
+    seenReloadSignal.current = markersReloadSignal
+    void markers.reload()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload identity churns; only the signal matters
+  }, [markersReloadSignal])
+  // Drawer headings report only the Board id — attach this viewer's
+  // container so the dialog can portal inside full-page mode.
+  const handleOpenBoard = onOpenBoard
+    ? (id: number) => onOpenBoard(id, viewerInstance?.container ?? null)
+    : undefined
+  const clearDelete = () => {
+    setDeletingMarker(null)
+    setDeleteError(null)
+    setDeleteConflict(false)
+  }
+  const confirmMarkerDelete = async () => {
+    if (!deletingMarker) return
+    setDeleteBusy(true)
+    setDeleteError(null)
+    try {
+      await deleteMarker(deletingMarker.id, deletingMarker.version)
+      await markers.reload()
+      setSelectedMarkerId((id) => (id === deletingMarker.id ? null : id))
+      setFocusMarkerId((id) => (id === deletingMarker.id ? null : id))
+      setInfoMarkerId((id) => (id === deletingMarker.id ? null : id))
+      clearDelete()
+    } catch (err) {
+      const conflict = err instanceof ApiError && err.status === 409
+      setDeleteConflict(conflict)
+      setDeleteError(
+        conflict
+          ? 'This Marker changed. Reload the list before deleting it.'
+          : userMessage(err, 'Unable to delete Marker.'),
+      )
+    } finally {
+      setDeleteBusy(false)
+    }
   }
   useEffect(() => {
     const width = panelOpen && !mobilePanel ? 256 : 0
@@ -2030,6 +2141,7 @@ export default function ImageViewer({
                 triggerRef={markersTriggerRef}
                 pinned={drawerState.pinned}
                 onOpenChange={setMarkersDrawerOpen}
+                tooltipContainer={viewerInstance.container}
               />,
               leftControlWrapper,
             )}
@@ -2072,22 +2184,24 @@ export default function ImageViewer({
                       key={drawerIdentity}
                       drawerId={drawerId + '-list'}
                       items={markers.items}
+                      boards={markers.boards ?? undefined}
+                      currentUser={auth?.currentUser ?? null}
                       draftTitle={markerDraft?.imageId === imageId ? draftTitle : undefined}
                       prefs={visibilityPrefs}
                       selectedId={selectedMarkerId}
                       focusId={focusMarkerId}
                       error={markers.error}
+                      onOpenBoard={handleOpenBoard}
                       onSelect={(item) => {
                         if (editingMarker) return
                         navigateToMarker(viewerInstance, item)
-                        setSelectedMarkerId(item.id)
-                        setFocusMarkerId(null)
+                        selectMarker(item)
                       }}
                       onEdit={(item) => {
                         beginMarkerEdit(item)
                       }}
                       onDelete={(item) => {
-                        beginMarkerEdit(item, true)
+                        beginMarkerDelete(item)
                       }}
                     />
                   }
@@ -2098,6 +2212,8 @@ export default function ImageViewer({
                 <ImageMarkersDrawer
                   key={drawerIdentity}
                   items={markers.items}
+                  boards={markers.boards ?? undefined}
+                  currentUser={auth?.currentUser ?? null}
                   draftTitle={markerDraft?.imageId === imageId ? draftTitle : undefined}
                   open={markersDrawerOpen}
                   pinned={drawerState.pinned}
@@ -2112,17 +2228,17 @@ export default function ImageViewer({
                   selectedId={selectedMarkerId}
                   focusId={focusMarkerId}
                   error={markers.error}
+                  onOpenBoard={handleOpenBoard}
                   onSelect={(item) => {
                     if (editingMarker) return
                     navigateToMarker(viewerInstance, item)
-                    setSelectedMarkerId(item.id)
-                    setFocusMarkerId(null)
+                    selectMarker(item)
                   }}
                   onEdit={(item) => {
                     beginMarkerEdit(item)
                   }}
                   onDelete={(item) => {
-                    beginMarkerEdit(item, true)
+                    beginMarkerDelete(item)
                   }}
                 />,
                 viewerInstance.container,
@@ -2159,7 +2275,6 @@ export default function ImageViewer({
                   item={item}
                   container={viewerInstance.container}
                   editing={editingMarker?.id === item.id}
-                  initialDelete={deletingMarker}
                   userId={auth?.currentUser?.id}
                   onChanged={markers.reload}
                   onCancelEdit={() => setEditingMarker(null)}
@@ -2186,6 +2301,7 @@ export default function ImageViewer({
               onChanged={async (created) => {
                 await markers.reload()
                 if (!created) return
+                navigateToMarker(viewerInstance, created)
                 setSelectedMarkerId(created.id)
                 setInfoMarkerId(created.id)
                 setFocusMarkerId(created.id)
@@ -2213,6 +2329,39 @@ export default function ImageViewer({
               </Alert>,
               viewerInstance.container,
             )}
+          {deletingMarker && (
+            <MarkerDeleteDialog
+              title={deletingMarker.title}
+              container={viewerInstance.container}
+              busy={deleteBusy}
+              confirmDisabled={deleteConflict}
+              error={
+                deleteError ? (
+                  <Alert
+                    severity="error"
+                    action={
+                      deleteConflict ? (
+                        <Button
+                          size="small"
+                          color="inherit"
+                          onClick={() => {
+                            void markers.reload()
+                            clearDelete()
+                          }}
+                        >
+                          Reload list
+                        </Button>
+                      ) : undefined
+                    }
+                  >
+                    {deleteError}
+                  </Alert>
+                ) : undefined
+              }
+              onCancel={clearDelete}
+              onConfirm={() => void confirmMarkerDelete()}
+            />
+          )}
         </>
       )}
       {/* Like CanvasOverlay, portal into viewer.container so the overlay
@@ -2247,6 +2396,7 @@ export default function ImageViewer({
                 triggerRef={markersTriggerRef}
                 disabled={canvasEditMode}
                 onToggle={() => panelState.setOpen(true)}
+                tooltipContainer={viewerInstance?.container ?? null}
               />
             ),
             controlWrapper,

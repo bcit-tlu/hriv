@@ -5,7 +5,9 @@ import * as BoardStories from './BoardEditDialog.stories'
 
 <Title />
 
-Boards default to private and require a name. Restricted scope is available to
+Boards default to private and require a name. Scope uses the same “Visible to”
+radio row as Edit Collection — Private, Restricted, Public — not a dropdown.
+Restricted scope is available to
 instructors and admins and requires a Program or Group. Program membership and
 managed Groups govern new attachments; existing attachments may be removed.
 Scope controls are hidden when `can_change_scope` is false, and metadata-only

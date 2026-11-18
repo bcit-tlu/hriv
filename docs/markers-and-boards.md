@@ -317,7 +317,8 @@ top-right. Title is selected for typing; choose a required Board (the last used
 editable Board is remembered and visible before opening the menu), or create one inline.
 Description is under collapsed **More options**; Favourite is a tooltip-labelled
 outlined/filled star toggle at the title row's right with `aria-pressed`.
-Save keeps placement armed; Cancel or
+Save keeps placement armed; the viewport re-orients onto the returned Marker so
+a brand-new saved view is centred. Cancel or
 Escape removes the draft first. Only one unsaved placement is open at a time.
 If a new point would sit beneath the panel, the viewer pans it clear of the panel.
 
@@ -327,9 +328,11 @@ blue pin glyphs are 27 CSS pixels and titles use 13-pixel text; neither scales n
 Saved and draft markers share `frontend/public/marker-marker.svg`, with a subtle
 contrast ring and shadow. Title-label styling is unchanged.
 The layer reprojects anchors on animation, animation-finish, open, resize,
-rotate and flip. Each marker accepts independent `markerVisible` and
-`labelVisible` props, both true by default: labels may remain visible when
-markers are hidden. The drawer's shared visibility preferences drive the
+rotate and flip. Each marker accepts `markerVisible` and
+`labelVisible` props, both true by default. A hidden marker always hides its
+label: labels render only while `markerVisible` is on, so label visibility
+never outlives marker visibility, though an on-marker label may still be
+toggled off independently. The drawer's shared visibility preferences drive the
 viewer layer directly, without separate viewer-level overrides. Clicking a marker smoothly restores its
 saved pan/zoom/rotation, highlights it and opens a non-modal information card.
 The card shows title, optional description, visible Board names and favourite
@@ -366,14 +369,19 @@ other mutations send body versions.
 The multi-picker only lists `permissions.can_edit` Boards. Selected Boards retain their existing membership when editing. Other Boards' links are preserved by the backend assignment
 contract. The searchable checkbox menu sorts names case-insensitively, with stable
 ID ties. There are no selected chips: its closed field shows names as text (first
-two, then `+N`). The separate **+ Create new board** link below the menu opens an
-inline name field and Create Board action, creating and selecting a private,
-name-only Board. Empty names disable creation; failures preserve the entered name.
+two, then `+N`). A pinned **+ Add Board** row sits at the bottom of the
+fixed-height menu while the checkbox options scroll above it. Choosing it
+slides a **New Board** pane in from the right over the form — the same fields
+as the Boards & Markers page's Add Board dialog (name, description, visibility
+and restricted Program/Group chips, lazily loaded) — and a top-left back arrow
+or Escape returns to the Marker form with the draft intact. Creating selects
+the new Board and restores the form; empty names and incomplete restricted
+scopes disable creation; failures surface inside the pane.
 The last successfully used Board is remembered under the user-scoped
 `hrivpref:marker:lastBoard:<userId>` localStorage key, validated against the
 editable list on the next create; blocked storage is optional, not an error.
-Drawer and viewer-panel lists omit the redundant Markers total heading. Each
-body2 group heading shows its saved-view count in parentheses, excluding drafts.
+Drawer and viewer-panel lists omit the redundant Markers total heading; group
+headings carry no counts.
 
 Title, description, favourite and Board assignments are editable according
 to API permissions; other viewers get read-only details. Delete requires
@@ -403,28 +411,58 @@ left-anchored panel and its dialogs are portaled into the viewer, including in
 OSD full-page mode. It reuses `useImageMarkers`; opening the drawer does not
 issue another image request.
 
-**My Markers**, **Instructor Markers**, and **Public Markers** follow the API's
-source tags and precedence. Empty source groups are hidden rather than showing
-unusable controls. My and Instructor start expanded; Public starts
-collapsed. Row selection smoothly restores saved pan, zoom and rotation and
-highlights the marker without opening the form. The separate edit action uses
-API `permissions.can_edit` and opens the existing OCC-protected form.
+Rows are grouped by associated Board rather than source tag: the hook pages
+through the visible-Board summaries, and each Marker is listed under every
+Board named in its `board_ids`, so a Marker on multiple Boards appears in each
+group. Headings are `body2` titles rendered as a link button labelled
+`Open Board: {name}`; activating one opens the shared `BoardDialog` in place
+over the viewer — the same title, scope and owner chrome, marker grid, Edit
+pencil and owners affordances as the Boards & Markers dialog — without leaving
+the current image. Marker tiles inside it navigate to their saved views, and
+an “Open in Boards & Markers” action reaches the full management surface
+(reorder, move/save, remove, selection, Collections). Headings are not
+collapsible and carry no member count. Groups are tiered by Board ownership: the viewer's own Boards first,
+then instructor- or program-owned Boards; every other visible Board (a
+classmate's public or shared Board) sits inside a collapsed **Public & Shared**
+section that expands on click, or automatically when one of its rows is
+focused. Markers whose Boards are absent from the fetched summaries — or that
+belong to no Board — fall into a trailing **Other** group. Empty groups are
+hidden rather than showing unusable controls, and the drawer shows a short
+loading note while Board summaries are pending. Row selection smoothly
+restores saved pan, zoom and rotation and highlights the marker without
+opening the form; selecting a canvas-hidden row also writes a `markerVisible`
+override so the marker draws — a row click, a canvas click, an edit/delete
+intent, or an external `?marker=` navigation never lands on an invisible
+marker. The separate edit action uses API `permissions.can_edit`
+and opens the existing OCC-protected form.
 
-Marker and label menu actions are independent at both row and group levels;
-both default to shown. Group actions set the default for the entire source and
-clear all row overrides for that dimension, including cached rows on other
-images. A subsequent row action overrides that default. Mixed states remain
-accessible in group menus; toggling a mixed group shows all. Changing markers never
-changes labels, or vice versa. Shared preferences are the viewer's single source
+Marker and label actions are stored independently at both row and group
+levels. `mine` and `instructor` source markers default to shown, while
+`public`-source markers start canvas-hidden (their labels stay enabled but
+cannot render while the marker is hidden) until the viewer opts in — matching
+the collapsed Public & Shared section they group under. Source-level defaults
+still apply to rows
+without overrides, but the group icons write the choice as a row override on
+every member of that Board in one batched update, leaving other Boards and
+other images' rows untouched. A subsequent row action overrides it per Marker.
+Mixed states remain
+accessible; toggling a mixed group shows all. Label visibility follows marker
+visibility in the rendered layer — a hidden marker hides its label — while a
+shown marker's label toggles independently. Shared preferences are the
+viewer's single source
 of visibility state, so drawer controls always reflect the rendered markers and
 labels. Collection embeds use the same preferences rather than external overrides.
 Rows show titles only. Their **⋮** menus start with Show/Hide marker, followed by
-Show/Hide label and permitted Edit/Delete actions; group menus offer Show/Hide
-markers and labels. Hidden-marker row titles use `text.disabled` (contrast-safe
+Show/Hide label (disabled while the marker is hidden) and permitted
+Edit/Delete actions; Edit re-centres the Marker and opens the in-card editor,
+while Delete opens the shared confirmation dialog without the information card.
+Group headings replace the ellipsis with inline eye and label icon buttons
+(mixed states via `aria-pressed="mixed"`); the label icon disables whenever
+every marker in the group is hidden. Hidden-marker row titles use `text.disabled` (contrast-safe
 `text.secondary` in light mode, since the row is still navigable) and an accessible
 “marker hidden” suffix. The drawer stops above
-the bottom toolbar so tools remain usable. Unsaved placements also appear under
-My Markers with an **Unsaved** status while the draft is open.
+the bottom toolbar so tools remain usable. Unsaved placements also appear in a
+leading **Unsaved** group while the draft is open.
 Row hover backgrounds extend across the drawer, including the independent
 options control, without nesting interactive elements.
 
@@ -455,9 +493,10 @@ rightmost 48px for existing controls. Errors appear below the top-left trigger
 and inside the drawer. Escape/Close restores focus to the trigger in unpinned mode;
 pinned panels ignore Escape and outside presses.
 
-Tests: `useMarkerVisibilityPrefs.test.ts`, `ImageMarkersDrawer.test.tsx`,
+Tests: `useImageMarkers.test.ts`, `useMarkerVisibilityPrefs.test.ts`,
+`ImageMarkersDrawer.test.tsx`,
 `ImageViewer.test.tsx`, and collection-viewer tests. Attached drawer stories
-cover expanded/collapsed groups, label-only visibility, sequence and synchronized
+cover Board grouping, label-only visibility, sequence and synchronized
 embeds with deterministic API fixtures.
 
 ### Boards page (#1771)
@@ -477,36 +516,44 @@ Frontend telemetry preserves `boards` in both page and from-page dimensions.
 
 The overview has one short, horizontally scrolling row of outlined, rounded Board chips,
 starting with **New Board**. Owned Boards share that row, with a flush-left square
-Board cover (or a renewing member thumbnail, then the themed placeholder) and a
-single-line name. The **My Boards** heading shares Collections' unpadded flex header.
-An outlined **Public & shared Boards** button sits at its right, above the Board row.
-Admins, instructors and staff also have an outlined **All Boards** button beside it;
-students never see All Boards.
+Board cover (or a renewing member thumbnail, then the themed placeholder), a
+single-line name and the shared scope pill below it, on a taller tile. The
+**My Boards** heading shares Collections' unpadded flex header.
+Admins, instructors and staff have an outlined **All Boards** button at its
+right, above the Board row; students never see All Boards.
 Only the page heading changes; the Boards & Markers navigation label remains unchanged.
 Below it, **My Markers** contains Collections-style Cards/Table controls and then
 the filter bar. There is no Graph view. Only personally owned Markers appear; both lists are
 fetched in pages of 200 without the former recent-60 cap.
-The overview's outlined Select button is right-aligned on the Filter by row in both views.
+The overview's outlined Select button is right-aligned on the Filter by row in both views,
+and the resulting selection actions — including Cancel Selection — render on
+the same row so engaging Select never pushes controls downward.
 Each card shows the
 image's parent category below its title (`category_name`, null if unfiled).
 The heading uses the same h5/h1 typography as Collections. Marker cards are 234px
 wide (20% wider than the previous 195px), with proportionally scaled 96px covers,
-including inside Board dialogs. They reuse Collections' scope-pill component.
+including inside Board dialogs. Marker cards no longer carry scope pills — the
+shared scope-pill component lives on the Board tiles instead, leaving Marker
+tiles correspondingly shorter.
 The pin replaces the collection icon; category replaces the image count, with
 Uncategorized as the fallback. Top-right actions are Favourite (Star/StarBorder,
 in Collections' Set cover position) and Move/Save. The title-row pencil opens the
 existing edit dialog, including Delete and, for Board editors, Remove from this Board.
 Card clicks still open the exact saved view. There is no per-card overflow or drag glyph.
-Table uses the same filters, permissions and actions, with Title, Category, Scope,
-Boards (navigable), Favourite and Actions columns. Scope shows each distinct visible
-Board visibility when a view belongs to Boards with different scopes. View choice
+Table uses the same filters, permissions and actions, with Title, Category,
+Boards (navigable), Favourite and Actions columns. View choice
 is local to the page mount and starts on Cards.
-**Public & shared Boards** opens a separate dialog listing server-authorized
-Boards outside the chip row that are public, restricted by program/group, or shared
-with the current user through co-ownership or program ownership/membership. Other
-users' private Boards are excluded for every role. **All Boards** lists every Board
+**All Boards** opens a large dialog listing every Board
 returned by the backend for admins, instructors and staff, including others' private Boards
-and editable owned Boards already in the chip row. Both dialogs render clickable
+and editable owned Boards already in the chip row. A horizontal row of filter
+chips sits directly beneath the dialog title: **Public & Shared** narrows to
+server-authorized Boards outside the chip row that are public, restricted by
+program/group, or shared with the current user through co-ownership or program
+ownership/membership (other users' private Boards stay excluded for every role),
+and **Instructor Boards** narrows to program-owned Boards or Boards owned by
+admin/instructor users. Chips toggle independently and combine; with none
+active the complete list shows, and a filter that excludes everything reports
+“No matching Boards.” while an empty list reports “No Boards available.”. The dialog renders clickable
 tiles with title, the shared scope pill and the Collections-style **Managed by** owner
 line (program names, co-owner names, or No owner), using the existing API owner data.
 Selecting a tile closes the list and opens the existing
@@ -533,7 +580,9 @@ Markers. Delete uses the form's Board version and explicit 409 reload flow.
 The URL retains `?board=`; Back closes the dialog, and Back from a saved-view
 image returns to that Board dialog.
 
-Board metadata defaults to private. Restricted scope reuses Collections'
+Board metadata defaults to private. Scope selection uses the same “Visible to”
+radio group as Edit Collection — Private, Restricted and Public — rather than a
+dropdown. Restricted scope reuses Collections'
 attach rules: admins may attach any Program/Group, instructors only their own
 Programs and managed Groups, while existing attachments can be removed.
 `can_change_scope` gates the scope fields; metadata-only writes omit them.
@@ -549,7 +598,8 @@ Filled favourite stars are white on both cards and table rows. A contrasting
 background keeps the white star legible, including read-only favourite indicators.
 Dragging a member card reorders members within the Board, without a separate handle icon;
 Board reorder applies only to editable owned Boards. Read-only program-owned
-Boards remain available in Public & shared Boards rather than the chip row, for every role.
+Boards remain discoverable through the All Boards dialog's Public & Shared
+filter rather than the chip row, for every role.
 The chip row contains only editable owned Boards, without instructor/admin exemptions.
 Non-editable Boards are omitted from reorder writes.
 Board positions
@@ -580,11 +630,16 @@ Creating a Board adds the returned Board locally before opening it. Opening or
 closing a Board dialog fetches only its detail, not the overview; opening an
 Marker editor loads its Board picker without reloading the page.
 Opening a card fetches the authorized image record and reuses the existing
-`?image=&x=&y=&zoom=&rotation=` viewer/share mechanism, with an epoch guard
-against late navigation. Browser Back returns to the Board entry.
+`?image=&x=&y=&zoom=&rotation=` viewer/share mechanism plus a `?marker={id}`
+parameter naming the target Marker, with an epoch guard
+against late navigation. While a marker-focused image is open the URL keeps
+`?marker=`; the viewer consumes it once loaded — recentring, selecting,
+focusing and revealing the Marker if it was canvas-hidden — so a marker link
+restores on refresh and Browser Back. Browser Back returns to the Board entry.
 
 Tests: `boardUtils.test.ts`, `useBoardsData.test.ts`, `BoardsPage.test.tsx`,
-`BoardEditDialog.test.tsx`, `BoardOwnersDialog.test.tsx`, URL/history/App/AppShell
+`BoardDialog.test.tsx`, `BoardEditDialog.test.tsx`, `BoardOwnersDialog.test.tsx`,
+URL/history/App/AppShell
 tests, and attached deterministic component stories, including keyboard reorder.
 
 ## Collection snapshots (#1770)
@@ -660,7 +715,8 @@ All image-viewer consumers (single image, Sequence and Synchronized panes) displ
 only the endpoint's My and Instructor groups, for both lists and image markers.
 Instructor grouping retains the existing instructor/admin or program-owned Board
 classification. Other users' public/shared views are discovered through
-Boards & Markers → Public & shared Boards instead. This is frontend UX scoping;
+Boards & Markers → All Boards → Public & Shared instead. This is frontend UX
+scoping;
 the backend continues to serve authorized public Boards and their contents.
 
 The link icon between Markers and Details selects **Shared View**. **Copy current

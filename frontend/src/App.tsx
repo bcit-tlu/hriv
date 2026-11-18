@@ -156,9 +156,11 @@ import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
 import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
 import { parseShareableUrlParams, useShareableImageState } from './useShareableImageState'
+import BoardDialog from './components/BoardDialog'
 import BoardsPage from './components/BoardsPage'
 import { markerViewParams, parseBoardLocation } from './boardUtils'
 import type { ApiMarker } from './types'
+import type { ViewportState } from './components/imageViewerUtils'
 import { useCanvasAnnotations } from './useCanvasAnnotations'
 import type { CanvasDraftHandle } from './useCanvasAnnotations'
 import { useOverlayPersistence } from './useOverlayPersistence'
@@ -283,6 +285,41 @@ export default function App() {
   const [boardLocation, setBoardLocation] = useState(() =>
     parseBoardLocation(window.location.search),
   )
+  // Marker the viewer should select and reveal after external navigation
+  // (Boards & Markers list or a `?marker=` link). Seeded from the URL so
+  // deep links and history entries carry the target marker. `navigate`
+  // re-centres on the marker's saved view — skipped when the URL carries
+  // explicit viewport coords (a shared current view wins over the marker's).
+  // `viewport` then carries those coords so a mounted viewer can restore
+  // them on a same-image history pop, where initialViewport cannot.
+  const [markerFocus, setMarkerFocus] = useState<{
+    id: number
+    imageId: number
+    navigate?: boolean
+    viewport?: ViewportState
+  } | null>(() => {
+    const parsed = parseShareableUrlParams()
+    return parsed.markerId != null && parsed.imageId != null
+      ? {
+          id: parsed.markerId,
+          imageId: parsed.imageId,
+          navigate: parsed.viewport == null,
+          viewport: parsed.viewport,
+        }
+      : null
+  })
+  // Board opened from a viewer drawer heading — stays on the current image.
+  const [boardDialogId, setBoardDialogId] = useState<number | null>(null)
+  // Bumped when the in-place Board dialog mutates Marker/Board data so the
+  // mounted viewer reloads its marker list and Board summaries.
+  const [markersReloadTick, setMarkersReloadTick] = useState(0)
+  // Container of the viewer that opened the in-place Board dialog — the
+  // dialog portals into it so it stays visible in full-page viewer mode.
+  const [boardDialogContainer, setBoardDialogContainer] = useState<HTMLElement | null>(null)
+  const handleOpenBoardDialog = (id: number, container?: HTMLElement | null) => {
+    setBoardDialogId(id)
+    setBoardDialogContainer(container ?? null)
+  }
   const [page, setPage] = useState<Page>(() => {
     if (parseCollectionIdParam(window.location.search) != null) return 'collections'
     const p = new URLSearchParams(window.location.search).get('page')
@@ -955,6 +992,7 @@ export default function App() {
     collectionTypeFilter:
       collectionsData.filters.type === 'all' ? undefined : collectionsData.filters.type,
     boardId: boardLocation.boardId,
+    focusedMarker: markerFocus,
     setPath,
     setSelectedImage,
   })
@@ -1103,6 +1141,7 @@ export default function App() {
         setSelectedImage(null)
         setViewportState(undefined)
         setOverlays([])
+        setMarkerFocus(null)
         return true
       }
 
@@ -1112,6 +1151,7 @@ export default function App() {
         setSelectedImage(null)
         setViewportState(undefined)
         setOverlays([])
+        setMarkerFocus(null)
         return true
       }
 
@@ -1136,7 +1176,18 @@ export default function App() {
       } else {
         setSelectedImage(null)
       }
-      setViewportState(parseShareableUrlParams().viewport)
+      const popped = parseShareableUrlParams()
+      setViewportState(popped.viewport)
+      setMarkerFocus(
+        popped.markerId != null && imageId != null
+          ? {
+              id: popped.markerId,
+              imageId,
+              navigate: popped.viewport == null,
+              viewport: popped.viewport,
+            }
+          : null,
+      )
       setOverlays([])
       return true
     },
@@ -2483,6 +2534,7 @@ export default function App() {
             setPath([])
             setSelectedCollectionId(null)
             setCollectionFromBrowse(false)
+            setMarkerFocus({ id: item.id, imageId: item.image_id, navigate: true })
             setPage('browse')
             pushNavState('browse', [], item.image_id, markerViewParams(item))
           })
@@ -2707,6 +2759,8 @@ export default function App() {
               onOpenCollection={handleOpenCollection}
               onCloseCollection={handleCloseCollection}
               onOpenImage={handleOpenCollectionImage}
+              onOpenBoard={handleOpenBoardDialog}
+              markersReloadSignal={markersReloadTick}
               onOpenImageById={handleOpenGraphImage}
               selectedCollectionItemId={selectedCollectionItemId}
               selectedCollectionSlotId={features?.markers ? selectedCollectionSlotId : null}
@@ -3092,6 +3146,11 @@ export default function App() {
                 <ImageViewer
                   markersEnabled={features?.markers === true}
                   onShareView={copyShareLink}
+                  onOpenBoard={handleOpenBoardDialog}
+                  markersReloadSignal={markersReloadTick}
+                  markerFocus={
+                    markerFocus && markerFocus.imageId === selectedImage.id ? markerFocus : null
+                  }
                   key={selectedImage.id}
                   height={{ xs: '70vh', md: '100%' }}
                   tileSources={selectedImage.tileSources}
@@ -4039,6 +4098,30 @@ export default function App() {
             pushNavState('guide', [], null, { doc: slug })
             guideDocSeqRef.current += 1
             setGuideDocRequest({ slug, anchor, seq: guideDocSeqRef.current })
+          })
+        }}
+      />
+
+      {/* Board dialog opened from a viewer drawer heading — stays on the image. */}
+      <BoardDialog
+        boardId={boardDialogId}
+        currentUser={currentUser}
+        programs={programs}
+        groups={groups}
+        container={boardDialogContainer}
+        onClose={() => setBoardDialogId(null)}
+        onChanged={() => setMarkersReloadTick((tick) => tick + 1)}
+        onOpenMarker={(item) => {
+          setBoardDialogId(null)
+          handleOpenBoardMarker(item)
+        }}
+        onManage={(boardId) => {
+          setBoardDialogId(null)
+          runCanvasNavigation(() => {
+            graphImageEpoch.current++
+            setBoardLocation({ boardId })
+            setPage('boards')
+            pushNavState('boards', [], null, { board: String(boardId) })
           })
         }}
       />

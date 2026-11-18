@@ -91,7 +91,7 @@ export default function MarkersLayer({
               <Room sx={{ fontSize: 27, display: 'block' }} />
             </button>
           )}
-          {item.labelVisible !== false && (
+          {item.markerVisible !== false && item.labelVisible !== false && (
             <span
               style={{
                 position: 'absolute',

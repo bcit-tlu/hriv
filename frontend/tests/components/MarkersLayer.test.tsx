@@ -120,7 +120,8 @@ describe('MarkersLayer', () => {
     [false, true],
     [true, false],
     [false, false],
-  ])('independently controls marker=%s and label=%s', (markerVisible, labelVisible) => {
+    [true, true],
+  ])('shows marker=%s directly and gates label=%s behind it', (markerVisible, labelVisible) => {
     const v = fakeViewer()
     render(
       <MarkersLayer
@@ -129,7 +130,7 @@ describe('MarkersLayer', () => {
       />,
     )
     expect(!!within(v.container).queryByRole('button')).toBe(markerVisible)
-    expect(!!within(v.container).queryByText('Rose window')).toBe(labelVisible)
+    expect(!!within(v.container).queryByText('Rose window')).toBe(markerVisible && labelVisible)
   })
   it('renders an empty layer for no Markers', () => {
     const v = fakeViewer()

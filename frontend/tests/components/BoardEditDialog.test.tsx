@@ -101,7 +101,7 @@ describe('BoardEditDialog', () => {
       ...BOARDS_FIXTURES[0],
       permissions: { ...BOARDS_FIXTURES[0].permissions, can_change_scope: false },
     })
-    expect(screen.queryByLabelText('Visibility')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup', { name: 'Visibility' })).not.toBeInTheDocument()
   })
   it('does not submit scope fields when only metadata editing is allowed', async () => {
     setup({
