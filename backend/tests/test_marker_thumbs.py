@@ -238,3 +238,34 @@ async def test_replacement_cleanup_after_commit(pyramid, monkeypatch, commit_fai
         db.rollback.assert_awaited_once()
     else:
         assert image.tile_sources == "/api/tiles/43/image.dzi"
+
+
+def test_rename_legacy_thumbnail_dirs(tmp_path, monkeypatch):
+    tiles = tmp_path / "tiles"
+    legacy = tiles / "42" / "inuksuks"
+    legacy.mkdir(parents=True)
+    (legacy / "7.jpg").write_bytes(b"legacy")
+    clash = tiles / "9" / "inuksuks"
+    clash.mkdir(parents=True)
+    (clash / "1.jpg").write_bytes(b"clash")
+    (tiles / "9" / "markers").mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    linked = tiles / "7" / "inuksuks"
+    linked.parent.mkdir(parents=True)
+    linked.symlink_to(external, target_is_directory=True)
+    monkeypatch.setattr(thumbs.settings, "tiles_dir", str(tiles))
+    assert thumbs.rename_legacy_thumbnail_dirs() == 1
+    assert (tiles / "42" / "markers" / "7.jpg").read_bytes() == b"legacy"
+    assert not legacy.exists()
+    # An existing markers/ target blocks the rename; the legacy dir stays.
+    assert (clash / "1.jpg").read_bytes() == b"clash"
+    assert not list((tiles / "9" / "markers").iterdir())
+    assert linked.is_symlink()
+    # Repeated startup runs are a no-op.
+    assert thumbs.rename_legacy_thumbnail_dirs() == 0
+
+
+def test_rename_legacy_thumbnail_dirs_missing_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(thumbs.settings, "tiles_dir", str(tmp_path / "missing"))
+    assert thumbs.rename_legacy_thumbnail_dirs() == 0

@@ -1,4 +1,5 @@
 import errno
+import shutil
 from pathlib import Path
 from unittest.mock import patch
 
@@ -31,6 +32,28 @@ def test_snapshot_files_archive_round_trip(tmp_path, monkeypatch):
     result = _extract_and_restore(str(archive), str(tmp_path / "staging"), str(data), str(tiles), str(data / "source_images"))
     assert result["source_files"] == 1
     assert [p.read_bytes() for p in snapshot_files(tiles)] == [b"original JPEG", b"original JPEG"]
+    assert (tiles / "42" / "image.dzi").read_text() == "keep current tiles"
+
+
+def test_snapshot_files_restore_legacy_marker_namespace(tmp_path, monkeypatch):
+    """Pre-Marker archives' ``inuksuks/`` JPEGs restore into ``markers/``."""
+    data = tmp_path / "data"
+    tiles = data / "tiles"
+    legacy = tiles / "42" / "inuksuks"
+    legacy.mkdir(parents=True)
+    (legacy / "7.jpg").write_bytes(b"legacy JPEG")
+    (legacy / ".partial.jpg").write_bytes(b"partial")
+    (data / "source_images").mkdir()
+    monkeypatch.setattr(settings, "tiles_dir", str(tiles))
+    monkeypatch.setattr(settings, "source_images_dir", str(data / "source_images"))
+    archive = tmp_path / "archive.tar.gz"
+    _create_tar_file(str(data), str(archive))
+    shutil.rmtree(legacy)
+    (tiles / "42" / "image.dzi").write_text("keep current tiles")
+    _extract_and_restore(str(archive), str(tmp_path / "staging"), str(data), str(tiles), str(data / "source_images"))
+    assert (tiles / "42" / "markers" / "7.jpg").read_bytes() == b"legacy JPEG"
+    assert not (tiles / "42" / "inuksuks").exists()
+    assert not (tiles / "42" / "markers" / ".partial.jpg").exists()
     assert (tiles / "42" / "image.dzi").read_text() == "keep current tiles"
 
 

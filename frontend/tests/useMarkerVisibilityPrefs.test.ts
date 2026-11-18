@@ -55,7 +55,9 @@ describe('useMarkerVisibilityPrefs', () => {
     })
     act(() => {
       localStorage.removeItem('hriv.markerVisibility.9')
-      window.dispatchEvent(new StorageEvent('storage', { key: 'hriv.markerVisibility.9' }))
+      const event = new Event('storage')
+      Object.defineProperty(event, 'key', { value: 'hriv.markerVisibility.9' })
+      window.dispatchEvent(event)
     })
     expect(a.result.current.visibilityFor(item).markerVisible).toBe(true)
   })

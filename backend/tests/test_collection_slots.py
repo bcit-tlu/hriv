@@ -82,6 +82,13 @@ async def test_legacy_pre_marker_archive_keys(world):
              for column, value in row.items()}
             for row in original[key]
         ]
+    # Legacy dumps persist thumb URLs under the former tiles namespace;
+    # import must canonicalize them so marker-thumb tokens still match.
+    thumb_id = legacy["inuksuks"][0]["id"]
+    legacy["inuksuks"][0]["thumb"] = "/api/tiles/42/inuksuks/7.jpg"
+    for row in original["markers"]:
+        if row["id"] == thumb_id:
+            row["thumb"] = "/api/tiles/42/markers/7.jpg"
     await import_saved_views(world.db, legacy)
     assert await export_saved_views(world.db, image_ids) == original
 

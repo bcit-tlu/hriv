@@ -1,6 +1,7 @@
 """Flag-independent, lossless admin archive records for saved views."""
 
 from datetime import datetime
+import re
 
 from sqlalchemy import DateTime, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,8 @@ LEGACY_TABLE_KEYS = {
     "marker_owners": "inuksuk_owners",
 }
 LEGACY_COLUMN_KEYS = {"inuksuk_id": "marker_id"}
+# Persisted thumb URLs in those dumps still point at the former tiles path.
+LEGACY_THUMB_URL = re.compile(r"^(/api/tiles/[0-9]+/)inuksuks(/[1-9][0-9]*\.jpg)$")
 
 
 async def export_saved_views(db: AsyncSession, image_ids: set[int]) -> dict[str, list[dict]]:
@@ -64,5 +67,10 @@ async def import_saved_views(db: AsyncSession, dump: dict) -> None:
                 for dump_row in dump_rows
             )
         ]
+        if table.name == "markers":
+            for row in rows:
+                thumb = row.get("thumb")
+                if isinstance(thumb, str):
+                    row["thumb"] = LEGACY_THUMB_URL.sub(r"\g<1>markers\g<2>", thumb)
         if rows:
             await db.execute(table.insert(), rows)

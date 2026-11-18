@@ -1303,7 +1303,7 @@ export default function ImageViewer({
           event.preventDefault = false
           return
         }
-        if (event.eventType === 'click' && !markerMode) event.preventDefault = false
+        if (event.eventType === 'click') event.preventDefault = false
         const target = event.originalEvent?.target
         if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) {
           event.preventGesture = true

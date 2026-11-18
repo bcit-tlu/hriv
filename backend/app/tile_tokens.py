@@ -115,8 +115,11 @@ def validate_tile_token(
         if not isinstance(expected, str) or not re.fullmatch(r"collection_slots/[1-9][0-9]*\.jpg", expected) or path != expected:
             raise TileTokenError(403, "Slot token does not match this thumbnail")
     if purpose == THUMB_TOKEN_PURPOSE:
-        if "mid" in payload:
-            mid = payload["mid"]
+        # Tokens minted before the Marker rename carry the same claim as
+        # ``iid``; keep them scoped to their single JPEG, never the
+        # whole-image thumbnail.
+        if "mid" in payload or "iid" in payload:
+            mid = payload.get("mid", payload.get("iid"))
             allowed = (
                 type(mid) is int and mid > 0
                 and path == f"markers/{mid}.jpg"

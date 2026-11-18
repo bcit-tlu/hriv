@@ -690,6 +690,21 @@ def test_marker_token_mint_rejects_invalid_id(mid) -> None:
         issue_marker_thumb_token(42, mid)
 
 
+def test_legacy_iid_marker_token_keeps_crop_scope() -> None:
+    # Tokens minted before the Marker rename carry ``iid``; they stay bound
+    # to their single JPEG rather than widening to the whole-image thumb.
+    token = jwt.encode(
+        {"purpose": "thumb", "sid": 42, "iid": 7,
+         "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
+        auth.auth_settings.jwt_secret, algorithm=auth.auth_settings.jwt_algorithm,
+    )
+    validate_tile_token(token, 42, "markers/7.jpg")
+    for denied in ("thumbnail.jpeg", "markers/8.jpg", "image_files/0/0_0.jpeg"):
+        with pytest.raises(TileTokenError) as exc:
+            validate_tile_token(token, 42, denied)
+        assert exc.value.status_code == 403
+
+
 @pytest.mark.parametrize("url", ["", "/thumb.jpg", "/api/tiles/42/thumbnail.jpeg", "/api/tiles/42/markers/../7.jpg"])
 def test_marker_tokenize_nonmatching_urls_unchanged(url: str) -> None:
     assert append_marker_thumb_token(url) == url
