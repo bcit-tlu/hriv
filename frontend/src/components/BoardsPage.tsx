@@ -54,6 +54,7 @@ import {
 } from '@mui/material'
 import SpaceDashboardOutlined from '@mui/icons-material/SpaceDashboardOutlined'
 import Room from '@mui/icons-material/Room'
+import SelectAll from '@mui/icons-material/SelectAll'
 import DragIndicator from '@mui/icons-material/DragIndicator'
 import Star from '@mui/icons-material/Star'
 import StarBorder from '@mui/icons-material/StarBorder'
@@ -1141,8 +1142,8 @@ export default function BoardsPage({
         sx={{
           position: 'relative',
           height: '100%',
-          outline: selecting && selectedIds.includes(item.id) ? '2px solid' : 'none',
-          outlineColor: 'primary.main',
+          outline: selecting && selectedIds.includes(item.id) ? '3px solid' : 'none',
+          outlineColor: markerAccentColor,
         }}
       >
         {/* Whole-face action area like ImageTile/CollectionCard: hovering
@@ -1221,26 +1222,19 @@ export default function BoardsPage({
             checked={selectedIds.includes(item.id)}
             onChange={() => toggleSelected(item.id)}
             inputProps={{ 'aria-label': `Select ${item.title}` }}
-            sx={{
+            sx={(theme) => ({
               position: 'absolute',
-              top: 4,
-              left: 4,
+              top: 6,
+              left: 6,
               zIndex: 1,
-              p: 0,
+              p: 0.5,
+              borderRadius: '50%',
               color: 'grey.700',
-              '&.Mui-checked': {
-                color: 'text.primary',
-                '&::before': { bgcolor: 'background.paper' },
-              },
-              '&::before': {
-                content: '""',
-                position: 'absolute',
-                inset: 3,
-                bgcolor: 'common.white',
-                borderRadius: '2px',
-              },
-              '& .MuiSvgIcon-root': { position: 'relative', zIndex: 1 },
-            }}
+              bgcolor: alpha(theme.palette.common.white, 0.92),
+              boxShadow: theme.shadows[2],
+              '&:hover': { bgcolor: theme.palette.common.white },
+              '&.Mui-checked': { color: markerAccentColor(theme) },
+            })}
           />
         )}
         <Box
@@ -1522,8 +1516,9 @@ export default function BoardsPage({
 
   const selectAction = collectionsEnabled && (
     <Button
-      variant="outlined"
       size="small"
+      variant={selecting ? 'contained' : 'outlined'}
+      startIcon={<SelectAll />}
       aria-pressed={selecting}
       sx={{ whiteSpace: 'nowrap' }}
       onClick={() => {
@@ -1531,7 +1526,7 @@ export default function BoardsPage({
         setSelection({ boardId, ids: [] })
       }}
     >
-      {selecting ? 'Cancel selection' : 'Select'}
+      Multi-select
     </Button>
   )
   const selectedItems = (board ? board.markers : filteredItems).filter((item) =>
@@ -1597,12 +1592,9 @@ export default function BoardsPage({
       </ToggleButton>
     </ToggleButtonGroup>
   )
-  const collageToolbar = (title: string) => (
-    <Box sx={{ mb: 2 }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-        <Typography variant="h5" component="h2">
-          {title}
-        </Typography>
+  const collageToolbar = () => (
+    <Box sx={{ mt: 1 }}>
+      <Stack direction="row" alignItems="center" justifyContent="flex-end" spacing={1}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
           {boardId != null && (
             <>
@@ -2114,11 +2106,7 @@ export default function BoardsPage({
           aria-labelledby="board-dialog-title"
           slotProps={{ paper: { sx: { height: { xs: '100%', sm: '85vh' } } } }}
         >
-          <DialogTitle
-            id="board-heading"
-            component="div"
-            sx={{ borderBottom: 1, borderColor: 'divider' }}
-          >
+          <DialogTitle id="board-heading" component="div">
             <Stack direction="row" alignItems="center" spacing={1}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1, minWidth: 0 }}>
                 <Typography
@@ -2215,7 +2203,7 @@ export default function BoardsPage({
                     {boardSummary.description}
                   </Typography>
                 )}
-                {collageToolbar('Saved views')}
+                {collageToolbar()}
               </>
             )}
           </DialogTitle>

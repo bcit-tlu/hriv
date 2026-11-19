@@ -533,9 +533,10 @@ Only the page heading changes; the Boards & Markers navigation label remains unc
 Below it, **My Markers** contains Collections-style Cards/Table controls and then
 the filter bar. There is no Graph view. Only personally owned Markers appear; both lists are
 fetched in pages of 200 without the former recent-60 cap.
-The overview's outlined Select button is right-aligned on the Filter by row in both views,
-and the resulting selection actions — including Cancel Selection — render on
-the same row so engaging Select never pushes controls downward.
+The overview's Multi-select button is right-aligned on the Filter by row in both views
+(contained while active; pressing it again ends selection), and the resulting
+selection actions render on the same row so engaging Multi-select never pushes
+controls downward.
 Each card shows the
 image's parent category below its title (`category_name`, null if unfiled).
 The heading uses the same h5/h1 typography as Collections. Marker cards are 234px
@@ -613,6 +614,7 @@ sits on a Marker-blue disc. Saving a favourite does not disable or restyle the
 other tile actions; they ignore clicks until the save finishes. The viewer's
 Marker info card behaves the same: its Edit button keeps its look while the star
 saves.
+The Board Owners dialog names the Board as "<name> Board" in its subtitle.
 While placement is armed, the viewer's Add Marker toolbar button shows a blue
 pin on a white disc over the red active background.
 Marker and Board forms (Edit/Add Marker dialog, canvas popover, inline editor,

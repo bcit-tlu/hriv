@@ -380,8 +380,11 @@ export default function CollectionOwnersDialog({
       <DialogContent>
         {collection && (
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            <strong>{collection.name}</strong> is currently owned by{' '}
-            {describeCollectionOwners(collection.owners)}.
+            <strong>
+              {collection.name}
+              {entityLabel === 'Board' && ' Board'}
+            </strong>{' '}
+            is currently owned by {describeCollectionOwners(collection.owners)}.
           </Typography>
         )}
 
@@ -455,7 +458,7 @@ export default function CollectionOwnersDialog({
               flexDirection: 'column',
             }}
           >
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
               Users who may manage this {entityLabel} together.
             </Typography>
             <FilterBar

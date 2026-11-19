@@ -122,7 +122,7 @@ describe('BoardsPage', () => {
   it('has no Select control on the overview filter row but checkbox cells in the table', async () => {
     await setup()
     const filters = screen.getByRole('region', { name: 'Filter Boards and Markers' })
-    expect(within(filters).queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+    expect(within(filters).queryByRole('button', { name: 'Multi-select' })).not.toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: /^Select / })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
     expect(screen.getByRole('checkbox', { name: 'Select all Markers on this page' })).toBeDefined()
@@ -1518,7 +1518,7 @@ describe('BoardsPage', () => {
 it('offers collection actions once a Marker is selected in a Board', async () => {
   await setup(1)
   const dialog = await screen.findByRole('dialog')
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Select' }))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Multi-select' }))
   expect(
     within(dialog).queryByRole('toolbar', { name: 'Selected Markers' }),
   ).not.toBeInTheDocument()
@@ -1536,7 +1536,7 @@ it('offers collection actions once a Marker is selected in a Board', async () =>
 
 it('does not expose collection controls when collections are disabled', async () => {
   await setup(null, { collectionsEnabled: false })
-  expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Multi-select' })).not.toBeInTheDocument()
 })
 
 it('creates a Sequence from the Board source and navigates to it', async () => {
@@ -1569,7 +1569,7 @@ it('seeds selected views in displayed Board member order', async () => {
   })
   vi.mocked(api.createCollection).mockResolvedValue(makeApiCollection({ id: 77, type: 'sequence' }))
   await setup(1, { categories: [makeCategory({ id: 10, label: 'Studies' })] })
-  fireEvent.click(screen.getByRole('button', { name: 'Select' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Multi-select' }))
   const checkboxes = screen.getAllByRole('checkbox', { name: /^Select / })
   expect(checkboxes).toHaveLength(6)
   for (const checkbox of [...checkboxes].reverse()) fireEvent.click(checkbox)

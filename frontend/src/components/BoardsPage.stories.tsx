@@ -423,7 +423,7 @@ export const CollectionSelection: Story = {
       await canvas.findByRole('button', { name: 'Open Board: Architecture inspiration' }),
     )
     const dialog = await canvas.findByRole('dialog', { name: 'Architecture inspiration Board' })
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Select' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Multi-select' }))
     const checkboxes = await within(dialog).findAllByRole('checkbox', { name: /^Select / })
     await userEvent.click(checkboxes[0])
     await userEvent.click(checkboxes[1])

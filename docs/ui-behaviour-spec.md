@@ -1465,10 +1465,12 @@ selection MouseTracker ignores their presses.
   owner/program names (No owner for orphans). The list is independent of overview filters;
   choosing a tile closes discovery and opens the existing Board dialog. UX filtering
   does not change backend visibility or establish a security boundary.
-- There is no My Markers heading or overview Select; Marker selection lives in
-  the Board dialog's Saved views toolbar, where every selection action —
-  including Cancel Selection — renders on the same
-  row so starting selection never pushes Cancel Selection downward.
+- There is no My Markers heading or overview Multi-select; Marker selection
+  lives in the Board dialog's header toolbar (no Saved views heading or divider),
+  where every selection action — including the Multi-select toggle, contained
+  while active — renders on the same row so starting selection never pushes it
+  downward. Selectable tiles show their checkbox on a white disc, and a selected
+  tile gets a Marker-blue outline.
   The row's collection actions are exactly two concise buttons: a contained
   Create Collection (the Board dialog's flow, seeding CollectionEditDialog with
   the selected Markers) and an outlined Add to Collection that lists every
@@ -1538,8 +1540,8 @@ selection MouseTracker ignores their presses.
   Delete is in Edit Board, with a second confirmation and orphan-Marker warning;
   version conflicts block mutations until an explicit reload. Its ordered collage
   scrolls independently and does not inherit overview filters. Editable Boards
-  retain member reorder. Select sits at the right of each collage toolbar and
-  keeps every selection action, including Cancel Selection, on the same row.
+  retain member reorder. Multi-select sits at the right of each collage toolbar
+  and keeps every selection action, including the toggle itself, on the same row.
 - Board URL/history state is retained: Back closes the Board dialog; opening an
   image at its saved view and returning restores that dialog. Flag-off behavior
   makes no Board/Marker requests.
