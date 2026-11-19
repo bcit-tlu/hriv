@@ -610,7 +610,9 @@ returned so a later edit makes Undo conflict instead of being overwritten.
 The New Board form opens with a one-line description of what Boards are for.
 The Marker edit form lists Description before Boards. An active favourite star
 sits on a Marker-blue disc. Saving a favourite does not disable or restyle the
-other tile actions; they ignore clicks until the save finishes.
+other tile actions; they ignore clicks until the save finishes. The viewer's
+Marker info card behaves the same: its Edit button keeps its look while the star
+saves.
 While placement is armed, the viewer's Add Marker toolbar button shows a blue
 pin on a white disc over the red active background.
 Marker and Board forms (Edit/Add Marker dialog, canvas popover, inline editor,

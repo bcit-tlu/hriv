@@ -140,8 +140,10 @@ export default function MarkerInfoCard({
                   <IconButton
                     size="small"
                     aria-label={`Edit ${current.title}`}
-                    disabled={busy || favouriteConflict}
-                    onClick={() => onEdit(current)}
+                    disabled={favouriteConflict}
+                    onClick={() => {
+                      if (!busy) onEdit(current)
+                    }}
                     sx={{ flexShrink: 0 }}
                   >
                     <Edit fontSize="small" />
@@ -177,9 +179,10 @@ export default function MarkerInfoCard({
                     flexShrink: 0,
                     p: 0.5,
                     borderRadius: '50%',
-                    bgcolor: current.favourite
-                      ? 'primary.main'
-                      : (theme) => alpha(theme.palette.common.black, 0.25),
+                    bgcolor: (theme) =>
+                      current.favourite
+                        ? markerAccentColor(theme)
+                        : alpha(theme.palette.common.black, 0.25),
                   }}
                 >
                   {current.favourite ? (
