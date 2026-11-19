@@ -282,12 +282,12 @@ export default function BoardEditDialog({
       maxWidth="sm"
       aria-labelledby="board-edit-dialog-title"
     >
-      <DialogTitle id="board-edit-dialog-title">
+      <DialogTitle id="board-edit-dialog-title" sx={baseline ? undefined : { pb: 1 }}>
         {baseline ? 'Edit Board' : 'New Board'}
       </DialogTitle>
       <DialogContent>
         {!baseline && (
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Boards collect saved image views (Markers) for study and sharing.
           </Typography>
         )}
