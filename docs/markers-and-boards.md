@@ -728,7 +728,7 @@ compose default true. This close-out does not remove the flag or alter its defau
 
 With `features.markers`, the image page and Sequence viewer use a single right-side
 panel instead of the earlier Details overlay and left Markers drawer described
-above. Its sidebar toggle opens/closes it; the header selects Markers, Shared View or Details.
+above. Its sidebar toggle opens/closes it; the header selects Markers, Share View or Details.
 MUI rounded-square action states replace the prototype's navigation-rail pills.
 There is no pin or click-away in this panel. At sm and above it reserves 256px by
 resizing OSD's actual container, so the minimap, toolbar and sequence arrows stay
@@ -749,8 +749,8 @@ Boards & Markers → All Boards → Public & Shared instead. This is frontend UX
 scoping;
 the backend continues to serve authorized public Boards and their contents.
 
-The link icon between Markers and Details selects **Shared View**. **Copy current
-view** reuses the image page's clipboard, fallback and feedback logic, replacing
+The link icon between Markers and Details selects **Share View**. Its centred
+outlined **Share View** button reuses the image page's clipboard, fallback and feedback logic, replacing
 the standalone Share View button only when this panel is enabled. Sequence's panel
 copies an image link with the current zoom, centre, rotation and selection rectangles,
 opening that specific view independently of the collection slot. Flag-off controls
