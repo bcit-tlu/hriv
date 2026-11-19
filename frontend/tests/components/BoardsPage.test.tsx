@@ -1532,6 +1532,10 @@ it('offers collection actions once a Marker is selected in a Board', async () =>
   ).not.toBeInTheDocument()
   fireEvent.click(checks[1])
   expect(within(toolbar).getByRole('button', { name: 'Create Collection' })).toBeEnabled()
+  // The Board-level Create Collection hides while selecting, leaving one.
+  expect(within(dialog).getAllByRole('button', { name: 'Create Collection' })).toHaveLength(1)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Multi-select' }))
+  expect(within(dialog).getAllByRole('button', { name: 'Create Collection' })).toHaveLength(1)
 })
 
 it('does not expose collection controls when collections are disabled', async () => {

@@ -1471,6 +1471,8 @@ selection MouseTracker ignores their presses.
   while active — renders on the same row so starting selection never pushes it
   downward. Selectable tiles show their checkbox on a white disc, and a selected
   tile gets a Marker-blue outline.
+  The Board-level Create Collection button hides while Multi-select is on, so
+  only the selection's Create Collection shows.
   The row's collection actions are exactly two concise buttons: a contained
   Create Collection (the Board dialog's flow, seeding CollectionEditDialog with
   the selected Markers) and an outlined Add to Collection that lists every

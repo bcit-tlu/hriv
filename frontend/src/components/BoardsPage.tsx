@@ -2139,7 +2139,7 @@ export default function BoardsPage({
                   </IconButton>
                 )}
               </Box>
-              {collectionsEnabled && board && (
+              {collectionsEnabled && board && !selecting && (
                 <Button
                   variant="outlined"
                   size="small"
