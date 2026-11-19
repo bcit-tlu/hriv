@@ -172,6 +172,12 @@ def board_summary_out(ctx: BoardViewerContext, board: Board) -> BoardSummaryOut:
         (link for link in board.marker_links if ctx.can_view_image(link.marker.image)),
         key=lambda link: (link.sort_order, link.marker_id),
     )
+    pinned = (
+        next((link for link in visible if link.marker_id == board.cover_marker_id), None)
+        if board.cover_marker_id is not None
+        else None
+    )
+    cover_link = pinned or (visible[0] if visible else None)
     return BoardSummaryOut(
         id=board.id, name=board.name, description=board.description,
         visibility=board.visibility, owners=_owners_out(board),
@@ -179,7 +185,11 @@ def board_summary_out(ctx: BoardViewerContext, board: Board) -> BoardSummaryOut:
         program_ids=sorted(p.id for p in board.programs),
         group_ids=sorted(g.id for g in board.groups),
         marker_count=len(visible),
-        cover_thumb=marker_thumb(visible[0].marker) if visible else None,
+        cover_thumb=(
+            None if board.cover_blank else marker_thumb(cover_link.marker) if cover_link else None
+        ),
+        cover_marker_id=pinned.marker_id if pinned else None,
+        cover_blank=board.cover_blank,
         sort_order=board.sort_order, version=board.version,
         permissions=BoardPermissionsOut(
             can_edit=can_edit_board(ctx.user, board),

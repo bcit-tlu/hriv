@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../../src/api'
 import { AuthContext } from '../../src/authContextValue'
@@ -62,6 +62,23 @@ describe('BoardEditDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Delete Board' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Deletion denied')
     expect(screen.getByRole('dialog', { name: 'Edit Board' })).toBeVisible()
+  })
+  it('focuses Name and saves a new Board on Enter', async () => {
+    setup()
+    const name = screen.getByRole('textbox', { name: 'Name' })
+    await waitFor(() => expect(name).toHaveFocus())
+    fireEvent.keyDown(name, { key: 'Enter' })
+    expect(api.createBoard).not.toHaveBeenCalled()
+    fireEvent.change(name, { target: { value: 'Lab 4' } })
+    fireEvent.keyDown(name, { key: 'Enter' })
+    await waitFor(() => expect(api.createBoard).toHaveBeenCalledTimes(1))
+  })
+  it('describes Boards only on the New Board form', () => {
+    setup()
+    expect(screen.getByText(/Boards collect saved image views/)).toBeInTheDocument()
+    cleanup()
+    setup(BOARDS_FIXTURES[0])
+    expect(screen.queryByText(/Boards collect saved image views/)).not.toBeInTheDocument()
   })
   it('hides deletion for new and non-deletable Boards', () => {
     setup({

@@ -125,7 +125,7 @@ limit is reached.
 While viewing an image, click **Add to Collection** and pick one of your collections
 — or one owned by a program you teach in. It sits next to **Share View**
 when the legacy viewer is active. With Markers enabled, Add to Collection stays
-in the header and sharing moves to the right panel's **Shared View** link tab.
+in the header and sharing moves to the right panel's **Share View** link tab.
 Type in the filter box to narrow a long list.
 
 - The image is added to the end of the collection. If it is already there,

@@ -129,9 +129,9 @@ export const SharedView: Story = {
   args: { initialOpen: true, initialTab: 'share' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: 'Copy current view' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Share View' }))
     await expect(copyView).toHaveBeenCalled()
-    await expect(canvas.getByRole('button', { name: 'Show Shared View' })).toHaveAttribute(
+    await expect(canvas.getByRole('button', { name: 'Show Share View' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )

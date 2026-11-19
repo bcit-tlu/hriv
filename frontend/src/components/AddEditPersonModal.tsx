@@ -265,7 +265,11 @@ function AddEditPersonForm({
             {onSetupLink && (
               <Tooltip title={setupDisabledReason} describeChild>
                 <span>
-                  <Button disabled={saving || Boolean(setupDisabledReason)} onClick={onSetupLink}>
+                  <Button
+                    size="small"
+                    disabled={saving || Boolean(setupDisabledReason)}
+                    onClick={onSetupLink}
+                  >
                     Copy password-setup link
                   </Button>
                 </span>
@@ -334,7 +338,7 @@ function AddEditPersonForm({
         />
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} disabled={saving}>
+        <Button size="small" onClick={handleClose} disabled={saving}>
           Cancel
         </Button>
         <Button

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import FilterListIcon from '@mui/icons-material/FilterList'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
+import type { SxProps, Theme } from '@mui/material/styles'
 
 interface FilterBarProps {
   title?: string
@@ -10,6 +11,7 @@ interface FilterBarProps {
   clearAction?: ReactNode
   summary?: ReactNode
   summaryActions?: ReactNode
+  sx?: SxProps<Theme>
   children: ReactNode
 }
 
@@ -20,6 +22,7 @@ export default function FilterBar({
   clearAction,
   summary,
   summaryActions,
+  sx,
   children,
 }: FilterBarProps) {
   const titleContent = (
@@ -38,6 +41,7 @@ export default function FilterBar({
       sx={{
         mb: 1.25,
         bgcolor: 'transparent',
+        ...sx,
       }}
     >
       <Box
@@ -48,7 +52,10 @@ export default function FilterBar({
           flexWrap: 'nowrap',
           overflowX: 'auto',
           overflowY: 'hidden',
-          minHeight: 28,
+          // Reserve room for a size="small" action button even when a
+          // consumer passes no actions — keeps the FILTER BY row the same
+          // height (and the label at the same offset) on every page.
+          minHeight: 30.75,
         }}
       >
         <Typography

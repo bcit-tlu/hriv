@@ -106,7 +106,9 @@ export default function AboutMenuItems({
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeAbout}>Close</Button>
+          <Button size="small" onClick={closeAbout}>
+            Close
+          </Button>
         </DialogActions>
       </Dialog>
     </>

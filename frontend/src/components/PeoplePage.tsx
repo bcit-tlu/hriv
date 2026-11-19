@@ -48,6 +48,7 @@ import {
   matchesTextFilter,
   removeFilterTerm,
 } from '../tableFilterUtils'
+import { formatRelativeTime } from '../formatUtils'
 import { ROWS_PER_PAGE_OPTIONS, useRowsPerPagePreference } from '../useRowsPerPagePreference'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import {
@@ -1010,6 +1011,9 @@ export default function PeoplePage({
           mb: 3,
           flexWrap: 'wrap',
           gap: 1,
+          // Buttons are size="small" (30.75px) — keep the row at the
+          // historical 36.5px so the FilterBar position doesn't shift.
+          minHeight: 36.5,
         }}
       >
         <Typography variant="h5">People</Typography>
@@ -1059,7 +1063,12 @@ export default function PeoplePage({
             </>
           )}
           {!readOnly && (
-            <Button variant="contained" startIcon={<PersonAddIcon />} onClick={handleOpenAdd}>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<PersonAddIcon />}
+              onClick={handleOpenAdd}
+            >
               Add Person
             </Button>
           )}
@@ -1261,11 +1270,21 @@ export default function PeoplePage({
                   ),
                   last_access: (
                     <TableCell>
-                      {user.last_access ? new Date(user.last_access).toLocaleDateString() : '—'}
+                      {user.last_access ? (
+                        <span title={new Date(user.last_access).toLocaleString()}>
+                          {formatRelativeTime(user.last_access)}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
                     </TableCell>
                   ),
                   created_at: (
-                    <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      <span title={new Date(user.created_at).toLocaleString()}>
+                        {formatRelativeTime(user.created_at)}
+                      </span>
+                    </TableCell>
                   ),
                 }
                 return (
@@ -1428,6 +1447,7 @@ export default function PeoplePage({
         </DialogContent>
         <DialogActions>
           <Button
+            size="small"
             disabled={bulkActiveSaving}
             onClick={() => {
               if (bulkActiveSaving) {
@@ -1439,7 +1459,12 @@ export default function PeoplePage({
           >
             Cancel
           </Button>
-          <Button onClick={handleBulkActiveSave} variant="contained" disabled={bulkActiveSaving}>
+          <Button
+            size="small"
+            onClick={handleBulkActiveSave}
+            variant="contained"
+            disabled={bulkActiveSaving}
+          >
             {bulkActiveSaving ? 'Saving...' : 'Save'}
           </Button>
         </DialogActions>
@@ -1476,6 +1501,7 @@ export default function PeoplePage({
         </DialogContent>
         <DialogActions>
           <Button
+            size="small"
             onClick={() => {
               bulkRoleSaveTokenRef.current++
               bulkRoleSaveAbortRef.current?.abort()
@@ -1484,7 +1510,7 @@ export default function PeoplePage({
           >
             Cancel
           </Button>
-          <Button onClick={handleBulkRoleSave} variant="contained">
+          <Button size="small" onClick={handleBulkRoleSave} variant="contained">
             Save
           </Button>
         </DialogActions>
@@ -1536,6 +1562,7 @@ export default function PeoplePage({
         </DialogContent>
         <DialogActions>
           <Button
+            size="small"
             onClick={() => {
               setBulkDeleteOpen(false)
               setBulkDeleteError(null)
@@ -1633,6 +1660,7 @@ export default function PeoplePage({
         </DialogContent>
         <DialogActions>
           <Button
+            size="small"
             onClick={() => {
               setDeleteConfirmOpen(false)
               setDeleteError(null)
