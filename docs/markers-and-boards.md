@@ -599,9 +599,10 @@ Owners/transfer reuse the Collections picker via a Board adapter, and require
 reload on 409; reload replaces the staged draft with current server values.
 
 The selected Board displays a flat, ordered collage of saved views.
-The My Markers overview instead sorts every fetched page together by case-insensitive
-title, with numeric Marker ID breaking ties. Favourite and membership changes do not
-change that order; renames move only to their new alphabetical position.
+The My Markers overview keeps the saved Marker order across every fetched page
+(`sort_order`, with numeric Marker ID breaking ties); dragging reorders it and the
+Order saved snackbar's Undo restores the prior order. Favourite, membership and
+title changes do not change that order.
 Filled favourite stars are white on both cards and table rows. A contrasting
 background keeps the white star legible, including read-only favourite indicators.
 Dragging a member card reorders members within the Board, without a separate handle icon;

@@ -708,6 +708,26 @@ describe('BoardsPage', () => {
       }),
     )
   })
+  it('drops the cached fallback thumbnail once a Board is set to a blank cover', async () => {
+    await setup()
+    const tile = () => screen.getByRole('button', { name: 'Open Board: Architecture inspiration' })
+    await waitFor(() => expect(tile().querySelector('img')).not.toBeNull())
+    vi.mocked(api.fetchBoards).mockResolvedValue(
+      BOARDS_FIXTURES.map((row) =>
+        row.id === 1
+          ? { ...row, version: row.version + 1, cover_blank: true, cover_thumb: null }
+          : row,
+      ),
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Set Architecture inspiration cover image' }),
+    )
+    const dialog = await screen.findByRole('dialog', { name: 'Choose Cover Image' })
+    fireEvent.click(within(dialog).getByRole('radio', { name: /None.*blank card/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(tile().querySelector('img')).toBeNull())
+  })
   it('opens Board details in a dialog with fixed heading controls and a close action', async () => {
     const view = await setup(1)
     const dialog = screen.getByRole('dialog', { name: 'Architecture inspiration' })
@@ -815,6 +835,9 @@ describe('BoardsPage', () => {
     expect(api.reorderBoardMarkers).not.toHaveBeenCalled()
   })
   it('reorders Boards, shows Order saved, and undoes the reorder', async () => {
+    vi.mocked(api.reorderBoards).mockResolvedValueOnce(
+      BOARDS_FIXTURES.map((row) => ({ ...row, version: row.version + 10 })),
+    )
     await setup()
     drag.end?.({
       canceled: false,
@@ -830,12 +853,19 @@ describe('BoardsPage', () => {
     expect(screen.getByRole('alert')).toHaveClass('MuiAlert-filledSuccess')
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
     await waitFor(() => expect(api.reorderBoards).toHaveBeenCalledTimes(2))
-    expect(vi.mocked(api.reorderBoards).mock.calls[1][0].map((item) => item.board_id)).toEqual([
-      1, 3,
-    ])
+    // Undo carries the versions the reorder returned, not refreshed ones.
+    expect(vi.mocked(api.reorderBoards).mock.calls[1][0]).toEqual(
+      [1, 3].map((board_id) => ({
+        board_id,
+        version: BOARDS_FIXTURES.find((row) => row.id === board_id)!.version + 10,
+      })),
+    )
     await waitFor(() => expect(screen.queryByText('Order saved')).not.toBeInTheDocument())
   })
   it('reorders overview Markers, shows Order saved, and undoes the reorder', async () => {
+    vi.mocked(api.reorderMarkers).mockResolvedValueOnce(
+      BOARD_ITEMS.map((item) => ({ ...item, version: item.version + 10 })),
+    )
     await setup()
     drag.end?.({
       canceled: false,
@@ -851,11 +881,30 @@ describe('BoardsPage', () => {
     expect(screen.getByRole('alert')).toHaveClass('MuiAlert-filledSuccess')
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
     await waitFor(() => expect(api.reorderMarkers).toHaveBeenCalledTimes(2))
-    expect(vi.mocked(api.reorderMarkers).mock.calls[1][0].map((item) => item.marker_id)).toEqual([
-      7, 8, 9, 10, 11, 12,
-    ])
+    expect(vi.mocked(api.reorderMarkers).mock.calls[1][0]).toEqual(
+      [7, 8, 9, 10, 11, 12].map((marker_id) => ({
+        marker_id,
+        version: BOARD_ITEMS.find((item) => item.id === marker_id)!.version + 10,
+      })),
+    )
+  })
+  it('offers no Undo when the reorder response omits a reordered Marker', async () => {
+    vi.mocked(api.reorderMarkers).mockResolvedValueOnce(BOARD_ITEMS.slice(1))
+    await setup()
+    drag.end?.({
+      canceled: false,
+      operation: {
+        source: { id: 'item:7', type: 'board-member', index: 2, initialIndex: 0 },
+      },
+    } as unknown as DragEndEvent)
+    expect(await screen.findByText('Order saved')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
   })
   it('shows Order saved with undo after reordering Markers inside an opened Board', async () => {
+    vi.mocked(api.reorderBoardMarkers).mockResolvedValueOnce({
+      ...BOARDS_FIXTURES[0],
+      version: BOARDS_FIXTURES[0].version + 1,
+    })
     await setup(1)
     await screen.findByRole('dialog', { name: 'Architecture inspiration' })
     drag.end?.({
@@ -877,10 +926,44 @@ describe('BoardsPage', () => {
     fireEvent.click(screen.getByText('Undo'))
     await waitFor(() =>
       expect(api.reorderBoardMarkers).toHaveBeenCalledWith(1, {
-        version: BOARDS_FIXTURES[0].version,
+        version: BOARDS_FIXTURES[0].version + 1,
         items: [7, 8, 9, 10, 11, 12].map((marker_id) => ({ marker_id })),
       }),
     )
+  })
+  it('undoes a member reorder on its own Board after another Board opens', async () => {
+    vi.mocked(api.reorderBoardMarkers).mockResolvedValueOnce({
+      ...BOARDS_FIXTURES[0],
+      version: BOARDS_FIXTURES[0].version + 1,
+    })
+    const view = await setup(1)
+    await screen.findByRole('dialog', { name: 'Architecture inspiration' })
+    drag.end?.({
+      canceled: false,
+      operation: {
+        source: { id: 'item:7', type: 'board-member' },
+        target: { id: 'item:9' },
+      },
+    } as unknown as DragEndEvent)
+    expect(await screen.findByText('Order saved')).toBeVisible()
+    view.rerender(
+      <AuthContext.Provider value={BOARD_AUTH}>
+        <BoardsPage
+          enabled
+          currentUser={BOARD_USER}
+          boardId={null}
+          onSelectBoard={view.onSelectBoard}
+          onOpenMarker={view.onOpenMarker}
+        />
+      </AuthContext.Provider>,
+    )
+    await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument())
+    fireEvent.click(screen.getByText('Undo'))
+    await waitFor(() => expect(api.reorderBoardMarkers).toHaveBeenCalledTimes(2))
+    expect(api.reorderBoardMarkers).toHaveBeenLastCalledWith(1, {
+      version: BOARDS_FIXTURES[0].version + 1,
+      items: [7, 8, 9, 10, 11, 12].map((marker_id) => ({ marker_id })),
+    })
   })
   it('reports a failed drag-save without a success snackbar', async () => {
     vi.mocked(api.updateMarker).mockRejectedValue(new api.ApiError(422, 'Cannot save this view'))

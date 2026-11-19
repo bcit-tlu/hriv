@@ -1476,8 +1476,9 @@ selection MouseTracker ignores their presses.
   least one Marker is selected. In select mode each Marker card carries a
   top-left checkbox overlay on its thumbnail and a primary outline when
   checked, matching the Collection Manage Images tiles.
-  The fully paginated overview is case-insensitive title ascending, then numeric ID;
-  favourite/membership updates do not affect order. Filled stars use the primary accent.
+  The fully paginated overview keeps the saved Marker order (`sort_order`, then numeric ID),
+  which drag-reorder and its Undo change; favourite/membership updates and renames do not
+  affect order. Filled stars use the primary accent.
   Both views show only personally owned Markers, fetched in pages of 200. Cards
   show the image's parent category below the title, or Uncategorized when absent.
   Cards are 234px wide with proportionally scaled 96px covers, including in Board dialogs.

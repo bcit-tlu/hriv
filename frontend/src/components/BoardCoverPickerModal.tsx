@@ -52,9 +52,15 @@ export default function BoardCoverPickerModal({
   currentMarkerId,
   currentBlank,
 }: BoardCoverPickerModalProps) {
-  const [choice, setChoice] = useState<CoverChoice>(
-    currentBlank ? 'blank' : (currentMarkerId ?? 'auto'),
-  )
+  const current: CoverChoice = currentBlank ? 'blank' : (currentMarkerId ?? 'auto')
+  const [choice, setChoice] = useState<CoverChoice>(current)
+  // The picker stays mounted while closed, so re-stage the Board's current
+  // cover on every opening rather than only at first mount.
+  const [wasOpen, setWasOpen] = useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open) setChoice(current)
+  }
 
   const handleSave = () => {
     if (choice === 'blank') onSave(null, true)
