@@ -152,6 +152,8 @@ ordered cards, isolated DnD surfaces and Move/Save links. `useBoardsData.ts` loa
 complete Board lists and selected projections; `boardUtils.ts` owns location,
 ownership and membership-order helpers. `BoardEditDialog.tsx` handles metadata
 and restricted scope; `BoardOwnersDialog.tsx` adapts the Collections picker.
+`BoardCoverPickerModal.tsx` pins tile covers (`cover_marker_id` /
+`cover_blank`, validated in `board_writes.py`, migration `0050_board_cover_pin`).
 `AppShell.tsx`, `App.tsx`, `useShareableImageState.ts` and
 `useNavigationHistory.ts` wire the feature-gated utility and deep links.
 Cards reuse the existing saved image viewport URL, preserving Board history.
