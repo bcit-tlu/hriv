@@ -1422,6 +1422,15 @@ describe('BoardsPage', () => {
       }),
     )
   })
+  it('saves on Ctrl+Enter from the Destination Board control', async () => {
+    await setup(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Move/Save Rose window to Board' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
+    const destination = screen.getByRole('combobox', { name: 'Destination Board' })
+    fireEvent.keyDown(destination, { key: 'Enter', ctrlKey: true })
+    await waitFor(() => expect(api.updateMarker).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
   it('moves across Boards atomically when explicitly requested', async () => {
     await setup(1)
     fireEvent.click(screen.getByRole('button', { name: 'Move/Save Rose window to Board' }))

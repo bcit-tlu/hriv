@@ -630,6 +630,10 @@ describe('Marker viewer tool', () => {
         expect(viewer().container.querySelector('[data-marker-id="9"] button')).not.toBeNull(),
       )
       expect(viewer().viewport.panTo).toHaveBeenCalled()
+      // The focused Marker's info card opens so its description is visible.
+      expect(
+        await within(viewer().container).findByRole('heading', { name: 'Other student view' }),
+      ).toBeInTheDocument()
       // Only the target marker gets a visibility override — nothing else leaks.
       const stored = JSON.parse(localStorage.getItem('hriv.markerVisibility.9') ?? '{}') as {
         items?: { id: number; markerVisible?: boolean }[]

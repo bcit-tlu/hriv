@@ -524,9 +524,13 @@ function SaveToDialog({
     <Dialog open onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
       <DialogTitle>Save “{item.title}” to…</DialogTitle>
       <DialogContent
-        onKeyDown={(event) => {
-          if (busy || conflict || !ready || !options.length || !isSubmitKey(event)) return
+        // Capture phase: the Destination Select consumes Enter (opening its
+        // menu) before a bubbling handler sees it; plain Enter still opens it.
+        onKeyDownCapture={(event) => {
+          if (!(event.ctrlKey || event.metaKey) || !isSubmitKey(event)) return
+          if (busy || conflict || !ready || !options.length) return
           event.preventDefault()
+          event.stopPropagation()
           onSave(targetId, move)
         }}
       >
