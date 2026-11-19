@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { isSubmitKey, useInitialFocus } from '../formKeys'
 import { createPortal } from 'react-dom'
 import { markerAccentColor, markerFavouriteButtonSx } from '../theme'
 import Paper from '@mui/material/Paper'
@@ -189,6 +190,7 @@ export default function MarkerFormDialog({
     setPanesEl(el)
   }, [])
   const boardsInputRef = useRef<HTMLInputElement>(null)
+  const titleRef = useRef<HTMLInputElement>(null)
   const editable = !baseline || baseline.permissions.can_edit
 
   const closeBoardPane = useCallback(() => {
@@ -386,6 +388,20 @@ export default function MarkerFormDialog({
       (a, b) => a.name.toLocaleLowerCase().localeCompare(b.name.toLocaleLowerCase()) || a.id - b.id,
     )
   const missingDetails = assignments.some((link) => !details[link.board_id])
+  const canSave =
+    editable &&
+    !busy &&
+    !loading &&
+    !(baseline && !boardsLoaded) &&
+    !missingDetails &&
+    !conflict &&
+    !!title.trim() &&
+    assignments.length > 0
+  const canCreateBoard =
+    !boardBusy &&
+    !!boardName.trim() &&
+    !(boardVisibility === 'restricted' && boardProgramIds.length + boardGroupIds.length === 0)
+  useInitialFocus(titleRef, editable && !busy)
   const errorAlert = error && (
     <Alert
       severity="error"
@@ -499,6 +515,11 @@ export default function MarkerFormDialog({
           '.MuiDialogTitle-root + &': { pt: 2 },
           ...(compact ? { px: inline ? 0 : 2 } : {}),
         }}
+        onKeyDown={(event) => {
+          if (!canSave || !isSubmitKey(event)) return
+          event.preventDefault()
+          void persist()
+        }}
       >
         {baseline && !loading && !boardsLoaded && (
           <Alert severity="error">
@@ -520,7 +541,7 @@ export default function MarkerFormDialog({
           }}
           disabled={busy || !editable}
           slotProps={{ htmlInput: { maxLength: 255 } }}
-          autoFocus
+          inputRef={titleRef}
         />
         <TextField
           label="Description"
@@ -661,15 +682,7 @@ export default function MarkerFormDialog({
           <Button
             size="small"
             variant="contained"
-            disabled={
-              busy ||
-              loading ||
-              (!!baseline && !boardsLoaded) ||
-              missingDetails ||
-              !!conflict ||
-              !title.trim() ||
-              assignments.length === 0
-            }
+            disabled={!canSave}
             onClick={() => void persist()}
           >
             {busy
@@ -730,6 +743,11 @@ export default function MarkerFormDialog({
             flex: '1 1 auto',
             overflowY: 'auto',
           }}
+          onKeyDown={(event) => {
+            if (!canCreateBoard || !isSubmitKey(event)) return
+            event.preventDefault()
+            void saveNewBoard()
+          }}
         >
           <Stack spacing={placement ? 1.5 : 2} sx={{ pt: 2 }}>
             {boardError && <Alert severity="error">{boardError}</Alert>}
@@ -754,12 +772,7 @@ export default function MarkerFormDialog({
           <Button
             size="small"
             variant="contained"
-            disabled={
-              boardBusy ||
-              !boardName.trim() ||
-              (boardVisibility === 'restricted' &&
-                boardProgramIds.length + boardGroupIds.length === 0)
-            }
+            disabled={!canCreateBoard}
             onClick={() => void saveNewBoard()}
           >
             {boardBusy ? 'Creating…' : 'Create Board'}

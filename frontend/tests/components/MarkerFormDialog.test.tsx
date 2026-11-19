@@ -87,6 +87,27 @@ async function openCreate(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'New Board' }))
 }
 describe('MarkerFormDialog', () => {
+  it('focuses Title and saves on Enter, or Ctrl+Enter from Description', async () => {
+    const { api } = await setup({ item: MARKER_FIXTURE })
+    const title = screen.getByRole('textbox', { name: 'Title' })
+    await waitFor(() => expect(title).toHaveFocus())
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Description' }), { key: 'Enter' })
+    expect(api.updateMarker).not.toHaveBeenCalled()
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Description' }), {
+      key: 'Enter',
+      ctrlKey: true,
+    })
+    await waitFor(() => expect(api.updateMarker).toHaveBeenCalledTimes(1))
+  })
+  it('focuses Title in the inline editor', async () => {
+    await setup({ inline: true, item: MARKER_FIXTURE })
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Title' })).toHaveFocus())
+  })
+  it('saves on Enter in Title', async () => {
+    const { api } = await setup({ item: MARKER_FIXTURE })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Title' }), { key: 'Enter' })
+    await waitFor(() => expect(api.updateMarker).toHaveBeenCalledTimes(1))
+  })
   it('lists Description before Boards', async () => {
     await setup({ item: MARKER_FIXTURE })
     const description = screen.getByRole('textbox', { name: 'Description' })
@@ -223,7 +244,7 @@ describe('MarkerFormDialog', () => {
     await user.type(screen.getByLabelText('Title *'), 'A view')
     expect(screen.getByRole('button', { name: 'Save to Board' })).toBeDisabled()
     await openCreate(user)
-    expect(screen.getByLabelText('Name *')).toHaveFocus()
+    await waitFor(() => expect(screen.getByLabelText('Name *')).toHaveFocus())
   })
   it('selects only editable Boards, captures all form values and persists the last Board', async () => {
     const { api, user, onChanged, onClose } = await setup()

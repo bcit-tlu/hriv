@@ -12,6 +12,7 @@ import type { Category, CollectionType } from '../types'
 import type { CollectionSources } from '../api'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { isSubmitKey } from '../formKeys'
 import {
   Alert,
   Box,
@@ -522,7 +523,13 @@ function SaveToDialog({
   return (
     <Dialog open onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
       <DialogTitle>Save “{item.title}” to…</DialogTitle>
-      <DialogContent>
+      <DialogContent
+        onKeyDown={(event) => {
+          if (busy || conflict || !ready || !options.length || !isSubmitKey(event)) return
+          event.preventDefault()
+          onSave(targetId, move)
+        }}
+      >
         <Stack spacing={2} sx={{ pt: 1 }}>
           {(error || loadError) && (
             <Alert

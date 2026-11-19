@@ -613,6 +613,11 @@ sits on a Marker-blue disc. Saving a favourite does not disable or restyle the
 other tile actions; they ignore clicks until the save finishes.
 While placement is armed, the viewer's Add Marker toolbar button shows a blue
 pin on a white disc over the red active background.
+Marker and Board forms (Edit/Add Marker dialog, canvas popover, inline editor,
+New Board pane and dialog) focus Title or Name on open. Enter in a single-line
+field saves when Save is enabled; Ctrl/⌘+Enter saves from any field, including
+Description. The Move/Save to Board dialog saves on Ctrl/⌘+Enter, because plain
+Enter opens its Destination menu.
 Filled favourite stars are white on both cards and table rows. A contrasting
 background keeps the white star legible, including read-only favourite indicators.
 Dragging a member card reorders members within the Board, without a separate handle icon;
