@@ -279,7 +279,7 @@ export default function ViewerSidePanel({
               {tab === 'markers'
                 ? 'About Markers:'
                 : tab === 'share'
-                  ? 'About Share View:'
+                  ? 'About Share View'
                   : 'Viewer controls'}
             </Typography>
             {tab === 'markers' ? (
@@ -289,8 +289,8 @@ export default function ViewerSidePanel({
               </Typography>
             ) : tab === 'share' ? (
               <Typography variant="caption" component="p" color="text.secondary">
-                Share View copies a link to this exact spot, zoom and rotation, so others see the
-                image just as you do.
+                Share View copies a link to this exact position and zoom, so when you share the link
+                with others, they can see the same thing.
               </Typography>
             ) : (
               <ViewerControlHints dense />
