@@ -660,7 +660,8 @@ against late navigation. While a marker-focused image is open the URL keeps
 `?marker=`; the viewer consumes it once loaded — recentring, selecting,
 focusing, revealing the Marker if it was canvas-hidden and opening its info
 card so the description is visible — so a marker link
-restores on refresh and Browser Back. Browser Back returns to the Board entry.
+restores on refresh and Browser Back. Leaving that image consumes the focus:
+returning through Browse or Collections opens it with no Marker card. Browser Back returns to the Board entry.
 
 Tests: `boardUtils.test.ts`, `useBoardsData.test.ts`, `BoardsPage.test.tsx`,
 `BoardDialog.test.tsx`, `BoardEditDialog.test.tsx`, `BoardOwnersDialog.test.tsx`,

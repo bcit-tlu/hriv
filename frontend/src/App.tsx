@@ -430,6 +430,14 @@ export default function App() {
     })
   }, [path, currentUser, page])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
+  // Leaving the Marker-focused image consumes the focus, so returning to it
+  // through Browse/Collections opens the canvas without a Marker card.
+  const focusImageId = selectedImage?.id ?? null
+  const [prevFocusImageId, setPrevFocusImageId] = useState(focusImageId)
+  if (focusImageId !== prevFocusImageId) {
+    setPrevFocusImageId(focusImageId)
+    if (markerFocus && prevFocusImageId === markerFocus.imageId) setMarkerFocus(null)
+  }
   const graphImageEpoch = useRef(0)
   // "Image details" drawer open state; closed on every image change
   // (including leave -> return to the same image) and on canvas edit entry.
