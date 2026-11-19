@@ -18,6 +18,7 @@ export default function ViewerImageDetails({
   return (
     <ImageDetailsContent
       dense
+      showAll
       image={image}
       programNames={programNames}
       groupNames={groupNames}

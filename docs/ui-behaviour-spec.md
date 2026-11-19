@@ -1664,6 +1664,9 @@ selection MouseTracker ignores their presses.
   behavior are reused without per-item metadata. Placement floats beside the image
   and switches an open Details panel to Markers. Closed-panel floating cards leave
   room for the toggle. Details retains its metadata and Viewer controls help text.
+  The panel's Details lists every metadata field (copyright, programs, groups,
+  dates, dimensions, size, measurement scale, objective power, original file,
+  file type, uploader), showing “—” for values not recorded.
 - Single-image, Sequence and Synchronized viewers show only My and Instructor
   Markers in lists and markers, using the endpoint's existing ownership grouping.
   Other users' public/shared views remain discoverable through the All Boards
