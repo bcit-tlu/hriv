@@ -494,6 +494,9 @@ export default function MarkerFormDialog({
           flexDirection: 'column',
           gap: placement ? 1.5 : 2,
           pt: 2,
+          // DialogContent zeroes its top padding after a DialogTitle, which
+          // clips the outlined Title label.
+          '.MuiDialogTitle-root + &': { pt: 2 },
           ...(compact ? { px: inline ? 0 : 2 } : {}),
         }}
       >
@@ -518,6 +521,16 @@ export default function MarkerFormDialog({
           disabled={busy || !editable}
           slotProps={{ htmlInput: { maxLength: 255 } }}
           autoFocus
+        />
+        <TextField
+          label="Description"
+          fullWidth
+          multiline
+          minRows={placement || inline ? 2 : 3}
+          maxRows={10}
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          disabled={busy || !editable}
         />
         {editable ? (
           <Autocomplete<ApiBoardSummary, true>
@@ -613,16 +626,6 @@ export default function MarkerFormDialog({
             Saved on {baseline?.board_ids.length} Board(s). Only its owners can edit this Marker.
           </Typography>
         )}
-        <TextField
-          label="Description"
-          fullWidth
-          multiline
-          minRows={placement || inline ? 2 : 3}
-          maxRows={10}
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          disabled={busy || !editable}
-        />
         {baseline?.permissions.can_delete && (
           <>
             <Divider />

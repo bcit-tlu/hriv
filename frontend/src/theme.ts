@@ -1,6 +1,7 @@
 import {
   alpha,
   createTheme,
+  darken,
   type SxProps,
   type Theme,
   type ThemeOptions,
@@ -228,7 +229,10 @@ export function markerAccentColor(theme: Theme): string {
  *  disc — proportionally darker than whatever surface it floats over. */
 export function markerFavouriteButtonSx(favourite: boolean): SxProps<Theme> {
   return favourite
-    ? { bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }
+    ? (theme: Theme) => ({
+        bgcolor: markerAccentColor(theme),
+        '&:hover': { bgcolor: darken(markerAccentColor(theme), 0.2) },
+      })
     : (theme: Theme) => ({
         color: theme.palette.common.white,
         bgcolor: alpha(theme.palette.common.black, 0.25),

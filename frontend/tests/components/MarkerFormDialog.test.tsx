@@ -87,6 +87,14 @@ async function openCreate(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'New Board' }))
 }
 describe('MarkerFormDialog', () => {
+  it('lists Description before Boards', async () => {
+    await setup({ item: MARKER_FIXTURE })
+    const description = screen.getByRole('textbox', { name: 'Description' })
+    const boards = screen.getByRole('combobox', { name: 'Boards' })
+    expect(
+      description.compareDocumentPosition(boards) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
   it.each([null, MARKER_FIXTURE.description])(
     'shows the inline description and preserves its value, description=%s',
     async (description) => {

@@ -1059,10 +1059,10 @@ export default function BoardsPage({
           aria-pressed={item.favourite}
           // data-favourite-star exempts this button from the overlay
           // cluster's uniform grey-disc rule — the star carries its own
-          // shared face (red disc on / grey disc off).
+          // shared face (blue disc on / grey disc off).
           data-favourite-star
           sx={markerFavouriteButtonSx(item.favourite)}
-          disabled={busy || conflict}
+          disabled={conflict}
           onClick={() =>
             void run(() =>
               updateMarker(item.id, { version: item.version, favourite: !item.favourite }),
@@ -1084,8 +1084,9 @@ export default function BoardsPage({
         <IconButton
           size="small"
           aria-label={`Edit Marker: ${item.title}`}
-          disabled={busy || conflict}
+          disabled={conflict}
           onClick={() => {
+            if (busy) return
             setError(null)
             setEditingItem(item)
           }}
@@ -1100,8 +1101,9 @@ export default function BoardsPage({
         <IconButton
           size="small"
           aria-label={`Move/Save ${item.title} to Board`}
-          disabled={busy || conflict}
+          disabled={conflict}
           onClick={() => {
+            if (busy) return
             setError(null)
             setSavingItem(item)
           }}
@@ -1913,10 +1915,10 @@ export default function BoardsPage({
                       <IconButton
                         size="small"
                         aria-label={`Set ${row.name} cover image`}
-                        disabled={busy}
                         onClick={(event) => {
                           event.stopPropagation()
                           event.preventDefault()
+                          if (busy) return
                           openCoverPicker(row)
                         }}
                         sx={{

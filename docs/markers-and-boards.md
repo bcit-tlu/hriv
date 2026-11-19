@@ -607,6 +607,10 @@ The Board dialog title reads "<name> Board (<n> markers)". Saving a Marker to a
 Board (drop or Move/Save to…) shows a success snackbar whose Undo restores the
 Marker's previous editable Board assignments, pinned to the version the save
 returned so a later edit makes Undo conflict instead of being overwritten.
+The New Board form opens with a one-line description of what Boards are for.
+The Marker edit form lists Description before Boards. An active favourite star
+sits on a Marker-blue disc. Saving a favourite does not disable or restyle the
+other tile actions; they ignore clicks until the save finishes.
 Filled favourite stars are white on both cards and table rows. A contrasting
 background keeps the white star legible, including read-only favourite indicators.
 Dragging a member card reorders members within the Board, without a separate handle icon;

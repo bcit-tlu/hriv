@@ -171,7 +171,7 @@ export default function BoardDialog({
           aria-pressed={item.favourite}
           // data-favourite-star exempts this button from the overlay
           // cluster's uniform grey-disc rule — the star carries its own
-          // shared face (red disc on / grey disc off).
+          // shared face (blue disc on / grey disc off).
           data-favourite-star
           sx={markerFavouriteButtonSx(item.favourite)}
           disabled={busy || conflict}

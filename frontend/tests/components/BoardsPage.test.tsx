@@ -217,6 +217,17 @@ describe('BoardsPage', () => {
       expect(screen.queryByText('Saved to Next studio project')).not.toBeInTheDocument(),
     )
   })
+  it('leaves other tile actions visually unchanged while a favourite saves', async () => {
+    vi.mocked(api.updateMarker).mockReturnValueOnce(new Promise(() => {}))
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: `Favourite ${BOARD_ITEMS[0].title}` }))
+    await waitFor(() => expect(api.updateMarker).toHaveBeenCalled())
+    expect(
+      screen.getByRole('button', { name: 'Set Next studio project cover image' }),
+    ).toBeEnabled()
+    for (const button of screen.getAllByRole('button', { name: /^Edit Marker: / }))
+      expect(button).toBeEnabled()
+  })
   it('keeps a concurrent destination assignment when undoing an Add to Board', async () => {
     const fresh = { ...BOARD_ITEMS[0], board_ids: [...BOARD_ITEMS[0].board_ids, 3] }
     vi.mocked(api.fetchMarker).mockResolvedValueOnce(fresh)

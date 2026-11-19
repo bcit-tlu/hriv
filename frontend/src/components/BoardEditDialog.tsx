@@ -286,6 +286,11 @@ export default function BoardEditDialog({
         {baseline ? 'Edit Board' : 'New Board'}
       </DialogTitle>
       <DialogContent>
+        {!baseline && (
+          <Typography variant="body2" color="text.secondary">
+            Boards collect saved image views (Markers) for study and sharing.
+          </Typography>
+        )}
         <Stack spacing={2} sx={{ pt: 1 }}>
           {error && (
             <Alert
