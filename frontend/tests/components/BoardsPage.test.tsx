@@ -196,6 +196,45 @@ describe('BoardsPage', () => {
     await screen.findByText('Saved to Next studio project')
     expect(titles()).toEqual([...initial].reverse())
   })
+  it('undoes an Add to Board with the version the save returned', async () => {
+    vi.mocked(api.updateMarker).mockResolvedValueOnce({ ...BOARD_ITEMS[0], version: 9 })
+    await setup()
+    dropOnBoard(3)
+    const notice = await screen.findByText('Saved to Next studio project')
+    const saved = vi.mocked(api.updateMarker).mock.calls[0]
+    expect(saved[1].board_assignments).toContainEqual({ board_id: 3 })
+    fireEvent.click(
+      within(notice.closest('[role="alert"]') as HTMLElement).getByRole('button', {
+        name: 'Undo',
+      }),
+    )
+    await waitFor(() => expect(api.updateMarker).toHaveBeenCalledTimes(2))
+    expect(api.updateMarker).toHaveBeenLastCalledWith(7, {
+      version: 9,
+      board_assignments: saved[1].board_assignments?.filter((row) => row.board_id !== 3),
+    })
+    await waitFor(() =>
+      expect(screen.queryByText('Saved to Next studio project')).not.toBeInTheDocument(),
+    )
+  })
+  it('keeps the overview layout unchanged while an opened Board loads', async () => {
+    vi.mocked(api.fetchBoard).mockReturnValue(new Promise(() => {}))
+    render(
+      <AuthContext.Provider value={BOARD_AUTH}>
+        <BoardsPage
+          enabled
+          currentUser={BOARD_USER}
+          boardId={1}
+          onSelectBoard={vi.fn()}
+          onOpenMarker={vi.fn()}
+        />
+      </AuthContext.Provider>,
+    )
+    const dialog = await screen.findByRole('dialog', { name: 'Architecture inspiration Board' })
+    expect(await screen.findByText('(6 markers)')).toBeVisible()
+    expect(within(dialog).getByRole('progressbar', { name: 'Loading Board' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'All Markers' })).not.toBeInTheDocument()
+  })
   it('keeps a renamed Marker at its saved position', async () => {
     await setup()
     fireEvent.click(screen.getByRole('button', { name: 'Edit Marker: Rose window' }))
@@ -587,7 +626,7 @@ describe('BoardsPage', () => {
         />
       </AuthContext.Provider>,
     )
-    await screen.findByRole('dialog', { name: 'Next studio project' })
+    await screen.findByRole('dialog', { name: 'Next studio project Board' })
     expect(card.isConnected).toBe(true)
     expect(cover.isConnected).toBe(true)
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
@@ -730,11 +769,11 @@ describe('BoardsPage', () => {
   })
   it('opens Board details in a dialog with fixed heading controls and a close action', async () => {
     const view = await setup(1)
-    const dialog = screen.getByRole('dialog', { name: 'Architecture inspiration' })
+    const dialog = screen.getByRole('dialog', { name: 'Architecture inspiration Board' })
     expect(
       within(dialog.querySelector('#board-heading')!).getByText('Private', { exact: true }),
     ).toBeVisible()
-    expect(within(dialog).getByText('(6 Markers)')).toBeVisible()
+    expect(within(dialog).getByText('(6 markers)')).toBeVisible()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close Board' }))
     expect(view.onSelectBoard).toHaveBeenCalledWith(null)
   })
@@ -906,7 +945,7 @@ describe('BoardsPage', () => {
       version: BOARDS_FIXTURES[0].version + 1,
     })
     await setup(1)
-    await screen.findByRole('dialog', { name: 'Architecture inspiration' })
+    await screen.findByRole('dialog', { name: 'Architecture inspiration Board' })
     drag.end?.({
       canceled: false,
       operation: {
@@ -937,7 +976,7 @@ describe('BoardsPage', () => {
       version: BOARDS_FIXTURES[0].version + 1,
     })
     const view = await setup(1)
-    await screen.findByRole('dialog', { name: 'Architecture inspiration' })
+    await screen.findByRole('dialog', { name: 'Architecture inspiration Board' })
     drag.end?.({
       canceled: false,
       operation: {
@@ -993,10 +1032,10 @@ describe('BoardsPage', () => {
         />
       </AuthContext.Provider>,
     )
-    await screen.findByRole('dialog', { name: 'Next studio project' })
+    await screen.findByRole('dialog', { name: 'Next studio project Board' })
     finish(BOARD_ITEMS[0])
     await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument())
-    expect(screen.getByRole('dialog', { name: 'Next studio project' })).toBeVisible()
+    expect(screen.getByRole('dialog', { name: 'Next studio project Board' })).toBeVisible()
     expect(api.fetchBoard).toHaveBeenLastCalledWith(3)
   })
   it('includes read-only owned Boards in the compact row with New Board first', async () => {
@@ -1280,7 +1319,7 @@ describe('BoardsPage', () => {
       ],
     })
     await setup(1)
-    const dialog = screen.getByRole('dialog', { name: 'Architecture inspiration' })
+    const dialog = screen.getByRole('dialog', { name: 'Architecture inspiration Board' })
     const scope = within(
       within(dialog).getByRole('group', { name: 'Board scope and owners' }),
     ).getByTestId('collection-visibility-chip')
@@ -1289,10 +1328,10 @@ describe('BoardsPage', () => {
     expect(scope.parentElement).toHaveTextContent('Managed by Alex, Morgan')
     expect(screen.queryByRole('button', { name: 'Board options' })).not.toBeInTheDocument()
     expect(within(dialog).queryByRole('button', { name: 'Delete Board' })).not.toBeInTheDocument()
-    expect(within(dialog).getByRole('heading', { name: 'Architecture inspiration' })).toHaveClass(
-      'MuiTypography-h6',
-    )
-    expect(within(dialog).getByText('(6 Markers)')).toHaveClass('MuiTypography-body2')
+    expect(
+      within(dialog).getByRole('heading', { name: 'Architecture inspiration Board' }),
+    ).toHaveClass('MuiTypography-h6')
+    expect(within(dialog).getByText('(6 markers)')).toHaveClass('MuiTypography-body2')
     const sequence = within(dialog).getByRole('button', { name: 'Create Collection' })
     expect(sequence).toHaveClass('MuiButton-outlined')
     expect(sequence.nextElementSibling).toBe(

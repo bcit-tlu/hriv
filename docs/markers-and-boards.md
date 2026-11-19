@@ -603,6 +603,10 @@ The My Markers overview keeps the saved Marker order across every fetched page
 (`sort_order`, with numeric Marker ID breaking ties); dragging reorders it and the
 Order saved snackbar's Undo restores the prior order. Favourite, membership and
 title changes do not change that order.
+The Board dialog title reads "<name> Board (<n> markers)". Saving a Marker to a
+Board (drop or Move/Save to…) shows a success snackbar whose Undo restores the
+Marker's previous editable Board assignments, pinned to the version the save
+returned so a later edit makes Undo conflict instead of being overwritten.
 Filled favourite stars are white on both cards and table rows. A contrasting
 background keeps the white star legible, including read-only favourite indicators.
 Dragging a member card reorders members within the Board, without a separate handle icon;

@@ -363,7 +363,8 @@ function DropArea({
   )
 }
 
-type ReorderUndo =
+type NoticeUndo =
+  | { kind: 'assignments'; markerId: number; version: number; assignments: BoardAssignment[] }
   | { kind: 'boards'; items: { board_id: number; version: number }[] }
   | { kind: 'markers'; items: { marker_id: number; version: number }[] }
   | { kind: 'members'; boardId: number; version: number; ids: number[] }
@@ -443,21 +444,31 @@ function BoardCover({ board }: { board: ApiBoardSummary }) {
   )
 }
 
-async function saveToBoard(item: ApiMarker, targetId: number, sourceId: number | null) {
+/** Returns the Undo that restores the editable assignments held before the
+ *  save, pinned to the version the save returned. */
+async function saveToBoard(
+  item: ApiMarker,
+  targetId: number,
+  sourceId: number | null,
+): Promise<NoticeUndo> {
   const fresh = await fetchMarker(item.id)
   const boards = await Promise.all(fresh.board_ids.map((fetchBoardId) => fetchBoard(fetchBoardId)))
+  const previous: BoardAssignment[] = []
   const assignments: BoardAssignment[] = []
   for (const board of boards) {
-    if (!board.permissions.can_edit || board.id === sourceId || board.id === targetId) continue
+    if (!board.permissions.can_edit || board.id === targetId) continue
     const link = board.markers.find((member) => member.id === fresh.id)
     if (!link) throw new Error('Board membership changed. Reload before saving.')
-    assignments.push({
-      board_id: board.id,
-      sort_order: link.sort_order,
-    })
+    const assignment = { board_id: board.id, sort_order: link.sort_order }
+    previous.push(assignment)
+    if (board.id !== sourceId) assignments.push(assignment)
   }
   assignments.push({ board_id: targetId })
-  await updateMarker(fresh.id, { version: fresh.version, board_assignments: assignments })
+  const saved = await updateMarker(fresh.id, {
+    version: fresh.version,
+    board_assignments: assignments,
+  })
+  return { kind: 'assignments', markerId: saved.id, version: saved.version, assignments: previous }
 }
 
 function SaveToDialog({
@@ -705,12 +716,12 @@ export default function BoardsPage({
   const [notice, setNotice] = useState<{
     message: string
     severity: 'success' | 'info' | 'warning'
-    undo?: ReorderUndo
+    undo?: NoticeUndo
   } | null>(null)
   const notify = (
     message: string,
     severity: 'success' | 'info' | 'warning' = 'warning',
-    undo?: ReorderUndo,
+    undo?: NoticeUndo,
   ) => setNotice({ message, severity, undo })
   const [favourites, setFavourites] = useState(false)
   const data = useBoardsData(boardId, favourites, enabled)
@@ -863,17 +874,23 @@ export default function BoardsPage({
   // Undo replays the prior order with the versions the reorder itself
   // returned, so a newer edit by anyone else (even after a reload) turns
   // the Undo into a 409 instead of being silently overwritten.
-  const undoReorder = (undo: ReorderUndo) => {
+  const undoNotice = (undo: NoticeUndo) => {
     const job =
-      undo.kind === 'boards'
-        ? () => reorderBoards(undo.items)
-        : undo.kind === 'markers'
-          ? () => reorderMarkers(undo.items)
-          : () =>
-              reorderBoardMarkers(undo.boardId, {
-                version: undo.version,
-                items: undo.ids.map((marker_id) => ({ marker_id })),
-              })
+      undo.kind === 'assignments'
+        ? () =>
+            updateMarker(undo.markerId, {
+              version: undo.version,
+              board_assignments: undo.assignments,
+            })
+        : undo.kind === 'boards'
+          ? () => reorderBoards(undo.items)
+          : undo.kind === 'markers'
+            ? () => reorderMarkers(undo.items)
+            : () =>
+                reorderBoardMarkers(undo.boardId, {
+                  version: undo.version,
+                  items: undo.ids.map((marker_id) => ({ marker_id })),
+                })
     void run(job).then((ok) => {
       if (ok) setNotice(null)
     })
@@ -921,7 +938,7 @@ export default function BoardsPage({
       )
       if (ids) {
         const previous = reorderableBoards.map((row) => row.id)
-        let undo: ReorderUndo | undefined
+        let undo: NoticeUndo | undefined
         void run(async () => {
           const saved = await reorderBoards(
             ids.flatMap((id) => {
@@ -960,8 +977,11 @@ export default function BoardsPage({
           notify(`You can't add this Marker to ${destination.name}`)
           return
         }
-        void run(() => saveToBoard(item, destination.id, null)).then((ok) => {
-          if (ok) notify(`Saved to ${destination.name}`, 'success')
+        let undo: NoticeUndo | undefined
+        void run(async () => {
+          undo = await saveToBoard(item, destination.id, null)
+        }).then((ok) => {
+          if (ok) notify(`Saved to ${destination.name}`, 'success', undo)
         })
       } else if (!board && !filtered) {
         const ids = resolveReorderedKeys(
@@ -970,7 +990,7 @@ export default function BoardsPage({
         )
         if (ids) {
           const previous = filteredItems.map((row) => row.id)
-          let undo: ReorderUndo | undefined
+          let undo: NoticeUndo | undefined
           void run(async () => {
             const saved = await reorderMarkers(
               ids.flatMap((id) => {
@@ -1002,7 +1022,7 @@ export default function BoardsPage({
             : undefined
         if (index === undefined) return
         const previous = board.markers.map((row) => row.id)
-        let undo: ReorderUndo | undefined
+        let undo: NoticeUndo | undefined
         void run(async () => {
           const saved = await reorderBoardMarkers(board.id, {
             version: board.version,
@@ -1625,9 +1645,6 @@ export default function BoardsPage({
           )}
         </Box>
       </Box>
-      {boardId != null && !board && (
-        <Button onClick={() => onSelectBoard(null)}>All Markers</Button>
-      )}
       {(error || data.error) && (
         <Alert
           severity="error"
@@ -2097,7 +2114,7 @@ export default function BoardsPage({
                   variant="h6"
                   sx={{ minWidth: 0, overflowWrap: 'anywhere' }}
                 >
-                  {boardSummary?.name ?? 'Board'}
+                  {boardSummary ? `${boardSummary.name} Board` : 'Board'}
                 </Typography>
                 {boardSummary && (
                   <Typography
@@ -2106,7 +2123,8 @@ export default function BoardsPage({
                     color="text.secondary"
                     sx={{ ml: 0.5 }}
                   >
-                    ({boardSummary.marker_count} Markers)
+                    ({boardSummary.marker_count}{' '}
+                    {boardSummary.marker_count === 1 ? 'marker' : 'markers'})
                   </Typography>
                 )}
                 {board?.permissions.can_edit && (
@@ -2265,7 +2283,7 @@ export default function BoardsPage({
                 color="inherit"
                 size="small"
                 onClick={() => {
-                  if (notice.undo) undoReorder(notice.undo)
+                  if (notice.undo) undoNotice(notice.undo)
                 }}
               >
                 Undo
@@ -2445,8 +2463,18 @@ export default function BoardsPage({
           error={error}
           onClose={() => setSavingItem(null)}
           onSave={(targetId, move) => {
-            void run(() => saveToBoard(savingItem, targetId, move ? boardId : null)).then((ok) => {
-              if (ok) setSavingItem(null)
+            const destination = data.boards.find((row) => row.id === targetId)
+            let undo: NoticeUndo | undefined
+            void run(async () => {
+              undo = await saveToBoard(savingItem, targetId, move ? boardId : null)
+            }).then((ok) => {
+              if (!ok) return
+              setSavingItem(null)
+              notify(
+                `${move ? 'Moved' : 'Saved'} to ${destination?.name ?? 'Board'}`,
+                'success',
+                undo,
+              )
             })
           }}
         />

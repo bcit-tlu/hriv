@@ -319,7 +319,7 @@ export default function BoardDialog({
                 variant="h6"
                 sx={{ minWidth: 0, overflowWrap: 'anywhere' }}
               >
-                {board?.name ?? 'Board'}
+                {board ? `${board.name} Board` : 'Board'}
               </Typography>
               {board && (
                 <Typography
@@ -328,7 +328,7 @@ export default function BoardDialog({
                   color="text.secondary"
                   sx={{ ml: 0.5 }}
                 >
-                  ({board.marker_count} Markers)
+                  ({board.marker_count} {board.marker_count === 1 ? 'marker' : 'markers'})
                 </Typography>
               )}
               {board?.permissions.can_edit && (

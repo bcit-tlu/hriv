@@ -145,7 +145,7 @@ export const SelectedBoard: Story = {
     ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body)
-    const dialog = await canvas.findByRole('dialog', { name: 'Architecture inspiration' })
+    const dialog = await canvas.findByRole('dialog', { name: 'Architecture inspiration Board' })
     await waitFor(() => expect(dialog).toBeVisible())
     const metadata = within(dialog).getByRole('group', { name: 'Board scope and owners' })
     await expect(within(metadata).getByTestId('collection-visibility-chip')).toHaveTextContent(
@@ -159,8 +159,8 @@ export const SelectedBoard: Story = {
     await expect(within(dialog).getByRole('button', { name: 'Create Collection' })).toHaveClass(
       'MuiButton-outlined',
     )
-    const title = within(dialog).getByRole('heading', { name: 'Architecture inspiration' })
-    const count = within(dialog).getByText('(6 Markers)')
+    const title = within(dialog).getByRole('heading', { name: 'Architecture inspiration Board' })
+    const count = within(dialog).getByText('(6 markers)')
     await expect(parseFloat(getComputedStyle(title).fontSize)).toBeGreaterThan(
       parseFloat(getComputedStyle(count).fontSize),
     )
@@ -180,7 +180,7 @@ export const SelectedBoardEdit: Story = {
   ...SelectedBoard,
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement.ownerDocument.body)
-    const board = await canvas.findByRole('dialog', { name: 'Architecture inspiration' })
+    const board = await canvas.findByRole('dialog', { name: 'Architecture inspiration Board' })
     await userEvent.click(within(board).getByRole('button', { name: 'Edit Board' }))
     const edit = await canvas.findByRole('dialog', { name: 'Edit Board' })
     await waitFor(() =>
@@ -195,7 +195,7 @@ export const NewlyCreatedBoard: Story = {
     await userEvent.click(await canvas.findByRole('button', { name: 'New Board' }))
     await userEvent.type(canvas.getByRole('textbox', { name: 'Name' }), 'Fresh study')
     await userEvent.click(canvas.getByRole('button', { name: 'Save Board' }))
-    const dialog = await canvas.findByRole('dialog', { name: 'Fresh study' })
+    const dialog = await canvas.findByRole('dialog', { name: 'Fresh study Board' })
     await expect(
       within(dialog).getByRole('group', { name: 'Board scope and owners' }),
     ).toHaveTextContent('Managed by Alex')
@@ -422,7 +422,7 @@ export const CollectionSelection: Story = {
     await userEvent.click(
       await canvas.findByRole('button', { name: 'Open Board: Architecture inspiration' }),
     )
-    const dialog = await canvas.findByRole('dialog', { name: 'Architecture inspiration' })
+    const dialog = await canvas.findByRole('dialog', { name: 'Architecture inspiration Board' })
     await userEvent.click(within(dialog).getByRole('button', { name: 'Select' }))
     const checkboxes = await within(dialog).findAllByRole('checkbox', { name: /^Select / })
     await userEvent.click(checkboxes[0])
