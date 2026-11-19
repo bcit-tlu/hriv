@@ -320,6 +320,7 @@ export default function ImageViewer({
       setAppliedFocus(markerFocus)
       setSelectedMarkerId(item.id)
       setFocusMarkerId(item.id)
+      if (!editingMarker) setInfoMarkerId(item.id)
     }
   } else if (!markerFocus && appliedFocus) {
     setAppliedFocus(null)

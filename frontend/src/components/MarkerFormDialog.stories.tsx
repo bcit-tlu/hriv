@@ -51,7 +51,7 @@ export const Basic: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
     await expect(page.getByRole('heading', { name: 'Add Marker' })).toBeInTheDocument()
-    await expect(page.getByRole('textbox', { name: 'Title' })).toHaveFocus()
+    await waitFor(() => expect(page.getByRole('textbox', { name: 'Title' })).toHaveFocus())
     await expect(page.getByRole('button', { name: 'Save to Board' })).toBeDisabled()
   },
 }
@@ -92,7 +92,7 @@ export const BoardsMenu: Story = {
     await waitFor(() => expect(page.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
     await userEvent.click(page.getByRole('combobox', { name: 'Boards' }))
     await expect(page.getAllByRole('option')[0]).toHaveTextContent(BOARD_FIXTURE.name)
-    await expect(page.getByRole('button', { name: 'Add Board' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'New Board' })).toBeVisible()
   },
 }
 export const CreatePrivateBoard: Story = {
@@ -100,7 +100,7 @@ export const CreatePrivateBoard: Story = {
     const page = within(canvasElement.ownerDocument.body)
     await waitFor(() => expect(page.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
     await userEvent.click(page.getByRole('combobox', { name: 'Boards' }))
-    await userEvent.click(page.getByRole('button', { name: 'Add Board' }))
+    await userEvent.click(page.getByRole('button', { name: 'New Board' }))
     await expect(page.getByRole('heading', { name: 'New Board' })).toBeVisible()
     await userEvent.type(page.getByLabelText('Name *', { exact: true }), 'Architecture favourites')
     await expect(page.getByRole('button', { name: 'Create Board' })).toBeEnabled()
@@ -126,11 +126,10 @@ export const Placement: Story = {
   ],
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
-    await expect(page.getByRole('button', { name: 'More options' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    )
-    await expect(page.queryByLabelText('Description')).not.toBeInTheDocument()
+    // The canvas popover follows the standalone dialog's layout — the
+    // Description field is always visible, no collapsed More options.
+    await expect(page.queryByRole('button', { name: 'More options' })).not.toBeInTheDocument()
+    await expect(page.getByLabelText('Description')).toBeVisible()
   },
 }
 export const StaleVersion: Story = {

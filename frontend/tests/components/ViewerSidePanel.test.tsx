@@ -67,7 +67,7 @@ it('surfaces list loading errors without removing the panel controls', () => {
   expect(screen.getByRole('alert')).toHaveTextContent('Unable to load Markers.')
   expect(screen.getByRole('button', { name: 'Close viewer panel' })).toBeEnabled()
 })
-it('places Shared View between Markers and Details and invokes the existing copy action', () => {
+it('places Share View between Markers and Details and invokes the existing copy action', () => {
   const copy = vi.fn()
   render(<Example onShareView={copy} />)
   fireEvent.click(screen.getByRole('button', { name: 'Open viewer panel' }))
@@ -77,16 +77,16 @@ it('places Shared View between Markers and Details and invokes the existing copy
     .querySelectorAll('button')
   expect([...tabs].map((tab) => tab.getAttribute('aria-label'))).toEqual([
     'Show Markers',
-    'Show Shared View',
+    'Show Share View',
     'Show image details',
   ])
-  fireEvent.click(screen.getByRole('button', { name: 'Show Shared View' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Copy current view' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Show Share View' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Share View' }))
   expect(copy).toHaveBeenCalledTimes(1)
 })
 it('disables copying when no view action is available', () => {
   render(<Example />)
   fireEvent.click(screen.getByRole('button', { name: 'Open viewer panel' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Show Shared View' }))
-  expect(screen.getByRole('button', { name: 'Copy current view' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Show Share View' }))
+  expect(screen.getByRole('button', { name: 'Share View' })).toBeDisabled()
 })

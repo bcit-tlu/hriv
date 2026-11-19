@@ -160,11 +160,11 @@ the original Marker. See [Collections](collections) for the viewer controls.
 ## Image and Sequence viewer panel
 
 When Markers is enabled, use **Open viewer panel** at the image's top-right.
-Choose the pin for **Markers**, the link icon for **Shared View**, or the info icon for **Image details**.
+Choose the pin for **Markers**, the link icon for **Share View**, or the info icon for **Image details**.
 The panel stays open until you choose **Close viewer panel**; it does not need
 pinning and canvas clicks do not retract it. Your open state and selected content
 carry across images, Sequence steps and reloads for your account.
-The panel is 256px wide on larger screens. Shared View's **Copy current view**
+The panel is 256px wide on larger screens. The **Share View** tab's **Share View** button
 copies the current image location, zoom and selection boxes; it replaces the old
 Share View button. In Sequence it creates a standalone image link at that view.
 With the feature disabled the original Share View control remains unchanged.

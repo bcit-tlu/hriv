@@ -187,9 +187,9 @@ export default function ViewerSidePanel({
                   <Room />
                 </Tooltip>
               </ToggleButton>
-              <ToggleButton disableRipple value="share" aria-label="Show Shared View">
+              <ToggleButton disableRipple value="share" aria-label="Show Share View">
                 <Tooltip
-                  title="Shared View"
+                  title="Share View"
                   slotProps={{ popper: { container: () => ref.current?.parentElement ?? null } }}
                 >
                   <Link />
@@ -217,18 +217,14 @@ export default function ViewerSidePanel({
               variant="body2"
               sx={{ px: 1.5, py: 0.75, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
             >
-              {tab === 'share' ? 'Shared View' : 'Image details'}
+              {tab === 'share' ? 'Share View' : 'Image details'}
             </Typography>
           )}
           <Box
             tabIndex={0}
             role="region"
             aria-label={
-              tab === 'markers'
-                ? 'Markers list'
-                : tab === 'share'
-                  ? 'Shared View'
-                  : 'Image metadata'
+              tab === 'markers' ? 'Markers list' : tab === 'share' ? 'Share View' : 'Image metadata'
             }
             sx={{
               flex: 1,
@@ -240,9 +236,17 @@ export default function ViewerSidePanel({
             {tab === 'markers' ? (
               markers
             ) : tab === 'share' ? (
-              <Button startIcon={<Link />} onClick={onShareView} disabled={!onShareView}>
-                Copy current view
-              </Button>
+              <Box sx={{ display: 'flex', justifyContent: 'center', pt: 1 }}>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<Link />}
+                  onClick={onShareView}
+                  disabled={!onShareView}
+                >
+                  Share View
+                </Button>
+              </Box>
             ) : (
               (details ?? (
                 <Typography variant="caption" component="p" color="text.secondary">
@@ -263,15 +267,30 @@ export default function ViewerSidePanel({
             }}
             tabIndex={0}
             role="region"
-            aria-label={tab === 'markers' ? 'About Markers' : 'Viewer controls'}
+            aria-label={
+              tab === 'markers'
+                ? 'About Markers'
+                : tab === 'share'
+                  ? 'About Share View'
+                  : 'Viewer controls'
+            }
           >
             <Typography component="h3" variant="caption" sx={{ mb: 0.5, fontWeight: 'medium' }}>
-              {tab === 'markers' ? 'About Markers:' : 'Viewer controls'}
+              {tab === 'markers'
+                ? 'About Markers:'
+                : tab === 'share'
+                  ? 'About Share View'
+                  : 'Viewer controls'}
             </Typography>
             {tab === 'markers' ? (
               <Typography variant="caption" component="p" color="text.secondary">
                 Markers save a location and zoom level so you can return to important areas of an
                 image.
+              </Typography>
+            ) : tab === 'share' ? (
+              <Typography variant="caption" component="p" color="text.secondary">
+                Share View copies a link to this exact position and zoom, so when you share the link
+                with others, they can see the same thing.
               </Typography>
             ) : (
               <ViewerControlHints dense />

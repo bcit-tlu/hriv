@@ -44,7 +44,7 @@ export const Basic: Story = {
   render: (args) => <Wrapper {...args} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body)
-    const dialog = await canvas.findByRole('dialog', { name: 'Architecture inspiration' })
+    const dialog = await canvas.findByRole('dialog', { name: 'Architecture inspiration Board' })
     const page = within(dialog)
     const marker = await page.findByRole('button', { name: 'Open Marker: Rose window' })
     await waitFor(() => expect(marker).toBeVisible())
@@ -61,7 +61,7 @@ export const ReadOnly: Story = {
   render: (args) => <Wrapper {...args} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body)
-    const dialog = await canvas.findByRole('dialog', { name: 'Shared discoveries' })
+    const dialog = await canvas.findByRole('dialog', { name: 'Shared discoveries Board' })
     const page = within(dialog)
     const marker = await page.findByRole('button', {
       name: 'Open Marker: Morgan’s shared view',
@@ -78,7 +78,7 @@ export const Empty: Story = {
   render: (args) => <Wrapper {...args} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body)
-    const dialog = await canvas.findByRole('dialog', { name: 'Next studio project' })
+    const dialog = await canvas.findByRole('dialog', { name: 'Next studio project Board' })
     await waitFor(() =>
       expect(within(dialog).getByText('No Markers yet. Save a view from an image.')).toBeVisible(),
     )

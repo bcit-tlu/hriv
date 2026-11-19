@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { isSubmitKey, useInitialFocus } from '../formKeys'
 import { createPortal } from 'react-dom'
-import Collapse from '@mui/material/Collapse'
+import { markerAccentColor, markerFavouriteButtonSx } from '../theme'
 import Paper from '@mui/material/Paper'
 import type { PaperProps } from '@mui/material/Paper'
 import { markerPanelSx } from './markerPanelStyles'
@@ -23,6 +24,7 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import Divider from '@mui/material/Divider'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -67,6 +69,7 @@ export interface MarkerFormDialogProps {
   placement?: boolean
   onTitleChange?: (title: string) => void
   onRemoveFromBoard?: () => void
+  onViewMarker?: () => void
   inline?: boolean
   onEscape?: () => void
 }
@@ -119,10 +122,11 @@ export function MarkerDeleteDialog({
         </Typography>
       </DialogContent>
       <DialogActions>
-        <Button disabled={busy} onClick={onCancel}>
+        <Button size="small" disabled={busy} onClick={onCancel}>
           Cancel
         </Button>
         <Button
+          size="small"
           color="error"
           variant="contained"
           disabled={busy || confirmDisabled}
@@ -137,6 +141,7 @@ export function MarkerDeleteDialog({
 
 export default function MarkerFormDialog({
   onRemoveFromBoard,
+  onViewMarker,
   imageId,
   view,
   item = null,
@@ -152,7 +157,6 @@ export default function MarkerFormDialog({
 }: MarkerFormDialogProps) {
   const [baseline, setBaseline] = useState<api.MarkerConflict | null>(item)
   const [title, setTitle] = useState(item?.title ?? (placement ? 'New Marker' : ''))
-  const [moreOptions, setMoreOptions] = useState(!placement && !inline)
   const [description, setDescription] = useState(item?.description ?? '')
   const [favourite, setFavourite] = useState(item?.favourite ?? false)
   const [boards, setBoards] = useState<ApiBoardSummary[]>([])
@@ -177,6 +181,7 @@ export default function MarkerFormDialog({
   const [boardQuery, setBoardQuery] = useState('')
   const [boardsMenuOpen, setBoardsMenuOpen] = useState(false)
   const boardsDescriptionId = useId()
+  const formTitleId = useId()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const panesRef = useRef<HTMLDivElement>(null)
   const [panesEl, setPanesEl] = useState<HTMLDivElement | null>(null)
@@ -185,6 +190,7 @@ export default function MarkerFormDialog({
     setPanesEl(el)
   }, [])
   const boardsInputRef = useRef<HTMLInputElement>(null)
+  const titleRef = useRef<HTMLInputElement>(null)
   const editable = !baseline || baseline.permissions.can_edit
 
   const closeBoardPane = useCallback(() => {
@@ -382,6 +388,20 @@ export default function MarkerFormDialog({
       (a, b) => a.name.toLocaleLowerCase().localeCompare(b.name.toLocaleLowerCase()) || a.id - b.id,
     )
   const missingDetails = assignments.some((link) => !details[link.board_id])
+  const canSave =
+    editable &&
+    !busy &&
+    !loading &&
+    !(baseline && !boardsLoaded) &&
+    !missingDetails &&
+    !conflict &&
+    !!title.trim() &&
+    assignments.length > 0
+  const canCreateBoard =
+    !boardBusy &&
+    !!boardName.trim() &&
+    !(boardVisibility === 'restricted' && boardProgramIds.length + boardGroupIds.length === 0)
+  useInitialFocus(titleRef, editable && !busy)
   const errorAlert = error && (
     <Alert
       severity="error"
@@ -397,7 +417,7 @@ export default function MarkerFormDialog({
     </Alert>
   )
   // Fixed-height Boards menu: options scroll inside the listbox while the
-  // pinned "+ Add Board" row stays at the bottom of the paper.
+  // pinned "+ New Board" row stays at the bottom of the paper.
   const boardsListPaper = useCallback(
     (props: PaperProps) => (
       <Paper
@@ -409,40 +429,44 @@ export default function MarkerFormDialog({
       >
         {props.children}
         <ListItemButton
-          dense
           disabled={busy}
           // Preventing the default here keeps the Autocomplete input focused,
           // so the popup isn't torn down before this click lands.
           onMouseDown={(event) => event.preventDefault()}
           onClick={openBoardPane}
-          sx={{ flexShrink: 0, borderTop: 1, borderColor: 'divider' }}
+          sx={{ flexShrink: 0, borderTop: 1, borderColor: 'divider', py: 0.75 }}
         >
           <Add fontSize="small" sx={{ mr: 1 }} />
-          Add Board
+          New Board
         </ListItemButton>
       </Paper>
     ),
     [busy, openBoardPane],
   )
+  // Compact chrome for the canvas popover and drawer-embedded variants;
+  // the standalone dialog follows the Edit Image / Edit Collection layout.
+  // The popover keeps the standard layout — same field order, visible
+  // Description, delete section — with only slightly tighter spacing.
+  const compact = inline || placement
   const content = (
     <>
       <DialogTitle
         component="div"
-        variant="subtitle2"
+        variant={inline ? 'subtitle1' : 'h6'}
         sx={{
           display: 'flex',
           alignItems: 'center',
+          justifyContent: 'space-between',
           gap: 0.5,
-          px: inline ? 0 : 2,
-          py: inline ? 0 : 1.25,
-          mb: inline ? 1 : 0,
+          ...(compact ? { px: inline ? 0 : 2, py: inline ? 0 : 1.5, mb: inline ? 1.5 : 0 } : {}),
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1, minWidth: 0 }}>
-          <Room color="primary" fontSize="small" />
+          {compact && <Room sx={{ color: markerAccentColor }} />}
           <Typography
+            id={formTitleId}
             component="h2"
-            variant="subtitle2"
+            variant={inline ? 'subtitle1' : 'h6'}
             sx={{ overflowWrap: 'anywhere', minWidth: 0 }}
           >
             {inline
@@ -454,171 +478,192 @@ export default function MarkerFormDialog({
                 : 'Add Marker'}
           </Typography>
         </Box>
-        {editable && (
-          <Tooltip title={favourite ? 'Remove favourite' : 'Add favourite'}>
-            <IconButton
-              size="small"
-              aria-label="Favourite"
-              aria-pressed={favourite}
-              disabled={busy}
-              onClick={() => setFavourite(!favourite)}
-              color={favourite ? 'primary' : 'default'}
-            >
-              {favourite ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}
-            </IconButton>
-          </Tooltip>
-        )}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+          {editable && (
+            <Tooltip title={favourite ? 'Remove favourite' : 'Add favourite'}>
+              <IconButton
+                size="small"
+                aria-label="Favourite"
+                aria-pressed={favourite}
+                disabled={busy}
+                onClick={() => setFavourite(!favourite)}
+                sx={markerFavouriteButtonSx(favourite)}
+              >
+                {favourite ? (
+                  <Star sx={{ color: 'common.white' }} fontSize="small" />
+                ) : (
+                  <StarBorder sx={{ color: 'common.white' }} fontSize="small" />
+                )}
+              </IconButton>
+            </Tooltip>
+          )}
+          {!inline && baseline && onViewMarker && (
+            <Button size="small" variant="outlined" disabled={busy} onClick={onViewMarker}>
+              View Marker
+            </Button>
+          )}
+        </Box>
       </DialogTitle>
-      <DialogContent sx={{ px: inline ? 0 : 2 }}>
+      <DialogContent
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: placement ? 1.5 : 2,
+          pt: 2,
+          // DialogContent zeroes its top padding after a DialogTitle, which
+          // clips the outlined Title label.
+          '.MuiDialogTitle-root + &': { pt: 2 },
+          ...(compact ? { px: inline ? 0 : 2 } : {}),
+        }}
+        onKeyDown={(event) => {
+          if (!canSave || !isSubmitKey(event)) return
+          event.preventDefault()
+          void persist()
+        }}
+      >
         {baseline && !loading && !boardsLoaded && (
-          <Alert severity="error" sx={{ mb: 2 }}>
+          <Alert severity="error">
             Existing Board assignments could not be loaded. Close and reopen this dialog before
             saving changes.
           </Alert>
         )}
-        <Stack spacing={1} sx={{ pt: 1 }}>
-          {!placement && !inline && (
-            <Typography variant="caption" component="p" color="text.secondary">
-              Keep this exact position, zoom and rotation on your Boards.
-            </Typography>
-          )}
-          {!confirmDelete && errorAlert}
-          <TextField
-            label="Title"
-            required
-            value={title}
-            onChange={(event) => {
-              setTitle(event.target.value)
-              onTitleChange?.(event.target.value)
+        {!confirmDelete && errorAlert}
+        <TextField
+          label="Title"
+          required
+          value={title}
+          onChange={(event) => {
+            setTitle(event.target.value)
+            onTitleChange?.(event.target.value)
+          }}
+          onFocus={(event) => {
+            if (placement) event.target.select()
+          }}
+          disabled={busy || !editable}
+          slotProps={{ htmlInput: { maxLength: 255 } }}
+          inputRef={titleRef}
+        />
+        <TextField
+          label="Description"
+          fullWidth
+          multiline
+          minRows={placement || inline ? 2 : 3}
+          maxRows={10}
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          disabled={busy || !editable}
+        />
+        {editable ? (
+          <Autocomplete<ApiBoardSummary, true>
+            multiple
+            disableCloseOnSelect
+            open={boardsMenuOpen}
+            onOpen={() => {
+              setBoardsMenuOpen(true)
             }}
-            onFocus={(event) => {
-              if (placement) event.target.select()
+            onClose={() => {
+              setBoardsMenuOpen(false)
+              setBoardQuery('')
             }}
-            size="small"
-            disabled={busy || !editable}
-            slotProps={{ htmlInput: { maxLength: 255 } }}
-            autoFocus
-          />
-          {editable ? (
-            <Autocomplete<ApiBoardSummary, true>
-              size="small"
-              multiple
-              disableCloseOnSelect
-              open={boardsMenuOpen}
-              onOpen={() => {
-                setBoardsMenuOpen(true)
-              }}
-              onClose={() => {
-                setBoardsMenuOpen(false)
-                setBoardQuery('')
-              }}
-              inputValue={boardQuery}
-              onInputChange={(_event, value, reason) => {
-                if (reason === 'input') setBoardQuery(value)
-              }}
-              renderTags={() =>
-                boardsMenuOpen ? null : (
-                  <Box
-                    component="span"
-                    id={boardsDescriptionId}
-                    sx={{
-                      maxWidth: 'calc(100% - 30px)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {selectedText}
-                  </Box>
-                )
-              }
-              options={matchingBoards}
-              filterOptions={(options) => options}
-              value={selected}
-              loading={loading}
-              disabled={busy || loading}
-              getOptionLabel={(board) => board.name}
-              isOptionEqualToValue={(a, b) => a.id === b.id}
-              onChange={(_event, value) => chooseBoards(value)}
-              slots={{ paper: boardsListPaper }}
-              slotProps={{
-                popper: { container: container ?? undefined },
-                listbox: {
-                  sx: { flex: '0 1 auto', minHeight: 0, overflowY: 'auto', maxHeight: 'unset' },
-                },
-              }}
-              renderOption={({ key, ...props }, option, state) => (
-                <li key={key} {...props}>
-                  <Box
-                    component="span"
-                    aria-hidden="true"
-                    sx={{
-                      display: 'inline-flex',
-                      p: 1,
-                      color: state.selected ? 'primary.main' : 'text.secondary',
-                    }}
-                  >
-                    {state.selected ? (
-                      <CheckBox fontSize="small" />
-                    ) : (
-                      <CheckBoxOutlineBlank fontSize="small" />
-                    )}
-                  </Box>
-                  {option.name}
-                </li>
-              )}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  inputRef={boardsInputRef}
-                  label="Boards"
-                  slotProps={{
-                    htmlInput: {
-                      ...params.inputProps,
-                      'aria-describedby': `${params.id}-helper-text ${boardsDescriptionId}`,
-                    },
+            inputValue={boardQuery}
+            onInputChange={(_event, value, reason) => {
+              if (reason === 'input') setBoardQuery(value)
+            }}
+            renderTags={() =>
+              boardsMenuOpen ? null : (
+                <Box
+                  component="span"
+                  id={boardsDescriptionId}
+                  sx={{
+                    maxWidth: 'calc(100% - 30px)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
                   }}
-                  required
-                  helperText={
-                    loading
-                      ? 'Loading Boards…'
-                      : placement
-                        ? undefined
-                        : 'Choose at least one Board. Only Boards you can edit are listed.'
-                  }
-                />
-              )}
-            />
-          ) : (
-            <Typography variant="caption" component="p">
-              Saved on {baseline?.board_ids.length} Board(s). Only its owners can edit this Marker.
-            </Typography>
-          )}
-          {(placement || inline) && (
+                >
+                  {selectedText}
+                </Box>
+              )
+            }
+            options={matchingBoards}
+            filterOptions={(options) => options}
+            value={selected}
+            loading={loading}
+            disabled={busy || loading}
+            getOptionLabel={(board) => board.name}
+            isOptionEqualToValue={(a, b) => a.id === b.id}
+            onChange={(_event, value) => chooseBoards(value)}
+            slots={{ paper: boardsListPaper }}
+            slotProps={{
+              popper: { container: container ?? undefined },
+              listbox: {
+                sx: { flex: '0 1 auto', minHeight: 0, overflowY: 'auto', maxHeight: 'unset' },
+              },
+            }}
+            renderOption={({ key, ...props }, option, state) => (
+              <li key={key} {...props}>
+                <Box
+                  component="span"
+                  aria-hidden="true"
+                  sx={{
+                    display: 'inline-flex',
+                    p: 1,
+                    color: state.selected ? 'primary.main' : 'text.secondary',
+                  }}
+                >
+                  {state.selected ? (
+                    <CheckBox fontSize="small" />
+                  ) : (
+                    <CheckBoxOutlineBlank fontSize="small" />
+                  )}
+                </Box>
+                {option.name}
+              </li>
+            )}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                inputRef={boardsInputRef}
+                label="Boards"
+                slotProps={{
+                  htmlInput: {
+                    ...params.inputProps,
+                    'aria-describedby': `${params.id}-helper-text ${boardsDescriptionId}`,
+                  },
+                }}
+                required
+                helperText={
+                  loading
+                    ? 'Loading Boards…'
+                    : placement
+                      ? undefined
+                      : 'Choose at least one Board. Only Boards you can edit are listed.'
+                }
+              />
+            )}
+          />
+        ) : (
+          <Typography variant="caption" component="p">
+            Saved on {baseline?.board_ids.length} Board(s). Only its owners can edit this Marker.
+          </Typography>
+        )}
+        {baseline?.permissions.can_delete && (
+          <>
+            <Divider />
             <Button
               size="small"
-              aria-expanded={moreOptions}
-              onClick={() => setMoreOptions(!moreOptions)}
-              sx={{ alignSelf: 'flex-start' }}
-            >
-              More options
-            </Button>
-          )}
-          <Collapse in={moreOptions} unmountOnExit>
-            <TextField
-              size="small"
-              label="Description"
+              color="error"
+              variant="outlined"
               fullWidth
-              multiline
-              minRows={2}
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              disabled={busy || !editable}
-            />
-          </Collapse>
-        </Stack>
+              disabled={busy || !!conflict}
+              onClick={() => setConfirmDelete(true)}
+            >
+              Delete Marker
+            </Button>
+          </>
+        )}
       </DialogContent>
-      <DialogActions sx={{ px: inline ? 0 : 2, py: 1 }}>
+      <DialogActions sx={inline ? { px: 0, py: 1 } : undefined}>
         {onRemoveFromBoard && (
           <Button
             size="small"
@@ -629,16 +674,6 @@ export default function MarkerFormDialog({
             Remove from this Board
           </Button>
         )}
-        {baseline?.permissions.can_delete && (
-          <Button
-            size="small"
-            color="error"
-            disabled={busy || !!conflict}
-            onClick={() => setConfirmDelete(true)}
-          >
-            Delete
-          </Button>
-        )}
         <Box sx={{ flex: 1 }} />
         <Button size="small" disabled={busy} onClick={onClose}>
           {editable ? 'Cancel' : 'Close'}
@@ -647,15 +682,7 @@ export default function MarkerFormDialog({
           <Button
             size="small"
             variant="contained"
-            disabled={
-              busy ||
-              loading ||
-              (!!baseline && !boardsLoaded) ||
-              missingDetails ||
-              !!conflict ||
-              !title.trim() ||
-              assignments.length === 0
-            }
+            disabled={!canSave}
             onClick={() => void persist()}
           >
             {busy
@@ -680,18 +707,18 @@ export default function MarkerFormDialog({
           display: 'flex',
           flexDirection: 'column',
           minHeight: 0,
-          bgcolor: 'background.paper',
         }}
       >
         <DialogTitle
           component="div"
-          variant="subtitle2"
+          variant={compact ? 'subtitle1' : 'h6'}
           sx={{
             display: 'flex',
             alignItems: 'center',
             gap: 0.5,
-            px: inline ? 0 : 2,
-            py: inline ? 0.5 : 1.25,
+            px: compact ? (inline ? 0 : 2) : undefined,
+            py: compact ? (inline ? 0 : 1.5) : undefined,
+            mb: inline ? 1.5 : 0,
             flexShrink: 0,
           }}
         >
@@ -702,28 +729,27 @@ export default function MarkerFormDialog({
               disabled={boardBusy}
               onClick={closeBoardPane}
             >
-              <ArrowBack fontSize="small" />
+              <ArrowBack />
             </IconButton>
           </Tooltip>
-          <Typography component="h2" variant="subtitle2" sx={{ flex: 1, textAlign: 'center' }}>
+          <Typography component="h2" variant={compact ? 'subtitle1' : 'h6'}>
             New Board
           </Typography>
-          <Button
-            size="small"
-            variant="contained"
-            disabled={
-              boardBusy ||
-              !boardName.trim() ||
-              (boardVisibility === 'restricted' &&
-                boardProgramIds.length + boardGroupIds.length === 0)
-            }
-            onClick={() => void saveNewBoard()}
-          >
-            {boardBusy ? 'Creating…' : 'Create Board'}
-          </Button>
         </DialogTitle>
-        <DialogContent sx={{ px: inline ? 0 : 2, flex: '1 1 auto', overflowY: 'auto' }}>
-          <Stack spacing={2} sx={{ pt: 1 }}>
+        <DialogContent
+          sx={{
+            px: compact ? (inline ? 0 : 2) : undefined,
+            pt: 0,
+            flex: '1 1 auto',
+            overflowY: 'auto',
+          }}
+          onKeyDown={(event) => {
+            if (!canCreateBoard || !isSubmitKey(event)) return
+            event.preventDefault()
+            void saveNewBoard()
+          }}
+        >
+          <Stack spacing={placement ? 1.5 : 2} sx={{ pt: 2 }}>
             {boardError && <Alert severity="error">{boardError}</Alert>}
             <BoardFields
               name={boardName}
@@ -742,6 +768,16 @@ export default function MarkerFormDialog({
             />
           </Stack>
         </DialogContent>
+        <DialogActions sx={{ px: compact ? (inline ? 0 : 2) : undefined, flexShrink: 0 }}>
+          <Button
+            size="small"
+            variant="contained"
+            disabled={!canCreateBoard}
+            onClick={() => void saveNewBoard()}
+          >
+            {boardBusy ? 'Creating…' : 'Create Board'}
+          </Button>
+        </DialogActions>
       </Box>
     </Slide>
   )
@@ -801,7 +837,7 @@ export default function MarkerFormDialog({
       container={container}
       fullWidth
       maxWidth="sm"
-      slotProps={{ paper: { sx: formSx } }}
+      slotProps={{ paper: { 'aria-labelledby': formTitleId } }}
     >
       {panes}
     </Dialog>

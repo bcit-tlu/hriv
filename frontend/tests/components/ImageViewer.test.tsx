@@ -630,6 +630,10 @@ describe('Marker viewer tool', () => {
         expect(viewer().container.querySelector('[data-marker-id="9"] button')).not.toBeNull(),
       )
       expect(viewer().viewport.panTo).toHaveBeenCalled()
+      // The focused Marker's info card opens so its description is visible.
+      expect(
+        await within(viewer().container).findByRole('heading', { name: 'Other student view' }),
+      ).toBeInTheDocument()
       // Only the target marker gets a visibility override — nothing else leaks.
       const stored = JSON.parse(localStorage.getItem('hriv.markerVisibility.9') ?? '{}') as {
         items?: { id: number; markerVisible?: boolean }[]
@@ -793,7 +797,7 @@ describe('Marker viewer tool', () => {
       expect(viewer().viewport.panTo).toHaveBeenCalled()
     },
   )
-  it('copies the live image view and rectangles from the Shared View tab', async () => {
+  it('copies the live image view and rectangles from the Share View tab', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
     render(
@@ -810,8 +814,8 @@ describe('Marker viewer tool', () => {
     viewer().viewport.getCenter.mockReturnValue({ x: 0.46, y: 0.29 })
     viewer().viewport.getZoom.mockReturnValue(2.5)
     viewer().viewport.getRotation.mockReturnValue(35)
-    fireEvent.click(screen.getByRole('button', { name: 'Show Shared View' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Copy current view' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show Share View' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Share View' }))
     await screen.findByText('Link copied to clipboard')
     const url = new URL(writeText.mock.calls[0][0])
     expect(Object.fromEntries(url.searchParams)).toMatchObject({
@@ -829,8 +833,8 @@ describe('Marker viewer tool', () => {
     fireEvent.click(
       await within(viewer().container).findByRole('button', { name: 'Open viewer panel' }),
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Show Shared View' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Copy current view' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show Share View' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Share View' }))
     expect(copy).toHaveBeenCalledTimes(1)
   })
   it('persists the permanent right panel across images and remounts, without dismissing on canvas presses or Escape', async () => {

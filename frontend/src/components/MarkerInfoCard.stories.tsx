@@ -91,11 +91,8 @@ export const InlineEdit: Story = {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: 'Edit Rose window' }))
     await waitFor(() => expect(canvas.getByRole('button', { name: 'Save' })).toBeEnabled())
-    await expect(canvas.queryByRole('textbox', { name: 'Description' })).not.toBeInTheDocument()
-    await expect(canvas.getByRole('button', { name: 'More options' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    )
+    await expect(canvas.getByRole('textbox', { name: 'Description' })).toBeVisible()
+    await expect(canvas.queryByRole('button', { name: 'More options' })).not.toBeInTheDocument()
     await expect(canvas.getByRole('form', { name: 'Edit Marker' })).toBeVisible()
     await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
     await expect(canvas.getByRole('button', { name: 'Favourite' })).toHaveAttribute(
@@ -109,7 +106,7 @@ export const DeleteConfirmation: Story = {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: 'Edit Rose window' }))
     await waitFor(() => expect(canvas.getByRole('button', { name: 'Save' })).toBeEnabled())
-    await userEvent.click(canvas.getByRole('button', { name: 'Delete' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Delete Marker' }))
     const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
       name: 'Delete Marker?',
     })

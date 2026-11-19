@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Alert, Box, Button, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material'
+import { alpha } from '@mui/material/styles'
+import { markerAccentColor, markerFavouriteButtonSx } from '../theme'
 import { Edit, Room, Star, StarBorder } from '@mui/icons-material'
 import { ApiError, fetchBoards, fetchMarker, updateMarker, userMessage } from '../api'
 import type { ApiBoardSummary, ApiMarker } from '../types'
@@ -106,7 +108,7 @@ export default function MarkerInfoCard({
       aria-label="Marker information"
       data-hriv-canvas-ui
       elevation={8}
-      sx={{ ...markerPanelSx, p: 1.5 }}
+      sx={{ ...markerPanelSx, p: 2 }}
     >
       {editing && current.permissions.can_edit ? (
         <MarkerFormDialog
@@ -125,10 +127,10 @@ export default function MarkerInfoCard({
         <>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1, minWidth: 0 }}>
-              <Room color="primary" fontSize="small" />
+              <Room sx={{ color: markerAccentColor }} />
               <Typography
                 component="h2"
-                variant="subtitle2"
+                variant="subtitle1"
                 sx={{ minWidth: 0, overflowWrap: 'anywhere' }}
               >
                 {current.title}
@@ -138,8 +140,10 @@ export default function MarkerInfoCard({
                   <IconButton
                     size="small"
                     aria-label={`Edit ${current.title}`}
-                    disabled={busy || favouriteConflict}
-                    onClick={() => onEdit(current)}
+                    disabled={favouriteConflict}
+                    onClick={() => {
+                      if (!busy) onEdit(current)
+                    }}
                     sx={{ flexShrink: 0 }}
                   >
                     <Edit fontSize="small" />
@@ -155,9 +159,13 @@ export default function MarkerInfoCard({
                   aria-pressed={current.favourite}
                   disabled={busy || favouriteConflict}
                   onClick={() => void changeFavourite()}
-                  color={current.favourite ? 'primary' : 'default'}
+                  sx={markerFavouriteButtonSx(current.favourite)}
                 >
-                  {current.favourite ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}
+                  {current.favourite ? (
+                    <Star sx={{ color: 'common.white' }} fontSize="small" />
+                  ) : (
+                    <StarBorder sx={{ color: 'common.white' }} fontSize="small" />
+                  )}
                 </IconButton>
               </Tooltip>
             ) : (
@@ -166,12 +174,21 @@ export default function MarkerInfoCard({
                   component="span"
                   role="img"
                   aria-label={current.favourite ? 'Favourite' : 'Not favourited'}
-                  sx={{ display: 'inline-flex', flexShrink: 0 }}
+                  sx={{
+                    display: 'inline-flex',
+                    flexShrink: 0,
+                    p: 0.5,
+                    borderRadius: '50%',
+                    bgcolor: (theme) =>
+                      current.favourite
+                        ? markerAccentColor(theme)
+                        : alpha(theme.palette.common.black, 0.25),
+                  }}
                 >
                   {current.favourite ? (
-                    <Star color="warning" fontSize="small" />
+                    <Star sx={{ color: 'common.white' }} fontSize="small" />
                   ) : (
-                    <StarBorder fontSize="small" />
+                    <StarBorder sx={{ color: 'common.white' }} fontSize="small" />
                   )}
                 </Box>
               </Tooltip>
