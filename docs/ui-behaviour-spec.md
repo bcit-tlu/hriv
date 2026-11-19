@@ -1669,6 +1669,7 @@ selection MouseTracker ignores their presses.
   file type, uploader), showing “—” for values not recorded.
   An empty Markers list shows a small Add Marker toolbar icon inline and says
   the button is in the image toolbar.
+- Edit Image details lays out Scale, Unit and Objective on one row (stacked at xs).
 - Single-image, Sequence and Synchronized viewers show only My and Instructor
   Markers in lists and markers, using the endpoint's existing ownership grouping.
   Other users' public/shared views remain discoverable through the All Boards
