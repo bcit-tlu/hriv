@@ -1667,6 +1667,8 @@ selection MouseTracker ignores their presses.
   The panel's Details lists every metadata field (copyright, programs, groups,
   dates, dimensions, size, measurement scale, objective power, original file,
   file type, uploader), showing “—” for values not recorded.
+  An empty Markers list shows a small Add Marker toolbar icon inline and says
+  the button is in the image toolbar.
 - Single-image, Sequence and Synchronized viewers show only My and Instructor
   Markers in lists and markers, using the endpoint's existing ownership grouping.
   Other users' public/shared views remain discoverable through the All Boards

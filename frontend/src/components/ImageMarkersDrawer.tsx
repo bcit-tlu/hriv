@@ -490,7 +490,15 @@ export default function ImageMarkersDrawer({
         {error && <Alert severity="error">{error}</Alert>}
         {!error && items.length === 0 && draftTitle === undefined && (
           <Typography variant="caption" component="p" sx={{ p: 1.5 }} color="text.secondary">
-            No Markers on this image yet. Use Add Marker to save a view.
+            No Markers on this image yet. Use Add Marker{' '}
+            <Box
+              component="img"
+              src="/openseadragon-svg-icons/marker_rest.svg"
+              alt=""
+              aria-hidden
+              sx={{ width: 24, height: 24, verticalAlign: 'middle' }}
+            />{' '}
+            in the image toolbar to save a view.
           </Typography>
         )}
         {boardsLoading && (
