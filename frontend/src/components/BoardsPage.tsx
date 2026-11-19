@@ -456,12 +456,12 @@ async function saveToBoard(
   const previous: BoardAssignment[] = []
   const assignments: BoardAssignment[] = []
   for (const board of boards) {
-    if (!board.permissions.can_edit || board.id === targetId) continue
+    if (!board.permissions.can_edit) continue
     const link = board.markers.find((member) => member.id === fresh.id)
     if (!link) throw new Error('Board membership changed. Reload before saving.')
     const assignment = { board_id: board.id, sort_order: link.sort_order }
     previous.push(assignment)
-    if (board.id !== sourceId) assignments.push(assignment)
+    if (board.id !== sourceId && board.id !== targetId) assignments.push(assignment)
   }
   assignments.push({ board_id: targetId })
   const saved = await updateMarker(fresh.id, {

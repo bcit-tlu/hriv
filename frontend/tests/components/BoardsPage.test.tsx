@@ -217,6 +217,28 @@ describe('BoardsPage', () => {
       expect(screen.queryByText('Saved to Next studio project')).not.toBeInTheDocument(),
     )
   })
+  it('keeps a concurrent destination assignment when undoing an Add to Board', async () => {
+    const fresh = { ...BOARD_ITEMS[0], board_ids: [...BOARD_ITEMS[0].board_ids, 3] }
+    vi.mocked(api.fetchMarker).mockResolvedValueOnce(fresh)
+    vi.mocked(api.fetchBoard).mockImplementation(async (id) => {
+      const board = BOARDS_FIXTURES.find((row) => row.id === id) ?? BOARDS_FIXTURES[0]
+      return id === 3 ? { ...board, markers: [{ ...fresh, sort_order: 4 }] } : board
+    })
+    vi.mocked(api.updateMarker).mockResolvedValueOnce({ ...fresh, version: 9 })
+    await setup()
+    dropOnBoard(3)
+    const notice = await screen.findByText('Saved to Next studio project')
+    fireEvent.click(
+      within(notice.closest('[role="alert"]') as HTMLElement).getByRole('button', {
+        name: 'Undo',
+      }),
+    )
+    await waitFor(() => expect(api.updateMarker).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(api.updateMarker).mock.calls[1][1].board_assignments).toContainEqual({
+      board_id: 3,
+      sort_order: 4,
+    })
+  })
   it('keeps the overview layout unchanged while an opened Board loads', async () => {
     vi.mocked(api.fetchBoard).mockReturnValue(new Promise(() => {}))
     render(
