@@ -3,6 +3,7 @@ import type { ReactNode, RefObject } from 'react'
 import type { ImageItem, ImageSourceInfo } from '../types'
 import type { MeasurementConfig } from './imageViewerUtils'
 import { useImageSourceInfo } from '../useImageSourceInfo'
+import ViewerImageDetails from './ViewerImageDetails'
 import ImageDetailsDrawer, { ImageDetailsTrigger } from './ImageDetailsDrawer'
 
 /** Resolved program/group display names for one collection member. */
@@ -140,6 +141,19 @@ export function CollectionImageDetailsDrawer() {
       triggerRef={ctx.triggerRef}
       drawerId={ctx.drawerId}
       drawerLabel={ctx.drawerLabel}
+    />
+  )
+}
+
+export function CollectionImageDetailsPanel() {
+  const ctx = useContext(CollectionImageDetailsContext)
+  if (!ctx) return null
+  return (
+    <ViewerImageDetails
+      image={ctx.image}
+      programNames={ctx.programNames}
+      groupNames={ctx.groupNames}
+      measurement={ctx.measurement}
     />
   )
 }

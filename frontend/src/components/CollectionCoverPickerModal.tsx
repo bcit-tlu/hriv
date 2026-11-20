@@ -144,8 +144,10 @@ export default function CollectionCoverPickerModal({
         </TableContainer>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={handleSave}>
+        <Button size="small" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button size="small" variant="contained" onClick={handleSave}>
           Save
         </Button>
       </DialogActions>

@@ -97,7 +97,7 @@ cursor was too small for participants in the back to follow.
 ## Out of scope (deferred)
 
 - Magic-lasso edge-detected outlines (too risky to fail visibly in front of
-  a class), numbered pins and quiz/reveal (deferred to the Inuksuks & Boards
+  a class), numbered pins and quiz/reveal (deferred to the Markers & Boards
   epic [#1765](https://github.com/bcit-tlu/hriv/issues/1765)), ink
   persistence, extra colours/shapes/eraser, spotlight/loupe, remote pointer
   broadcast.

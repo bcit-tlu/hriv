@@ -86,7 +86,7 @@ export interface AppShellProps {
   canViewPeople: boolean
   /** Deployment flag (`GET /api/features`); hides the Collections tab when off. */
   collectionsEnabled: boolean
-  inuksuksEnabled?: boolean
+  markersEnabled?: boolean
   currentUser: {
     name: string
     email: string
@@ -140,7 +140,7 @@ export default function AppShell(props: AppShellProps) {
     canManageUsers,
     canViewPeople,
     collectionsEnabled,
-    inuksuksEnabled = false,
+    markersEnabled = false,
     currentUser,
     bannerSlot,
     profileOpen,
@@ -512,10 +512,10 @@ export default function AppShell(props: AppShellProps) {
                 <SearchIcon />
               </IconButton>
             </Tooltip>
-            {inuksuksEnabled && (
-              <Tooltip title="Boards & Inuksuks">
+            {markersEnabled && (
+              <Tooltip title="Boards & Markers">
                 <IconButton
-                  aria-label="Boards & Inuksuks"
+                  aria-label="Boards & Markers"
                   onClick={() => onTabChange('boards')}
                   sx={{ color: 'inherit', ...appBarIconButtonSx }}
                 >

@@ -189,10 +189,10 @@ describe('GuidePage', () => {
     expect(screen.queryByRole('heading', { name: 'Managing Images' })).not.toBeInTheDocument()
   })
 
-  it('opens the indexed Inuksuks guide and follows its Collections link', async () => {
-    window.history.replaceState(null, '', '?page=guide&doc=inuksuks-and-boards')
+  it('opens the indexed Markers guide and follows its Collections link', async () => {
+    window.history.replaceState(null, '', '?page=guide&doc=markers-and-boards')
     renderWithTheme(<GuidePage />)
-    expect(screen.getByRole('heading', { name: 'Inuksuks & Boards' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Markers & Boards' })).toBeVisible()
     await userEvent.click(
       within(screen.getByText(/Each Collection slot/).closest('p')!).getByRole('button', {
         name: 'Collections',

@@ -131,18 +131,18 @@ UI steps (frontend landed with #1667/#1668):
 None for local testing — seed users are created automatically.
 Backup-service S3/Azure testing needs credentials; see `testing-backup-service`.
 
-## Inuksuks and Boards close-out checks
+## Markers and Boards close-out checks
 
-Set `INUKSUKS_ENABLED=true` on the API and recreate it when changing the flag;
+Set `MARKERS_ENABLED=true` on the API and recreate it when changing the flag;
 reload the SPA so `/api/features` refreshes. Local compose already defaults it to
-true; Helm's `inuksuks.enabled` and the backend default remain false. Do not remove
+true; Helm's `markers.enabled` and the backend default remain false. Do not remove
 the flag or change defaults as part of close-out work.
 
 Create a Board with two saved views on one image. Search by title and
-description, use both new chips, open the Board and reopen an Inuksuk's coordinates.
+description, use both new chips, open the Board and reopen a Marker's coordinates.
 As a student, check that private/restricted results stay absent. From Collection
-Manage's search picker, stage a Board and an individual Inuksuk, then save and check
+Manage's search picker, stage a Board and an individual Marker, then save and check
 independent same-image slots. Run SearchModalSavedViews and existing SearchModal/
 CollectionManageDialog tests; the SavedViews story is a deterministic screenshot target.
 For admin recovery, pair DB/files exports and check Board associations, timestamps,
-Inuksuk and slot JPEGs after restore and the automatic same-source tile rebuild.
+Marker and slot JPEGs after restore and the automatic same-source tile rebuild.

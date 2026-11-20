@@ -1,0 +1,31 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as MarkersLayerStories from './MarkersLayer.stories'
+
+<Meta of={MarkersLayerStories} />
+<Title />
+
+Real OpenSeadragon viewer with a DOM-portal marker layer, independent of Fabric.
+Marker icons and title labels have fixed CSS-pixel dimensions. Only anchor
+positions change on animation, open, resize, rotation and flip events; labels
+and icons remain upright.
+
+**Rotate and zoom** demonstrates constant sizing. **Toggle independent
+visibility** leaves one label without its marker and another marker without its
+label. Both default to visible. Clicking a marker restores its saved position,
+zoom and rotation, highlights it, and opens its details. The toolbar's pin
+button arms persistent quick-click placement while pan/zoom stay available.
+Escape cancels the draft first, then disarms the tool. Markers are 27px white
+circular discs with vibrant blue glyphs, a subtle ring and shadow; their existing title labels are unchanged. Marker clicks
+open the information card, with an explicit pencil for editing.
+
+Markers render the Material `Room` icon on a white disc. Both saved and draft
+markers share it, staying upright and constant-size under zoom, rotation and flip.
+
+<Primary />
+<Stories includePrimary={false} />
+
+## Permanent panel integration
+
+Visibility and placement stories now use the right-side viewer panel. Canvas
+presses and Escape no longer dismiss it. A new placement selects its Markers
+content, and floating placement/info cards leave the closed toggle unobstructed.
