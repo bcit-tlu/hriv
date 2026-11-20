@@ -35,9 +35,13 @@ function setup(fetchBoards = vi.fn(async () => BOARDS)) {
 }
 
 describe('BoardsPopover', () => {
-  it('stacks only editable owned Boards in API order with Marker counts', async () => {
-    const { onOpenBoard, user } = setup()
-    const paper = await screen.findByLabelText('My Boards')
+  it('stacks only editable owned Boards in saved order with Marker counts', async () => {
+    const { fetchBoards, onOpenBoard, user } = setup()
+    const paper = await screen.findByRole('dialog', { name: 'My Boards' })
+    expect(fetchBoards).toHaveBeenCalledWith(
+      { sort: 'sort_order', order: 'asc', page_size: 200 },
+      expect.anything(),
+    )
     await waitFor(() => expect(within(paper).getByText('Second')).toBeVisible())
     const names = within(paper)
       .getAllByRole('button')

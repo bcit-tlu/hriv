@@ -42,7 +42,11 @@ export default function BoardsPopover({
   useEffect(() => {
     if (!anchorEl) return
     const controller = new AbortController()
-    void load({}, { signal: controller.signal }).then(
+    // Same order as the Boards page row (useBoardsData).
+    void load(
+      { sort: 'sort_order', order: 'asc', page_size: 200 },
+      { signal: controller.signal },
+    ).then(
       (boards) => setLoaded({ anchor: anchorEl, value: { boards } }),
       (err: unknown) => {
         if (controller.signal.aborted) return
@@ -68,6 +72,7 @@ export default function BoardsPopover({
       transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       slotProps={{
         paper: {
+          role: 'dialog',
           'aria-label': 'My Boards',
           sx: {
             width: 360,
