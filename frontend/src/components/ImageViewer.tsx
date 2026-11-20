@@ -2125,31 +2125,37 @@ export default function ImageViewer({
           registerCancelHandler={registerCanvasCancel}
         />
       )}
-      <Snackbar
-        open={savedToast != null}
-        autoHideDuration={6000}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        onClose={(_, reason) => {
-          if (reason !== 'clickaway') setSavedToast(null)
-        }}
-        message={
-          savedToast &&
-          `Saved to ${savedToast.names.length === 1 ? savedToast.names[0] : `${savedToast.names.length} Boards`}`
-        }
-        action={
-          <Button
-            color="inherit"
-            size="small"
-            onClick={() => {
-              const marker = savedToast?.marker
-              setSavedToast(null)
-              if (marker) beginMarkerEdit(marker)
+      {/* Portalled into the viewer so it stays visible in OSD full-page mode. */}
+      {viewerInstance &&
+        createPortal(
+          <Snackbar
+            data-hriv-canvas-ui
+            open={savedToast != null}
+            autoHideDuration={6000}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            onClose={(_, reason) => {
+              if (reason !== 'clickaway') setSavedToast(null)
             }}
-          >
-            Change
-          </Button>
-        }
-      />
+            message={
+              savedToast &&
+              `Saved to ${savedToast.names.length === 1 ? savedToast.names[0] : `${savedToast.names.length} Boards`}`
+            }
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => {
+                  const marker = savedToast?.marker
+                  setSavedToast(null)
+                  if (marker) beginMarkerEdit(marker)
+                }}
+              >
+                Change
+              </Button>
+            }
+          />,
+          viewerInstance.container,
+        )}
       <Snackbar
         open={shareCopied}
         autoHideDuration={3000}
