@@ -12,7 +12,7 @@ import Typography from '@mui/material/Typography'
 import { fetchBoards } from '../api'
 import type { ApiBoardSummary, User } from '../types'
 import { ownsBoard } from '../boardUtils'
-import { BoardCover } from './BoardsPage'
+import BoardCover from './BoardCover'
 
 export interface BoardsPopoverProps {
   /** AppBar button the popover hangs from; `null` closes it. */

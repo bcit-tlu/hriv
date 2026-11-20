@@ -1,6 +1,7 @@
 import { useState, type MouseEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
@@ -18,7 +19,7 @@ import {
   kindAlertSx,
   kindMeta,
 } from '../announcementKinds'
-import { announcementTimeLabel, firstLine, formatAbsolute } from '../announcementUtils'
+import { announcementTimeLabel, formatAbsolute } from '../announcementUtils'
 import { KindIcon } from './AnnouncementBanner'
 import AnnouncementReactions from './AnnouncementReactions'
 import MarkdownContent from './MarkdownContent'
@@ -34,10 +35,14 @@ export interface AnnouncementCardProps {
   onEdit?: (announcement: ApiAnnouncement) => void
   onDuplicate?: (announcement: ApiAnnouncement) => void
   onDelete?: (announcement: ApiAnnouncement) => void
-  /** Home shelf: first line of the body instead of the full Markdown, no audience chips. */
+  /** Home shelf: full Markdown body without audience chips or reactions. */
   compact?: boolean
   /** Makes the title a button (e.g. open the post on the Announcements page). */
   onOpen?: () => void
+  /** Home shelf: show only the title row; the body sits behind "Expand". */
+  collapsed?: boolean
+  /** Adds the Close / Expand button at the top right, after the pin. */
+  onToggleCollapsed?: () => void
 }
 
 const STATUS_COLOR = {
@@ -58,12 +63,27 @@ export default function AnnouncementCard({
   onDelete,
   compact = false,
   onOpen,
+  collapsed = false,
+  onToggleCollapsed,
 }: AnnouncementCardProps) {
   const meta = kindMeta(a.kind)
   const [actionsAnchor, setActionsAnchor] = useState<HTMLElement | null>(null)
   const quiet = a.seen
   const chips = compact ? [] : audienceChips(a)
   const showSeenCount = viewerIsStaff && a.seen_count != null && a.audience_size != null
+  const bodyId = `announcement-${a.id}-body`
+  const collapseToggle = onToggleCollapsed && (
+    <Button
+      size="small"
+      color="inherit"
+      onClick={onToggleCollapsed}
+      aria-expanded={!collapsed}
+      aria-controls={collapsed ? undefined : bodyId}
+      sx={{ px: 0.5, minWidth: 0 }}
+    >
+      {collapsed ? 'Expand' : 'Close'}
+    </Button>
+  )
 
   return (
     <Alert
@@ -78,7 +98,9 @@ export default function AnnouncementCard({
         ...kindAlertSx(meta),
         // Drafts sit on a grey wash so they read as "not published" at a glance.
         ...(a.status === 'draft' ? { bgcolor: 'action.hover' } : {}),
-        alignItems: 'flex-start',
+        // Collapsed cards are a single row, so centre the kind icon on it.
+        alignItems: collapsed ? 'center' : 'flex-start',
+        '& .MuiAlert-icon': collapsed ? { py: 0, '& svg': { display: 'block' } } : {},
         '& .MuiAlert-message': { flex: 1, minWidth: 0, py: 0.5 },
         boxShadow: highlighted ? (theme) => `0 0 0 2px ${theme.palette.primary.main}` : undefined,
         transition: 'box-shadow 300ms',
@@ -110,9 +132,24 @@ export default function AnnouncementCard({
         )}
         {a.pinned && (
           <Tooltip title="Pinned">
-            <PushPinIcon fontSize="small" color="action" aria-label="Pinned" />
+            {/* Flat light-grey circle, echoing the drawers' pinned state; a marker, not a button. */}
+            <Box
+              component="span"
+              role="img"
+              aria-label="Pinned"
+              sx={{
+                display: 'inline-flex',
+                p: 0.5,
+                borderRadius: '50%',
+                bgcolor: 'action.hover',
+                color: 'action.active',
+              }}
+            >
+              <PushPinIcon fontSize="small" />
+            </Box>
           </Tooltip>
         )}
+        {collapseToggle}
         {manage && a.status !== 'live' && (
           <Chip
             size="small"
@@ -171,36 +208,34 @@ export default function AnnouncementCard({
         )}
       </Stack>
 
-      <Stack
-        direction="row"
-        spacing={1}
-        alignItems="center"
-        sx={{ flexWrap: 'wrap', mt: 0.25, mb: 1 }}
-      >
-        <Typography variant="caption" color="text.secondary">
-          {a.author_name || 'Site'}
-          {manage && !a.can_edit ? ' (co-managed)' : ''}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          ·
-        </Typography>
-        <Tooltip title={formatAbsolute(a.notified_at ?? a.publish_at ?? a.created_at)}>
-          <Typography variant="caption" color="text.secondary">
-            {announcementTimeLabel(a)}
-          </Typography>
-        </Tooltip>
-        {chips.map((chip) => (
-          <Chip key={chip} size="small" variant="outlined" label={chip} sx={{ height: 20 }} />
-        ))}
-      </Stack>
-
-      {compact
-        ? firstLine(a.message) && (
-            <Typography variant="body2" color="text.secondary" noWrap>
-              {firstLine(a.message)}
+      {!collapsed && (
+        <Box id={bodyId}>
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            sx={{ flexWrap: 'wrap', mt: 0.25, mb: 1 }}
+          >
+            <Typography variant="caption" color="text.secondary">
+              {a.author_name || 'Site'}
+              {manage && !a.can_edit ? ' (co-managed)' : ''}
             </Typography>
-          )
-        : a.message && <MarkdownContent markdown={a.message} mediaTokens={a.media_tokens} />}
+            <Typography variant="caption" color="text.secondary">
+              ·
+            </Typography>
+            <Tooltip title={formatAbsolute(a.notified_at ?? a.publish_at ?? a.created_at)}>
+              <Typography variant="caption" color="text.secondary">
+                {announcementTimeLabel(a)}
+              </Typography>
+            </Tooltip>
+            {chips.map((chip) => (
+              <Chip key={chip} size="small" variant="outlined" label={chip} sx={{ height: 20 }} />
+            ))}
+          </Stack>
+
+          {a.message && <MarkdownContent markdown={a.message} mediaTokens={a.media_tokens} />}
+        </Box>
+      )}
 
       {/* Reactions live on the Announcements page only — not on the Home shelf, bell or banner. */}
       {!compact && (

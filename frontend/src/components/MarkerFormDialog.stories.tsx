@@ -52,7 +52,8 @@ export const Basic: Story = {
     const page = within(canvasElement.ownerDocument.body)
     await expect(page.getByRole('heading', { name: 'Add Marker' })).toBeInTheDocument()
     await waitFor(() => expect(page.getByRole('textbox', { name: 'Title' })).toHaveFocus())
-    await expect(page.getByRole('button', { name: 'Save to Board' })).toBeDisabled()
+    // No Board chosen yet: the split button's main action opens the picker.
+    await waitFor(() => expect(page.getByRole('button', { name: 'Choose a Board' })).toBeEnabled())
   },
 }
 export const Edit: Story = {
@@ -62,7 +63,7 @@ export const Edit: Story = {
     await waitFor(() => expect(page.getByText(BOARD_FIXTURE.name)).toBeVisible())
   },
 }
-export const BoardsMenu: Story = {
+export const SaveToPicker: Story = {
   args: {
     item: null,
     placement: true,
@@ -70,7 +71,10 @@ export const BoardsMenu: Story = {
       ...services,
       fetchBoards: async () => [
         BOARD_FIXTURE,
-        { ...BOARD_FIXTURE, id: 3, name: 'Biology references' },
+        { ...BOARD_FIXTURE, id: 3, name: 'Biology references', marker_count: 4 },
+        { ...BOARD_FIXTURE, id: 4, name: 'Histology', marker_count: 12 },
+        { ...BOARD_FIXTURE, id: 5, name: 'Cell structure review', marker_count: 1 },
+        { ...BOARD_FIXTURE, id: 6, name: 'Exam prep', marker_count: 7 },
       ],
     },
   },
@@ -89,18 +93,66 @@ export const BoardsMenu: Story = {
   ],
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
-    await waitFor(() => expect(page.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
-    await userEvent.click(page.getByRole('combobox', { name: 'Boards' }))
-    await expect(page.getAllByRole('option')[0]).toHaveTextContent(BOARD_FIXTURE.name)
-    await expect(page.getByRole('button', { name: 'New Board' })).toBeVisible()
+    await waitFor(() => expect(page.getByRole('button', { name: 'Choose a Board' })).toBeEnabled())
+    await userEvent.click(page.getByRole('button', { name: 'Choose a Board' }))
+    const picker = await page.findByRole('dialog', { name: 'Save to' })
+    const histology = within(picker).getByText('Histology').closest('[role="button"]')!
+    await userEvent.click(histology)
+    await expect(histology).toHaveAttribute('aria-pressed', 'true')
+  },
+}
+export const ManyBoards: Story = {
+  args: {
+    item: null,
+    placement: true,
+    services: {
+      ...services,
+      fetchBoards: async () =>
+        Array.from({ length: 40 }, (_, index) => ({
+          ...BOARD_FIXTURE,
+          id: index + 1,
+          name: index % 3 ? `Board ${index + 1}` : `Histology review set ${index + 1}`,
+        })),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body)
+    await waitFor(() => expect(page.getByRole('button', { name: 'Choose a Board' })).toBeEnabled())
+    await userEvent.click(page.getByRole('button', { name: 'Choose a Board' }))
+    const search = await page.findByLabelText('Search Boards')
+    await userEvent.type(search, 'review')
+    const picker = page.getByRole('dialog', { name: 'Save to' })
+    await expect(within(picker).getByText('Histology review set 1')).toBeVisible()
+    await expect(within(picker).queryByText('Board 2')).toBeNull()
+  },
+}
+export const EditSavedTo: Story = {
+  args: {
+    item: { ...MARKER_FIXTURE, board_ids: [1, 3] },
+    services: {
+      ...services,
+      fetchBoards: async () => [
+        BOARD_FIXTURE,
+        { ...BOARD_FIXTURE, id: 3, name: 'Biology references', marker_count: 4 },
+        { ...BOARD_FIXTURE, id: 4, name: 'Histology', marker_count: 12 },
+      ],
+      fetchBoard: async (id: number) => ({ ...BOARD_FIXTURE, id }),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body)
+    const savedTo = await page.findByRole('region', { name: 'Saved to' })
+    await waitFor(() => expect(within(savedTo).getAllByRole('listitem').length).toBeGreaterThan(0))
   },
 }
 export const CreatePrivateBoard: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
-    await waitFor(() => expect(page.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
-    await userEvent.click(page.getByRole('combobox', { name: 'Boards' }))
-    await userEvent.click(page.getByRole('button', { name: 'New Board' }))
+    const add = /^(Choose a Board|Save to another Board)$/
+    await waitFor(() => expect(page.getByRole('button', { name: add })).toBeEnabled())
+    await userEvent.click(page.getByRole('button', { name: add }))
+    const picker = await page.findByRole('dialog', { name: 'Save to' })
+    await userEvent.click(within(picker).getByRole('button', { name: 'Create Board' }))
     await expect(page.getByRole('heading', { name: 'New Board' })).toBeVisible()
     await userEvent.type(page.getByLabelText('Name *', { exact: true }), 'Architecture favourites')
     await expect(page.getByRole('button', { name: 'Create Board' })).toBeEnabled()
