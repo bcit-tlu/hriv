@@ -172,7 +172,7 @@ menu and the Admin **Changelog** tab, so the Admin page opens on **Backups**.
   pinned live posts as compact cards (icon, title, full Markdown body — never
   truncated (#1953); no audience chips or reactions). Unseen posts show in
   full; seen ones collapse to their title row. A **Collapse** / **Expand**
-  link at the card's top right (after the pin) toggles it; collapsing an
+  button at the card's top right (after the pin) toggles it; collapsing an
   unseen post marks it seen; a re-notify expands it again
   at the Browse root; renders nothing when nothing is pinned. The seeded
   pinned `everyone` welcome post is the #1655 welcome message.

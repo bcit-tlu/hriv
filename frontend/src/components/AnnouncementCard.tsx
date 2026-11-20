@@ -1,6 +1,7 @@
 import { useState, type MouseEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
@@ -40,7 +41,7 @@ export interface AnnouncementCardProps {
   onOpen?: () => void
   /** Home shelf: show only the title row; the body sits behind "Expand". */
   collapsed?: boolean
-  /** Adds the Collapse / Expand link at the top right, after the pin. */
+  /** Adds the Collapse / Expand button at the top right, after the pin. */
   onToggleCollapsed?: () => void
 }
 
@@ -72,17 +73,16 @@ export default function AnnouncementCard({
   const showSeenCount = viewerIsStaff && a.seen_count != null && a.audience_size != null
   const bodyId = `announcement-${a.id}-body`
   const collapseToggle = onToggleCollapsed && (
-    <Link
-      component="button"
-      type="button"
-      variant="body2"
+    <Button
+      size="small"
+      color="inherit"
       onClick={onToggleCollapsed}
       aria-expanded={!collapsed}
       aria-controls={collapsed ? undefined : bodyId}
-      underline="hover"
+      sx={{ px: 0.5, minWidth: 0 }}
     >
       {collapsed ? 'Expand' : 'Collapse'}
-    </Link>
+    </Button>
   )
 
   return (
