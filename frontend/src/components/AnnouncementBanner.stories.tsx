@@ -234,6 +234,27 @@ export const MarkdownBody: Story = {
   ),
 }
 
+export const MediaPreviewStops: Story = {
+  name: 'Media Preview Stops',
+  args: {
+    title: 'New slide sets are live',
+    message:
+      'Browse the image library to find the new histology sets.\n\n![Slide set preview](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=)\n\nEach set includes annotated reference slides.',
+    variant: 'app',
+    onDismiss: () => {},
+  },
+  render: (args) => (
+    <StoryFrame width={520}>
+      <AnnouncementBanner {...args} />
+    </StoryFrame>
+  ),
+  play: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText(/Browse the image library/)).toBeVisible()
+    await expect(canvas.getByText(/annotated reference slides/)).not.toBeVisible()
+  },
+}
+
 export const KindIcon: Story = {
   name: 'Kind Icon',
   args: {

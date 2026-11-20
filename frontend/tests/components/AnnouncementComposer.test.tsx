@@ -133,7 +133,8 @@ describe('AnnouncementComposer', () => {
     expect(within(listbox).getByText('Everyone')).toBeInTheDocument()
     expect(within(listbox).getByText('Admins, Instructors, and Staff')).toBeInTheDocument()
     expect(within(listbox).getByText('Instructors')).toBeInTheDocument()
-    fireEvent.click(screen.getByText('More options'))
+    expect(screen.getByRole('heading', { name: 'Publishing options' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More options' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Show as banner')).toBeInTheDocument()
   })
 
@@ -183,12 +184,47 @@ describe('AnnouncementComposer', () => {
     })
   })
 
+  it('requires an expiry before posting a pinned announcement, but not for drafts', async () => {
+    mockCreate.mockResolvedValue(makeAnnouncement())
+    renderComposer({ initialGroupIds: [3] })
+    fireEvent.change(screen.getByLabelText(/Title/), { target: { value: 'Lab closed' } })
+    expect(screen.getByRole('button', { name: 'Post' })).toBeEnabled()
+    expect(screen.getByText('Optional')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('Pin to top'))
+    const expires = screen.getByText('Required for pinned posts')
+    expect(expires).toHaveClass('Mui-error')
+    const field = expires.closest('.MuiFormControl-root') as HTMLElement
+    expect(field.contains(document.activeElement)).toBe(true)
+    expect(screen.getByRole('button', { name: 'Post' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled())
+    expect(mockCreate.mock.calls[0][0]).toMatchObject({
+      pinned: true,
+      draft: true,
+      expires_at: null,
+    })
+  })
+
+  it('posts a pinned announcement once an expiry is picked', async () => {
+    mockCreate.mockResolvedValue(makeAnnouncement())
+    renderComposer({ initialGroupIds: [3] })
+    fireEvent.change(screen.getByLabelText(/Title/), { target: { value: 'Lab closed' } })
+    fireEvent.click(screen.getByLabelText('Pin to top'))
+    fireEvent.click(screen.getByRole('button', { name: 'This week' }))
+    expect(screen.getByText('Required for pinned posts')).not.toHaveClass('Mui-error')
+    fireEvent.click(screen.getByRole('button', { name: /^(Post|Schedule)$/ }))
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled())
+    expect(mockCreate.mock.calls[0][0]).toMatchObject({ pinned: true, draft: false })
+    expect(mockCreate.mock.calls[0][0].expires_at).toEqual(expect.any(String))
+  })
+
   it('pre-selects the contextual group and converts schedule/expiry to ISO', async () => {
     mockCreate.mockResolvedValue(makeAnnouncement())
     renderComposer({ initialGroupIds: [3] })
     expect(screen.getByText('Histology 2026', { selector: '.MuiChip-label' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText(/Title/), { target: { value: 'Field trip' } })
-    fireEvent.click(screen.getByText('More options'))
     fireEvent.click(screen.getAllByRole('button', { name: /Choose date/, hidden: true })[0])
     fireEvent.click(await screen.findByRole('button', { name: 'Tomorrow 9:00' }))
     const publish = dayjs().add(1, 'day').hour(9).minute(0).second(0).millisecond(0)
