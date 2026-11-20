@@ -35,7 +35,7 @@ export const ThreeNotices: Story = {
   },
 }
 
-/** Seen pinned posts collapse to their title; "Show more" reopens the body. */
+/** Seen pinned posts collapse to their title; "Expand" reopens the body. */
 export const SeenCollapsed: Story = {
   args: {
     announcements: [
@@ -52,7 +52,7 @@ export const SeenCollapsed: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.queryByText(/Already read/)).not.toBeInTheDocument()
-    await userEvent.click(canvas.getByRole('button', { name: 'Show more' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Expand' }))
     await expect(canvas.getByText(/Already read/)).toBeInTheDocument()
   },
 }

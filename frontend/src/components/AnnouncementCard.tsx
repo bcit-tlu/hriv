@@ -1,7 +1,6 @@
 import { useState, type MouseEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
@@ -39,9 +38,9 @@ export interface AnnouncementCardProps {
   compact?: boolean
   /** Makes the title a button (e.g. open the post on the Announcements page). */
   onOpen?: () => void
-  /** Home shelf: show only the title row; the body sits behind "Show more". */
+  /** Home shelf: show only the title row; the body sits behind "Expand". */
   collapsed?: boolean
-  /** Adds the Show more / Show less toggle. */
+  /** Adds the Collapse / Expand link at the top right, after the pin. */
   onToggleCollapsed?: () => void
 }
 
@@ -72,19 +71,19 @@ export default function AnnouncementCard({
   const chips = compact ? [] : audienceChips(a)
   const showSeenCount = viewerIsStaff && a.seen_count != null && a.audience_size != null
   const bodyId = `announcement-${a.id}-body`
-  const collapseToggle = (label: string) =>
-    onToggleCollapsed && (
-      <Button
-        size="small"
-        color="inherit"
-        onClick={onToggleCollapsed}
-        aria-expanded={!collapsed}
-        aria-controls={collapsed ? undefined : bodyId}
-        sx={{ px: 0.5, minWidth: 0 }}
-      >
-        {label}
-      </Button>
-    )
+  const collapseToggle = onToggleCollapsed && (
+    <Link
+      component="button"
+      type="button"
+      variant="body2"
+      onClick={onToggleCollapsed}
+      aria-expanded={!collapsed}
+      aria-controls={collapsed ? undefined : bodyId}
+      underline="hover"
+    >
+      {collapsed ? 'Expand' : 'Collapse'}
+    </Link>
+  )
 
   return (
     <Alert
@@ -134,6 +133,7 @@ export default function AnnouncementCard({
             <PushPinIcon fontSize="small" color="action" aria-label="Pinned" />
           </Tooltip>
         )}
+        {collapseToggle}
         {manage && a.status !== 'live' && (
           <Chip
             size="small"
@@ -190,7 +190,6 @@ export default function AnnouncementCard({
             </Menu>
           </>
         )}
-        {collapsed && collapseToggle('Show more')}
       </Stack>
 
       {!collapsed && (
@@ -219,7 +218,6 @@ export default function AnnouncementCard({
           </Stack>
 
           {a.message && <MarkdownContent markdown={a.message} mediaTokens={a.media_tokens} />}
-          {onToggleCollapsed && <Box sx={{ mt: 0.5 }}>{collapseToggle('Show less')}</Box>}
         </Box>
       )}
 

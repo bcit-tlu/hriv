@@ -11,7 +11,7 @@ export interface NoticesShelfProps {
   announcements: ApiAnnouncement[]
   /** Opens the Announcements page, optionally focused on one post. */
   onOpenAnnouncements?: (announcementId?: number) => void
-  /** Called when a reader collapses an unseen post ("Show less"). */
+  /** Called when a reader collapses an unseen post. */
   onMarkSeen?: (announcement: ApiAnnouncement) => void
 }
 

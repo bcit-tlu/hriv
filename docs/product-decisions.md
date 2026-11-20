@@ -93,8 +93,8 @@ specified in detail.
 - Only posts flagged `banner` take the app-bar banner slot (warnings first, then
   pinned, then newest); closing the banner marks the post seen. The Home
   **Notices** shelf shows at most three pinned posts, each in full (never
-  truncated) until the reader has seen it, then collapsed to its title with
-  **Show more** — readers collapse, they do not dismiss; the welcome message (#1655) is a seeded pinned `everyone`
+  truncated) until the reader has seen it, then collapsed to its title (**Collapse** /
+  **Expand** at the top right) — readers collapse, they do not dismiss; the welcome message (#1655) is a seeded pinned `everyone`
   announcement, not bespoke UI. Published pinned posts require an expiry so
   they cannot go stale; drafts are exempt (#1953).
 - Announcements are _seen_, never dismissed: the Inbox is the record; an edit
