@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Divider from '@mui/material/Divider'
 import List from '@mui/material/List'
@@ -122,12 +123,12 @@ export default function BoardsPopover({
         )}
       </Box>
       <Divider />
-      <ListItemButton onClick={onOpenBoardsPage} sx={{ flexShrink: 0, py: 1.25 }}>
-        <ListItemText
-          primary="Open Boards & Markers"
-          slotProps={{ primary: { color: 'primary', variant: 'body2', fontWeight: 500 } }}
-        />
-      </ListItemButton>
+      {/* Same footer as the Announcements popover. */}
+      <Box sx={{ p: 1, display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
+        <Button size="small" onClick={onOpenBoardsPage}>
+          Open Boards &amp; Markers
+        </Button>
+      </Box>
     </Popover>
   )
 }
