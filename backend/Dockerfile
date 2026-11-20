@@ -78,7 +78,7 @@ FROM python:3.15-slim AS builder
 WORKDIR /app
 
 # ``apt-get -y upgrade`` before the install chain picks up any
-# trixie-security patches published since the ``python:3.14-slim``
+# trixie-security patches published since the ``python:3.15-slim``
 # base-image digest was built.  The builder stage is discarded, but
 # upgrading here keeps the pip-built wheels linked against the same
 # library versions the runtime ``base`` stage will use.  pyvips is a
@@ -104,7 +104,7 @@ FROM python:3.15-slim AS base
 WORKDIR /app
 
 # ``apt-get -y upgrade`` pulls any trixie-security deltas that have
-# landed since the ``python:3.14-slim`` base digest was built, so the
+# landed since the ``python:3.15-slim`` base digest was built, so the
 # runtime image is at least as current as the Debian security mirror
 # at build time rather than as current as the last docker-library
 # python rebuild.
@@ -132,7 +132,7 @@ RUN apt-get update \
 COPY --from=libvips-build /tmp/vips/usr/local /usr/local
 RUN ldconfig
 
-COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
+COPY --from=builder /usr/local/lib/python3.15/site-packages /usr/local/lib/python3.15/site-packages
 COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/arq /usr/local/bin/alembic /usr/local/bin/opentelemetry-instrument /usr/local/bin/
 
 COPY app ./app
@@ -233,23 +233,23 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get -y upgrade \
     && apt-get install -y --no-install-recommends \
-       pkg-config gcc curl unzip \
+       pkg-config build-essential curl unzip \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=poetry-tools /opt/poetry-venv /opt/poetry-venv
 COPY pyproject.toml poetry.lock ./
 RUN /opt/poetry-venv/bin/poetry export --only main,counting,counting-ml -f requirements.txt -o requirements.txt \
     && pip install --no-cache-dir -r requirements.txt \
        --extra-index-url https://download.pytorch.org/whl/cpu \
-    && find /usr/local/lib/python3.14/site-packages -type d -name __pycache__ -prune -exec rm -rf {} + \
-    && find /usr/local/lib/python3.14/site-packages -name "*.pyc" -delete \
-    && find /usr/local/lib/python3.14/site-packages -type d -name tests -prune -exec rm -rf {} + \
-    && rm -rf /usr/local/lib/python3.14/site-packages/pip* \
-             /usr/local/lib/python3.14/site-packages/setuptools* \
-             /usr/local/lib/python3.14/site-packages/ensurepip* \
-             /usr/local/lib/python3.14/site-packages/_distutils_hack \
-             /usr/local/lib/python3.14/site-packages/distutils-precedence.pth \
-             /usr/local/lib/python3.14/site-packages/torch/test \
-             /usr/local/lib/python3.14/site-packages/torch/include
+    && find /usr/local/lib/python3.15/site-packages -type d -name __pycache__ -prune -exec rm -rf {} + \
+    && find /usr/local/lib/python3.15/site-packages -name "*.pyc" -delete \
+    && find /usr/local/lib/python3.15/site-packages -type d -name tests -prune -exec rm -rf {} + \
+    && rm -rf /usr/local/lib/python3.15/site-packages/pip* \
+             /usr/local/lib/python3.15/site-packages/setuptools* \
+             /usr/local/lib/python3.15/site-packages/ensurepip* \
+             /usr/local/lib/python3.15/site-packages/_distutils_hack \
+             /usr/local/lib/python3.15/site-packages/distutils-precedence.pth \
+             /usr/local/lib/python3.15/site-packages/torch/test \
+             /usr/local/lib/python3.15/site-packages/torch/include
 
 # Bake the InstanSeg ``brightfield_nuclei`` v0.1.1 bioimage.io model so no
 # runtime download is needed (``instanseg.utils.utils`` resolves models
@@ -267,7 +267,7 @@ RUN curl -fsSL -o /tmp/model.zip "${INSTANSEG_MODEL_URL}" \
 # defaults) and overlays the counting site-packages — a superset of the
 # main group — plus the baked model.  Runs non-root.
 FROM base AS counting-worker
-COPY --from=counting-builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
+COPY --from=counting-builder /usr/local/lib/python3.15/site-packages /usr/local/lib/python3.15/site-packages
 COPY --from=counting-builder /usr/local/bin/arq /usr/local/bin/opentelemetry-instrument /usr/local/bin/
 COPY --from=counting-builder /opt/hriv-models /opt/hriv-models
 
