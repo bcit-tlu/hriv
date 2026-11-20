@@ -290,6 +290,7 @@ export default function AddToCollectionDialog({
           <Tooltip title={bothTypesAtLimit ? COLLECTIONS_AT_CAP_TOOLTIP : ''}>
             <span>
               <Button
+                size="small"
                 startIcon={<AddIcon />}
                 onClick={() => setCreateOpen(true)}
                 disabled={busy || bothTypesAtLimit}
@@ -298,7 +299,7 @@ export default function AddToCollectionDialog({
               </Button>
             </span>
           </Tooltip>
-          <Button onClick={onClose} disabled={busy}>
+          <Button size="small" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
         </DialogActions>

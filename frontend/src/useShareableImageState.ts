@@ -8,12 +8,58 @@ import { parseCollectionIdParam, parseCollectionItemParam } from './collectionUt
 import type { Category, ImageItem } from './types'
 import { parseBoardLocation } from './boardUtils'
 
+export function copyViewLink(
+  url: string,
+  onCopied: () => void,
+  imageId?: number,
+  categoryId?: number,
+) {
+  const startedAt = performance.now()
+  const emitShareEvent = (outcome: 'success' | 'failure') => {
+    emitEvent({
+      event: 'image.share_selected',
+      action: 'share',
+      outcome,
+      duration_ms: Math.round(performance.now() - startedAt),
+      image_id: imageId,
+      category_id: categoryId,
+    })
+  }
+  const fallbackCopy = () => {
+    const input = document.createElement('input')
+    input.value = url
+    document.body.appendChild(input)
+    input.select()
+    const copied = document.execCommand('copy')
+    document.body.removeChild(input)
+    if (copied) {
+      onCopied()
+      emitShareEvent('success')
+      return
+    }
+    emitShareEvent('failure')
+  }
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        onCopied()
+        emitShareEvent('success')
+      })
+      .catch(() => fallbackCopy())
+  } else {
+    fallbackCopy()
+  }
+}
+
 interface ParsedShareableUrl {
   boardId?: number | null
   imageId: number | null
   viewport: ViewportState | undefined
   overlays: OverlayRect[] | undefined
   catIds: number[] | null
+  /** `?marker={id}` marker link target — select/reveal that marker on the image. */
+  markerId: number | null
   /** `?collection={id}` deep link (docs/collections.md); wins over image/cat params. */
   collectionId: number | null
   /** `?item={image_id}` sequence position, only meaningful next to `?collection=`. */
@@ -32,6 +78,7 @@ export function parseShareableUrlParams(): ParsedShareableUrl {
   let viewport: ViewportState | undefined
   let overlays: OverlayRect[] | undefined
   let catIds: number[] | null = null
+  let markerId: number | null = null
 
   if (params.get('page') === 'boards' && parseCollectionIdParam(window.location.search) == null) {
     return {
@@ -39,6 +86,7 @@ export function parseShareableUrlParams(): ParsedShareableUrl {
       viewport,
       overlays,
       catIds,
+      markerId,
       collectionId: null,
       collectionItemId: null,
       ...parseBoardLocation(window.location.search),
@@ -63,7 +111,7 @@ export function parseShareableUrlParams(): ParsedShareableUrl {
         catIds = ids
       }
     }
-    return { imageId, viewport, overlays, catIds, collectionId, collectionItemId }
+    return { imageId, viewport, overlays, catIds, markerId, collectionId, collectionItemId }
   }
 
   const imgId = params.get('image')
@@ -71,6 +119,11 @@ export function parseShareableUrlParams(): ParsedShareableUrl {
     const parsedId = Number(imgId)
     if (!Number.isNaN(parsedId)) {
       imageId = parsedId
+      const markerParam = params.get('marker')
+      if (markerParam) {
+        const parsedMarker = Number(markerParam)
+        if (Number.isSafeInteger(parsedMarker) && parsedMarker > 0) markerId = parsedMarker
+      }
       const z = params.get('zoom')
       const px = params.get('x')
       const py = params.get('y')
@@ -120,7 +173,7 @@ export function parseShareableUrlParams(): ParsedShareableUrl {
       }
     }
   }
-  return { imageId, viewport, overlays, catIds, collectionId, collectionItemId: null }
+  return { imageId, viewport, overlays, catIds, markerId, collectionId, collectionItemId: null }
 }
 
 export interface UseShareableImageStateDeps {
@@ -134,6 +187,12 @@ export interface UseShareableImageStateDeps {
   page: string
   /** Written as `?board=` only while `page === 'boards'`. */
   boardId?: number | null
+  /**
+   * Marker navigated to from Boards or a `?marker=` link — written as
+   * `?marker={id}` while its image is open so refresh/back restores the
+   * selection and reveals the marker. `navigate` is in-memory only.
+   */
+  focusedMarker?: { id: number; imageId: number; navigate?: boolean } | null
   /** Current category path — changes trigger URL sync (`?cat=`). */
   path: Category[]
   /**
@@ -215,6 +274,7 @@ export function useShareableImageState(
     uncategorizedLoaded,
     page,
     boardId = null,
+    focusedMarker = null,
     path,
     collectionId = null,
     collectionItemId = null,
@@ -348,6 +408,9 @@ export function useShareableImageState(
       }
       if (selectedImage) {
         params.set('image', String(selectedImage.id))
+        if (focusedMarker && focusedMarker.imageId === selectedImage.id) {
+          params.set('marker', String(focusedMarker.id))
+        }
         if (viewportState) {
           params.set('zoom', viewportState.zoom.toFixed(4))
           params.set('x', viewportState.x.toFixed(6))
@@ -393,6 +456,7 @@ export function useShareableImageState(
     collectionFromBrowse,
     collectionTypeFilter,
     boardId,
+    focusedMarker,
   ])
 
   const handleViewportChange = useCallback((state: ViewportState) => {
@@ -446,43 +510,12 @@ export function useShareableImageState(
   }, [selectedImage?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const copyShareLink = useCallback(() => {
-    const url = window.location.href
-    const startedAt = performance.now()
-    const emitShareEvent = (outcome: 'success' | 'failure') => {
-      emitEvent({
-        event: 'image.share_selected',
-        action: 'share',
-        outcome,
-        duration_ms: Math.round(performance.now() - startedAt),
-        image_id: selectedImage?.id,
-        category_id: selectedImage?.categoryId ?? undefined,
-      })
-    }
-    const fallbackCopy = () => {
-      const input = document.createElement('input')
-      input.value = url
-      document.body.appendChild(input)
-      input.select()
-      const copied = document.execCommand('copy')
-      document.body.removeChild(input)
-      if (copied) {
-        setSnackOpen(true)
-        emitShareEvent('success')
-        return
-      }
-      emitShareEvent('failure')
-    }
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard
-        .writeText(url)
-        .then(() => {
-          setSnackOpen(true)
-          emitShareEvent('success')
-        })
-        .catch(() => fallbackCopy())
-    } else {
-      fallbackCopy()
-    }
+    copyViewLink(
+      window.location.href,
+      () => setSnackOpen(true),
+      selectedImage?.id,
+      selectedImage?.categoryId ?? undefined,
+    )
   }, [selectedImage?.categoryId, selectedImage?.id])
 
   const clearImage = useCallback(() => {

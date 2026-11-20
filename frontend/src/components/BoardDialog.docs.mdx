@@ -1,0 +1,20 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as BoardStories from './BoardDialog.stories'
+
+<Meta of={BoardStories} />
+
+<Title />
+
+The in-place Board dialog used when a Marker drawer Board heading is clicked:
+the Board opens over the image being viewed instead of navigating to Boards &
+Markers. Marker tiles still jump to their saved views, favourite toggles work,
+and editable Boards keep the Edit pencil plus owner management — all through the
+same BoardEditDialog, BoardOwnersDialog and MarkerFormDialog used elsewhere.
+
+The heavier management flows (reordering, move/save, remove-from-board, bulk
+selection and Collection creation) stay on the Boards & Markers page, reachable
+via the “Open in Boards & Markers” action.
+
+<Primary />
+
+<Stories />

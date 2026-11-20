@@ -736,6 +736,10 @@ always read-only (`canEditContent={false}`).
   pane pattern), the edge-overlay
   **Previous** button disabled, and the member's canvas annotations /
   locked overlays / measurement shown read-only.
+- **Given** a sequence filmstrip, **Then** thumbnails show images only, with no
+  visible per-thumbnail captions. Each button retains its `Go to {slot label or
+image name}` accessible name, including for multiple saved views of one image;
+  the caption below the main viewport is unchanged.
 - **Given** `?collection={id}&item={image_id}`, **Then** the viewer opens on
   that image; a non-member `item` id falls back to the first image and
   `?item=` without `?collection=` is ignored.
@@ -1425,33 +1429,211 @@ selection MouseTracker ignores their presses.
   after create directs the admin back to Edit Person. Credentials remain local
   to the mounted dialog and same-user mint serialization is retained.
 
-## Board and Inuksuk search (#1775)
+## Board and Marker search (#1775)
+
+### Boards & Markers overview and Board dialog
+
+- The Boards and Markers page title uses Collections' h5/h1 and unpadded flex
+  header exactly, with the Cards/Table toggle in the title row immediately left
+  of All Boards and the Filter by bar rendered under the title like Manage
+  Images. The Boards & Markers navigation/tab label is unchanged.
+- One short horizontally scrolling owned-Board row begins with New Board (a
+  compact ~136px tile split evenly between its icon block and a regular-weight
+  name). Elevated tiles fixed at 260px (matching Images, Collections and
+  Categories) carry a thick 2px accent-blue border (#4A78A7 light / #2196F3
+  dark, the Marker blue), a flush-left square cover/placeholder, a larger
+  single-line h6 name in the Image-tile title colour that truncates with an
+  ellipsis, and a metadata row showing the Marker count left-aligned with
+  the shared scope pill right-aligned; the row hugs the marker grid closely
+  below.
+  Editable chips reorder by surface drag without grip icons; clicking still opens a Board. Read-only
+  owned/program Boards are discoverable through the All Boards dialog's Public & Shared
+  filter, not the chip row, for every role.
+  The chip row requires edit permission as well as ownership, with no instructor/admin exemption.
+- All Boards is an outlined, right-aligned button in the title row for admins,
+  instructors and staff; students never see it. Its large dialog lists every
+  API-returned Board, including others' private and already-chipped Boards.
+  A horizontal row of filter chips sits directly beneath the dialog title, above
+  the content: Public & Shared keeps API-returned public,
+  program/group-restricted or co-owned/program-member Boards outside the chip
+  row (other users' private Boards stay excluded for every role), and Instructor
+  Boards keeps program-owned Boards or Boards owned by admin/instructor users.
+  Chips toggle independently and combine; no active chip restores the full
+  list, a filter that excludes everything reports “No matching Boards.”, and an
+  empty list reports “No Boards available.”.
+  Tiles carry title, shared scope pill and Collections-style Managed by
+  owner/program names (No owner for orphans). The list is independent of overview filters;
+  choosing a tile closes discovery and opens the existing Board dialog. UX filtering
+  does not change backend visibility or establish a security boundary.
+- There is no My Markers heading or overview Multi-select; Marker selection
+  lives in the Board dialog's header toolbar (no Saved views heading or divider),
+  where every selection action — including the Multi-select toggle, contained
+  while active — renders on the same row so starting selection never pushes it
+  downward. Selectable tiles show their checkbox on a white disc, and a selected
+  tile gets a Marker-blue outline.
+  The Board-level Create Collection button hides while Multi-select is on, so
+  only the selection's Create Collection shows.
+  The row's collection actions are exactly two concise buttons: a contained
+  Create Collection (the Board dialog's flow, seeding CollectionEditDialog with
+  the selected Markers) and an outlined Add to Collection that lists every
+  editable collection and disables full ones; the pair renders only once at
+  least one Marker is selected. In select mode each Marker card carries a
+  top-left checkbox overlay on its thumbnail and a primary outline when
+  checked, matching the Collection Manage Images tiles.
+  The fully paginated overview keeps the saved Marker order (`sort_order`, then numeric ID),
+  which drag-reorder and its Undo change; favourite/membership updates and renames do not
+  affect order. Filled stars use the primary accent.
+  Both views show only personally owned Markers, fetched in pages of 200. Cards
+  show the image's parent category below the title, or Uncategorized when absent.
+  Cards are 234px wide with proportionally scaled 96px covers, including in Board dialogs.
+  Marker cards carry no scope pill — the reused Collections scope pill lives on
+  Board tiles instead, leaving Marker tiles correspondingly shorter.
+  Pin and title-row edit pencil follow Collection cards; the pin and the h6
+  title render in the Marker accent blue (#4A78A7 light / #2196F3 dark) and the
+  category line's tooltip reads In category {name}.
+  Top-right Star/StarBorder favourite takes Collections' cover-picker position, beside Move/Save.
+  The pencil opens the existing editor; Delete and Remove from this Board remain there.
+  The editor mimics Edit Image/Edit Collection chrome: a View Marker button sits
+  at the top right of the dialog heading and Delete is a wide destructive button
+  whose press opens the standard "Delete Marker?" confirmation dialog.
+  Card click opens the saved view; no card overflow or drag-handle icon remains.
+  Table columns are Select, Thumbnail, Title, Image, Description, Category,
+  Boards, Favourite, Owner, Created, Modified and a fixed trailing Actions.
+  Labelled headers sort via TableSortLabel, rows paginate with a per-user
+  rows-per-page preference, and the Select column's checkboxes (with a
+  Select-all header cell for the page) feed the same Create/Add Collection
+  actions. Row clicks — and Enter/Space on the focused row — open the Marker
+  edit dialog; the Thumbnail cell's button navigates to the saved view.
+  Board names navigate; actions and filters work in both views. A Choose columns button on
+  the filter row (Table view only) opens the shared reorderable visibility
+  dialog; visibility and order persist per user
+  (`hrivpref:table-columns:markers:user:<id>` /
+  `hrivpref:table-column-order:markers:user:<id>`) and Actions stays a fixed
+  trailing column.
+  Program-owned Boards retain program-membership ownership semantics in the main row.
+- The Collections filter bar components provide title/description search and
+  owner/Mine popovers plus visible toggle chips for Private/Restricted/Public
+  scope (multi-select) and Favourites — styled like the Search dialog's chips,
+  outlined by default and filled/primary with `aria-pressed` when active — on
+  both the Board row and overview collage. Scope uses any visible Board
+  membership; Favourite Boards are those holding a favourite Marker. Active chips
+  can be removed, and Clear filters resets all facets.
+- Dragging editable overview Marker cards saves onto editable Board chips,
+  preserving existing memberships. The dragged tile dims and gains a 3px solid
+  primary outline; a valid target carries the shared Category/Image drop-zone
+  treatment — a 3px dashed outline with a 3px offset, a slight scale-up, and an
+  opaque "Add here" overlay that swaps the tile face while hovering. Success
+  shows a snackbar. A Board the Marker already belongs to shows a muted dashed
+  outline with a "not allowed" Block icon and an "Already saved" caption, so
+  the denied target explains itself rather than staying silent.
+  Rejected drops stay unhighlighted but show a snackbar: Already in {Board name},
+  or You can't add Markers to {Board name}; no mutation is sent.
+  The bottom-centre Snackbar contains the app's filled Alert, using success for
+  saves, info for duplicates and warning for other refusals.
+  Filled favourite stars are white in Cards and Table, with contrasting backgrounds
+  for editable toggles and read-only indicators alike.
+  Failures retain data and show the error. Browse collision logic is unchanged.
+- A Board opens in a large dialog, full-screen below the small breakpoint. Its
+  fixed heading holds title, authorized edit pencil, count and Select. The exact
+  Collections scope pill sits beside Managed by and the permitted owner-management
+  transfer icon. The title uses Collections-style h6 typography; its count uses
+  smaller secondary body2 text. Create Collection is a right-aligned outlined button
+  immediately left of Close, disabled for empty Boards. There is no Board overflow.
+  Delete is in Edit Board, with a second confirmation and orphan-Marker warning;
+  version conflicts block mutations until an explicit reload. Its ordered collage
+  scrolls independently and does not inherit overview filters. Editable Boards
+  retain member reorder. Multi-select sits at the right of each collage toolbar
+  and keeps every selection action, including the toggle itself, on the same row.
+- Board URL/history state is retained: Back closes the Board dialog; opening an
+  image at its saved view and returning restores that dialog. Flag-off behavior
+  makes no Board/Marker requests.
+- Mutations refresh silently without unmounting the collage or flashing a page
+  loader. Refresh failures retain loaded cards. Board dialog navigation preserves
+  the overview and fetches only Board detail; opening editors does not reload it.
 
 ### Viewer saved-view interactions
 
-- Add Inuksuk is a persistent mode, with normal drag/scroll/pinch navigation;
+- Add Marker is a persistent mode, with normal drag/scroll/pinch navigation;
   only quick clicks/taps place. Save does not disarm it. Escape cancels an open
   draft first, then disarms placement on the next press; the toolbar also disarms it.
 - Placement uses a compact non-modal top-right panel: selected Title, required
-  remembered Board picker and inline private-Board creation. Description and
-  Favourite start under collapsed More options. Cancel removes the draft marker;
-  the draft also appears as Unsaved in My Inuksuks. One draft is edited at a time.
+  remembered Board picker and a slide-in Add Board pane, titled Add Marker.
+  Description starts under collapsed More options. Favourite is a tooltip-labelled
+  outlined/filled title-row star with aria-pressed, not a checkbox. Cancel removes the draft marker;
+  the draft also appears in a leading Unsaved drawer group. One draft is edited at a time.
 - Marker clicks open a top-right information card showing title, optional description,
-  visible Board names, favourite state and a close X. The authorized-only pencil
-  opens the full edit form; marker clicks never directly open the editor.
-- The title-only drawer leaves the bottom toolbar visible. Row/group eyes change
-  marker visibility; their context menus change labels independently. Row menus
-  expose Edit/Delete only when permitted. Default/override/Mixed and localStorage
+  visible Board names and favourite state, without a close X. Outside pointer presses
+  deselect/close it; another marker selects instead. Escape also closes it. The authorized-only
+  pencil replaces its contents with the shared inline edit form, not a central dialog;
+  drawer Edit selects/focuses/pans to the same Marker and opens this editor.
+  Both modes keep the Marker icon left of the title, with the view-mode pencil
+  immediately beside the title. Authorized users can toggle the view-mode star
+  through the versioned API; conflicts require Reload current before retrying.
+  The inline form includes title, Boards, star, Save/Cancel and permitted Delete.
+  Description starts collapsed under More options even when filled. Delete opens
+  a secondary confirmation dialog whose Cancel/Escape preserves the editor draft.
+  Outside presses keep the editor open, including presses on other markers/rows;
+  Save/Cancel finish, and explicit Escape cancels/closes. Portalled Board menus remain usable.
+  OCC/error/reload behavior is shared with the existing form; BoardsPage retains its modal editor.
+- The Boards menu has checkbox options sorted case-insensitively by name with ID ties,
+  and no selection chips. Closed text shows the first two names then +N, including the
+  remembered last-used Board before opening it. A pinned + Add Board row sits at the
+  bottom of the fixed-height menu while options scroll above it. It slides a New Board
+  pane in from the right over the form, reusing the Boards & Markers Add Board field
+  set (name, description, visibility and restricted Program/Group chips); a top-left
+  back arrow or Escape returns with the draft preserved. Creation selects the new
+  Board; empty names and incomplete restricted scopes disable creation.
+- The title-only drawer leaves the bottom toolbar visible. Drawer and panel lists
+  omit the redundant Markers total heading. Rows group under their associated
+  Boards — a Marker on several Boards lists under each — resolved from the
+  Board summaries the markers hook now fetches. The viewer's own Boards head
+  the list, then instructor- or program-owned Boards; every other visible
+  Board sits inside a collapsed Public & Shared section that expands on click
+  or when a shared row is focused, its header carrying the same batch eye/label
+  icons. Markers with no visible Board fall under a trailing Other group and a
+  draft sits in a leading Unsaved
+  group. Group headings are body2 titles, never collapsible and carry no
+  counts; Board headings render as a link that opens the Board dialog in place
+  over the viewer — the viewer and its URL stay on the image — with an
+  “Open in Boards & Markers” action reaching the full management surface.
+  Group headings carry inline eye and label icon buttons (aria-pressed, Mixed
+  states included) instead of an ellipsis menu; the label icon disables while
+  every group marker is hidden. Row menus put Show/Hide marker first, then the
+  label action (disabled while its marker is hidden), then Edit/Delete only when
+  permitted. Hide/Show label(s) use LabelOff/Label icons. A hidden marker always
+  hides its label; a shown marker's label toggles independently. Public-source
+  markers default to canvas-hidden (labels enabled but inert while hidden);
+  other default/override/Mixed and localStorage
   semantics remain unchanged.
-- Markers are upright constant-size 27px blue glyphs without a disc. Labels retain
-  their existing styling. The top-left compass has no badge and matches the adjacent
+- Selecting a marker — a drawer row, canvas glyph, edit/delete intent, or an
+  external `?marker=` navigation from Boards & Markers or search — writes a
+  `markerVisible` override when the marker is canvas-hidden, so selection
+  never lands on an invisible marker. Marker navigation serializes
+  `?image=&marker=&x=&y=&zoom=&rotation=`; refresh and Browser Back/Forward
+  restore the focused marker alongside the viewport.
+- Hidden-marker row titles use text.disabled (text.secondary in light mode for
+  AA contrast on the still-navigable row) and an accessible “marker hidden”
+  suffix; group Mixed → Show markers writes a shown override on every row in
+  that group in one batched update.
+- Drawer row hover backgrounds span the full width, including the separate
+  options button; it does not nest inside the row action.
+- Pin/Unpin matches My collections (filled selected pin, no pinned close action,
+  unpin does not close). The shared state hook persists
+  `hrivpref:markers-drawer:pinned:user:<id>`; pinning survives image/sequence
+  navigation and new viewer pages. Unpinned drawers close on outside presses/clicks,
+  including OSD, without consuming placement. Menu portal content is inside;
+  its stable container prevents leftover modal backdrops. Pinned drawers ignore
+  outside presses and Escape.
+- Markers are upright constant-size 27px white discs with blue glyphs and a subtle
+  contrast ring/shadow, rendered as MUI `Room` icons. Labels retain
+  their existing styling. The top-left pin has no badge and matches the adjacent
   white-on-dark OSD controls; the placement tool shares all normal toolbar states.
 
-- With `features.inuksuks`, Search adds Boards (dashboard icon) and Inuksuks
-  (compass icon) chips and title/description matches. Saved-view requests are
+- With `features.markers`, Search adds Boards (dashboard icon) and Markers
+  (pin icon) chips and title/description matches. Saved-view requests are
   debounced, cancellable and visibility-filtered by the API; an older query's
   results must not replace a newer query. Other search kinds remain local.
-- Choosing a Board opens `?page=boards&board=<id>`. Choosing an Inuksuk uses the
+- Choosing a Board opens `?page=boards&board=<id>`. Choosing a Marker uses the
   existing source-image/saved-coordinate navigation, preserving x/y/zoom/rotation.
 - In Manage Collection's picker, these results instead stage saved-view slots.
   Board expansion follows the displayed member order.
@@ -1459,3 +1641,56 @@ selection MouseTracker ignores their presses.
   the existing image/category checkbox footer remains for whole-image selections.
   A request failure or an empty Board keeps the picker open with a visible error.
 - The flag-off search UI and collection write payloads remain unchanged.
+
+## Permanent image/Sequence side panel (Markers flag)
+
+- With `features.markers`, image and Sequence viewers replace the old Details
+  and top-left Markers controls with one top-right Open/Close viewer panel toggle.
+  Flag-off and Synchronized per-pane interfaces retain their previous behavior.
+- The panel starts closed with Markers selected; open state and selected content
+  persist per signed-in user across images, Sequence steps and reloads. Corrupt or
+  blocked storage falls back safely; anonymous previews never write user preferences.
+- The open header places exclusive Markers/Share View/Details content buttons left and the
+  close toggle right. Selection uses MUI rounded-square action states and exposes
+  `aria-pressed`; toggle controls expose expanded state and their panel id.
+- At sm+ the 256px permanent panel narrows OSD's image container; navigator, toolbar
+  and Sequence edge arrows remain in that area. At xs it overlays the full frame.
+- Only the toggle closes the panel: outside presses, selecting the current tab and
+  Escape leave it open. Menus, draft cancellation and placement keep their Escape
+  semantics. Canvas edit mode leaves an already-open panel in place. Its closed
+  trigger retains the existing canvas-edit disabled state; the stored preference
+  is unchanged.
+- Existing grouped row/visibility menus, dimmed hidden titles and stable menu portal
+  behavior are reused without per-item metadata. Placement floats beside the image
+  and switches an open Details panel to Markers. Closed-panel floating cards leave
+  room for the toggle. Details retains its metadata and Viewer controls help text.
+  The panel's Details lists every metadata field (copyright, programs, groups,
+  dates, dimensions, size, measurement scale, objective power, original file,
+  file type, uploader), showing “—” for values not recorded.
+  An empty Markers list shows a small Add Marker toolbar icon inline and says
+  the button is in the image toolbar.
+- Edit Image details lays out Scale, Unit and Objective on one row (stacked at xs).
+- Single-image, Sequence and Synchronized viewers show only My and Instructor
+  Markers in lists and markers, using the endpoint's existing ownership grouping.
+  Other users' public/shared views remain discoverable through the All Boards
+  dialog's Public & Shared filter;
+  this display scope does not change backend visibility.
+- The link icon between pin and info selects Share View. Its centred outlined
+  Share View button reuses the image page clipboard action; the old header Share View is hidden only
+  with the panel enabled. Sequence copies a standalone image view with live viewport
+  and selection rectangles. Flag-off and Synchronized sharing controls are unchanged.
+  The tab's footer briefly explains why to share a view.
+
+### Viewer Marker polish
+
+- Successful creation selects the returned Marker, re-orients the viewport onto
+  it (matching row Edit and marker-click navigation), opens its info card and moves
+  keyboard focus to its list row, expanding and scrolling the group as necessary.
+  Drawer Delete opens the shared confirmation dialog alone — never the
+  information card or editor.
+  Saving opens Markers if the panel was closed or on Details. Later reloads do
+  not steal focus. Failed saves preserve the draft and previous selection.
+- The card's favourite star is a named, tooltip-equipped read-only indicator
+  immediately left of Close, without a visible status sentence.
+- Dense caption-sized list, metadata and help text follow the page footer scale;
+  body2/subtitle2 titles and small form controls preserve the visual hierarchy.

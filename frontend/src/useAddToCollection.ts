@@ -45,7 +45,7 @@ export async function addImagesToCollection(
   collectionId: number,
   imageIds: readonly number[],
   role?: Role | null,
-  inuksuksEnabled = false,
+  markersEnabled = false,
 ): Promise<AddToCollectionResult> {
   const current = apiCollectionToCollection(await fetchCollection(collectionId))
   const existing = current.images.map((img) => img.id)
@@ -56,7 +56,7 @@ export async function addImagesToCollection(
     return { status: 'full', collection: current }
   }
   const updated = await replaceCollectionImages(collectionId, {
-    ...(inuksuksEnabled
+    ...(markersEnabled
       ? {
           slots: [
             ...current.images.map(memberSlotInput),
@@ -88,7 +88,7 @@ export async function removeImagesFromCollection(
   collectionId: number,
   imageIds: readonly number[],
   base?: Collection,
-  inuksuksEnabled = false,
+  markersEnabled = false,
 ): Promise<Collection> {
   const current = base ?? apiCollectionToCollection(await fetchCollection(collectionId))
   const drop = new Set(imageIds)
@@ -96,7 +96,7 @@ export async function removeImagesFromCollection(
   if (keep.length === current.images.length) return current
   return apiCollectionToCollection(
     await replaceCollectionImages(collectionId, {
-      ...(inuksuksEnabled
+      ...(markersEnabled
         ? { slots: keep.map(memberSlotInput) }
         : { image_ids: keep.map((img) => img.id) }),
       version: current.version,
@@ -108,7 +108,7 @@ export async function removeImagesFromCollection(
 export async function createCollectionWithImages(
   values: CollectionFormValues,
   imageIds: readonly number[],
-  inuksuksEnabled = false,
+  markersEnabled = false,
 ): Promise<Collection> {
   return apiCollectionToCollection(
     await createCollection({
@@ -117,7 +117,7 @@ export async function createCollectionWithImages(
       type: values.type,
       visibility: values.visibility,
       ...(values.categoryId != null ? { category_id: values.categoryId } : {}),
-      ...(inuksuksEnabled
+      ...(markersEnabled
         ? { slots: Array.from(new Set(imageIds)).map((id) => ({ image_id: id })) }
         : { image_ids: Array.from(new Set(imageIds)) }),
       ...(values.visibility === 'restricted'

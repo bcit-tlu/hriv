@@ -77,11 +77,32 @@ beforeEach(() => {
 })
 
 describe('SequenceCollectionViewer', () => {
-  it('keeps navigation from covering an open Inuksuks drawer', () => {
-    renderViewer({ inuksuksEnabled: true })
+  it.each([false, true])(
+    'delegates the feature-gated Marker card/form flow to ImageViewer, enabled=%s',
+    (markersEnabled) => {
+      renderViewer({ markersEnabled })
+      expect(lastViewerProps?.markersEnabled).toBe(markersEnabled)
+      expect(lastViewerProps?.imageId).toBe(100)
+      expect(screen.queryByRole('dialog', { name: 'Edit Marker' })).toBeNull()
+    },
+  )
+  it('keeps sequence arrows inside the resized image area when the panel is open', () => {
+    renderViewer({ markersEnabled: true })
+    const resize = lastViewerProps?.onViewerPanelWidthChange
+    if (typeof resize !== 'function') throw new Error('Missing panel width callback')
+    act(() => resize(256))
+    expect(screen.getByTestId('sequence-nav-overlay')).toHaveStyle({ right: '256px' })
+    expect(lastViewerProps?.viewportControl).toBeNull()
+    expect(lastViewerProps?.sidePanelDetails).toBeTruthy()
+    act(() => resize(0))
+    expect(screen.getByTestId('sequence-nav-overlay')).toHaveStyle({ right: '0px' })
+  })
+
+  it('keeps navigation from covering an open Markers drawer', () => {
+    renderViewer({ markersEnabled: true })
     const frame = screen.getByTestId('sequence-viewer-frame')
     fireEvent.pointerMove(frame)
-    const callback = lastViewerProps?.onInuksuksDrawerOpenChange
+    const callback = lastViewerProps?.onMarkersDrawerOpenChange
     if (typeof callback !== 'function') throw new Error('Missing drawer callback')
     act(() => callback(true))
     expect(screen.getByRole('button', { name: 'Next image' })).toHaveAttribute('tabindex', '-1')

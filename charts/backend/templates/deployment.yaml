@@ -257,8 +257,8 @@ spec:
             - name: REDIS_URL
               value: {{ .Values.redis.url | quote }}
             {{- end }}
-            - name: INUKSUKS_ENABLED
-              value: {{ .Values.inuksuks.enabled | quote }}
+            - name: MARKERS_ENABLED
+              value: {{ .Values.markers.enabled | quote }}
             - name: COLLECTIONS_ENABLED
               value: {{ .Values.collections.enabled | quote }}
             - name: COLLECTIONS_STUDENT_ACCESS

@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.0.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.69.2...frontend-v1.0.0) (2026-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* rename inuksuk to marker app-wide ([#1941](https://github.com/bcit-tlu/hriv/issues/1941))
+
+### Features
+
+* **boards:** add Collections-style Boards & Inuksuks page with chip Boards and card/table Inuksuks ([#1932](https://github.com/bcit-tlu/hriv/issues/1932)) ([bebc9ce](https://github.com/bcit-tlu/hriv/commit/bebc9cecfbd3692e19e0dc1879f4f6c9d3b1d8cd))
+* **boards:** redesign overview and Board dialog ([#1916](https://github.com/bcit-tlu/hriv/issues/1916)) ([e6bd961](https://github.com/bcit-tlu/hriv/commit/e6bd96119adf4a9b374485c7d38689ef7e248712))
+* **boards:** restyle tiles, surface filter chips, marker column chooser ([#1952](https://github.com/bcit-tlu/hriv/issues/1952)) ([d8001db](https://github.com/bcit-tlu/hriv/commit/d8001dbd5384dd7c20b5e81526bd1cf0e01d351e))
+* **inuksuks:** add Boards and Inuksuks page ([#1909](https://github.com/bcit-tlu/hriv/issues/1909)) ([3cebbbc](https://github.com/bcit-tlu/hriv/commit/3cebbbcf0c6703b2c5b35c83d85503435d9513ab))
+* **inuksuks:** add Inuksuk form with checkbox Boards, star and in-place card editing ([#1934](https://github.com/bcit-tlu/hriv/issues/1934)) ([5bb30b7](https://github.com/bcit-tlu/hriv/commit/5bb30b7a4e67102ee4db307be63444b08282e40a))
+* **inuksuks:** add search, archive round-trip and docs close-out ([#1912](https://github.com/bcit-tlu/hriv/issues/1912)) ([1a6940a](https://github.com/bcit-tlu/hriv/commit/1a6940ab0e0a606c12e29bcf838bd4c1898a43f3))
+* **inuksuks:** add viewer Inuksuk tool, markers and save dialog ([#1906](https://github.com/bcit-tlu/hriv/issues/1906)) ([26d3922](https://github.com/bcit-tlu/hriv/commit/26d392281d1345af0c160d4aca5517383e0d22d9))
+* **inuksuks:** add viewer Inuksuks drawer with persisted visibility ([#1908](https://github.com/bcit-tlu/hriv/issues/1908)) ([3f1168c](https://github.com/bcit-tlu/hriv/commit/3f1168c056853581beba1e73d9d0d357ddf0a3f4))
+* **inuksuks:** build collections from Boards and support multi-slot viewers ([#1911](https://github.com/bcit-tlu/hriv/issues/1911)) ([5b58e11](https://github.com/bcit-tlu/hriv/commit/5b58e117a573f81b421eeac9e0756339e0d74b76))
+* **inuksuks:** right-side viewer panel for Inuksuks and image details ([#1928](https://github.com/bcit-tlu/hriv/issues/1928)) ([59acd03](https://github.com/bcit-tlu/hriv/commit/59acd03ff848359e636dcaccb46ac13a922d0877))
+* **inuksuks:** streamline viewer placement, info card and drawer ([#1915](https://github.com/bcit-tlu/hriv/issues/1915)) ([be190d0](https://github.com/bcit-tlu/hriv/commit/be190d016f1319cbcd942fed0159184a1a81dfba))
+* **inuksuks:** white marker discs, pinnable drawer and menu-based visibility ([#1924](https://github.com/bcit-tlu/hriv/issues/1924)) ([43b3e58](https://github.com/bcit-tlu/hriv/commit/43b3e58f83d3f4514588e0a68dfb093eab515474))
+* **markers:** board-grouped drawer, marker focus links, in-place board dialog ([#1942](https://github.com/bcit-tlu/hriv/issues/1942)) ([3ab9a01](https://github.com/bcit-tlu/hriv/commit/3ab9a01bc11bca19a92c416a0ba87532f51dc1c8))
+
+
+### Bug Fixes
+
+* **boards:** match page title, own-Boards-only view with public Boards dialog, smaller tiles ([#1930](https://github.com/bcit-tlu/hriv/issues/1930)) ([4698236](https://github.com/bcit-tlu/hriv/commit/4698236e90305594f5e4b3e74e777618e8bac4e8))
+* **collections:** eager-load members after collection writes ([#1914](https://github.com/bcit-tlu/hriv/issues/1914)) ([b7e7618](https://github.com/bcit-tlu/hriv/commit/b7e7618f3ed971f29e12d88aee2ef52ee47274d2))
+* **collections:** remove slot captions under Sequence filmstrip thumbnails ([#1926](https://github.com/bcit-tlu/hriv/issues/1926)) ([9b1b145](https://github.com/bcit-tlu/hriv/commit/9b1b1456d6eb4a2862a4090c7d62485ac0ce8c96))
+* **inuksuks:** focus new Inuksuks, compact panel text and info-card star ([#1929](https://github.com/bcit-tlu/hriv/issues/1929)) ([aeb9a8b](https://github.com/bcit-tlu/hriv/commit/aeb9a8b9779bb01dcbe0653d7b83413772bb7d2f))
+* **inuksuks:** narrower viewer panel, own/instructor Inuksuks only, Shared View tab ([#1931](https://github.com/bcit-tlu/hriv/issues/1931)) ([00bbd28](https://github.com/bcit-tlu/hriv/commit/00bbd28c59eb4e572f7414ba13b2e01c40a4b7e1))
+* **inuksuks:** prevent stuck drawer menus and Board page redraws ([#1923](https://github.com/bcit-tlu/hriv/issues/1923)) ([ce9eb78](https://github.com/bcit-tlu/hriv/commit/ce9eb786e76f9e655ef596e97a4cead52f6ad433))
+
+
+### Code Refactoring
+
+* rename inuksuk to marker app-wide ([#1941](https://github.com/bcit-tlu/hriv/issues/1941)) ([0d48398](https://github.com/bcit-tlu/hriv/commit/0d48398ff4216bc77a88ee4089a0bb8441ee3661))
+
 ## [0.69.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.69.1...frontend-v0.69.2) (2026-11-14)
 
 

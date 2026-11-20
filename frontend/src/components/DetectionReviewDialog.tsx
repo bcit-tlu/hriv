@@ -492,8 +492,11 @@ function DialogBody({
           )}
         </Box>
         <Stack direction="row" spacing={1}>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button size="small" onClick={onClose}>
+            Cancel
+          </Button>
           <Button
+            size="small"
             variant="contained"
             onClick={handleApply}
             disabled={!dirty || saving}

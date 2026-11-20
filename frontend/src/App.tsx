@@ -30,6 +30,7 @@ import LinkIcon from '@mui/icons-material/Link'
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
 import ChangePasswordDialog from './components/ChangePasswordDialog'
+import ViewerImageDetails from './components/ViewerImageDetails'
 import ImageDetailsDrawer, { ImageDetailsTrigger } from './components/ImageDetailsDrawer'
 import ImageViewerInfoBar from './components/ImageViewerInfoBar'
 import ViewportDialog from './components/ViewportDialog'
@@ -155,9 +156,11 @@ import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
 import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
 import { parseShareableUrlParams, useShareableImageState } from './useShareableImageState'
+import BoardDialog from './components/BoardDialog'
 import BoardsPage from './components/BoardsPage'
-import { inuksukViewParams, parseBoardLocation } from './boardUtils'
-import type { ApiInuksuk } from './types'
+import { markerViewParams, parseBoardLocation } from './boardUtils'
+import type { ApiMarker } from './types'
+import type { ViewportState } from './components/imageViewerUtils'
 import { useCanvasAnnotations } from './useCanvasAnnotations'
 import type { CanvasDraftHandle } from './useCanvasAnnotations'
 import { useOverlayPersistence } from './useOverlayPersistence'
@@ -282,6 +285,41 @@ export default function App() {
   const [boardLocation, setBoardLocation] = useState(() =>
     parseBoardLocation(window.location.search),
   )
+  // Marker the viewer should select and reveal after external navigation
+  // (Boards & Markers list or a `?marker=` link). Seeded from the URL so
+  // deep links and history entries carry the target marker. `navigate`
+  // re-centres on the marker's saved view — skipped when the URL carries
+  // explicit viewport coords (a shared current view wins over the marker's).
+  // `viewport` then carries those coords so a mounted viewer can restore
+  // them on a same-image history pop, where initialViewport cannot.
+  const [markerFocus, setMarkerFocus] = useState<{
+    id: number
+    imageId: number
+    navigate?: boolean
+    viewport?: ViewportState
+  } | null>(() => {
+    const parsed = parseShareableUrlParams()
+    return parsed.markerId != null && parsed.imageId != null
+      ? {
+          id: parsed.markerId,
+          imageId: parsed.imageId,
+          navigate: parsed.viewport == null,
+          viewport: parsed.viewport,
+        }
+      : null
+  })
+  // Board opened from a viewer drawer heading — stays on the current image.
+  const [boardDialogId, setBoardDialogId] = useState<number | null>(null)
+  // Bumped when the in-place Board dialog mutates Marker/Board data so the
+  // mounted viewer reloads its marker list and Board summaries.
+  const [markersReloadTick, setMarkersReloadTick] = useState(0)
+  // Container of the viewer that opened the in-place Board dialog — the
+  // dialog portals into it so it stays visible in full-page viewer mode.
+  const [boardDialogContainer, setBoardDialogContainer] = useState<HTMLElement | null>(null)
+  const handleOpenBoardDialog = (id: number, container?: HTMLElement | null) => {
+    setBoardDialogId(id)
+    setBoardDialogContainer(container ?? null)
+  }
   const [page, setPage] = useState<Page>(() => {
     if (parseCollectionIdParam(window.location.search) != null) return 'collections'
     const p = new URLSearchParams(window.location.search).get('page')
@@ -311,12 +349,12 @@ export default function App() {
         ? 'browse'
         : page === 'collections' && features != null && !collectionsEnabled
           ? 'browse'
-          : page === 'boards' && features != null && !features.inuksuks
+          : page === 'boards' && features != null && !features.markers
             ? 'browse'
             : page
 
   useEffect(() => {
-    if (features == null || features.inuksuks || page !== 'boards') return
+    if (features == null || features.markers || page !== 'boards') return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- flags arrive after the deep link is parsed
     setPage('browse')
     setBoardLocation({ boardId: null })
@@ -392,6 +430,14 @@ export default function App() {
     })
   }, [path, currentUser, page])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
+  // Leaving the Marker-focused image consumes the focus, so returning to it
+  // through Browse/Collections opens the canvas without a Marker card.
+  const focusImageId = selectedImage?.id ?? null
+  const [prevFocusImageId, setPrevFocusImageId] = useState(focusImageId)
+  if (focusImageId !== prevFocusImageId) {
+    setPrevFocusImageId(focusImageId)
+    if (markerFocus && prevFocusImageId === markerFocus.imageId) setMarkerFocus(null)
+  }
   const graphImageEpoch = useRef(0)
   // "Image details" drawer open state; closed on every image change
   // (including leave -> return to the same image) and on canvas edit entry.
@@ -581,7 +627,7 @@ export default function App() {
   // active; the `move`/`loadCollection` actions are mounted unconditionally
   // so filed Browse collection moves (#1529) keep list/detail state in sync.
   const collectionsData = useCollectionsData({
-    inuksuksEnabled: features?.inuksuks === true,
+    markersEnabled: features?.markers === true,
     enabled: collectionsEnabled && page === 'collections' && currentUser != null,
     currentUser,
     selectedCollectionId,
@@ -949,11 +995,12 @@ export default function App() {
     path,
     collectionId: selectedCollectionId,
     collectionItemId: selectedCollectionItemId,
-    collectionSlotId: features?.inuksuks ? selectedCollectionSlotId : null,
+    collectionSlotId: features?.markers ? selectedCollectionSlotId : null,
     collectionFromBrowse,
     collectionTypeFilter:
       collectionsData.filters.type === 'all' ? undefined : collectionsData.filters.type,
     boardId: boardLocation.boardId,
+    focusedMarker: markerFocus,
     setPath,
     setSelectedImage,
   })
@@ -1102,6 +1149,7 @@ export default function App() {
         setSelectedImage(null)
         setViewportState(undefined)
         setOverlays([])
+        setMarkerFocus(null)
         return true
       }
 
@@ -1111,6 +1159,7 @@ export default function App() {
         setSelectedImage(null)
         setViewportState(undefined)
         setOverlays([])
+        setMarkerFocus(null)
         return true
       }
 
@@ -1135,7 +1184,18 @@ export default function App() {
       } else {
         setSelectedImage(null)
       }
-      setViewportState(parseShareableUrlParams().viewport)
+      const popped = parseShareableUrlParams()
+      setViewportState(popped.viewport)
+      setMarkerFocus(
+        popped.markerId != null && imageId != null
+          ? {
+              id: popped.markerId,
+              imageId,
+              navigate: popped.viewport == null,
+              viewport: popped.viewport,
+            }
+          : null,
+      )
       setOverlays([])
       return true
     },
@@ -2239,7 +2299,7 @@ export default function App() {
             {
               collection: String(selectedCollectionId),
               item: String(imageId),
-              ...(features?.inuksuks && slotId != null ? { slot: String(slotId) } : {}),
+              ...(features?.markers && slotId != null ? { slot: String(slotId) } : {}),
             },
             { collectionFromBrowse },
           )
@@ -2252,7 +2312,7 @@ export default function App() {
       pushNavState,
       selectedCollectionId,
       runCanvasNavigation,
-      features?.inuksuks,
+      features?.markers,
     ],
   )
 
@@ -2411,7 +2471,7 @@ export default function App() {
 
   const handleCreateCollectionWithImage = useCallback(
     async (values: CollectionFormValues) => {
-      const created = features?.inuksuks
+      const created = features?.markers
         ? await createCollectionWithImages(values, addToCollectionImageIds, true)
         : await createCollectionWithImages(values, addToCollectionImageIds)
       if (created.categoryId != null) refreshCategories()
@@ -2423,7 +2483,7 @@ export default function App() {
       refreshCategories,
       reloadMyCollectionsShelf,
       reportAddedToCollection,
-      features?.inuksuks,
+      features?.markers,
     ],
   )
 
@@ -2452,7 +2512,7 @@ export default function App() {
   // overwritten by the stale result (#1638 review).
   useEffect(() => {
     graphImageEpoch.current += 1
-  }, [page, selectedCollectionId, boardLocation.boardId, currentUser?.id, features?.inuksuks])
+  }, [page, selectedCollectionId, boardLocation.boardId, currentUser?.id, features?.markers])
   const handleOpenGraphImage = useCallback(
     (imageId: number) => {
       const epoch = ++graphImageEpoch.current
@@ -2468,8 +2528,8 @@ export default function App() {
     [handleOpenCollectionImage],
   )
 
-  const handleOpenBoardInuksuk = useCallback(
-    (item: ApiInuksuk) => {
+  const handleOpenBoardMarker = useCallback(
+    (item: ApiMarker) => {
       const epoch = ++graphImageEpoch.current
       void apiFetchImage(item.image_id)
         .then((api) => {
@@ -2482,8 +2542,9 @@ export default function App() {
             setPath([])
             setSelectedCollectionId(null)
             setCollectionFromBrowse(false)
+            setMarkerFocus({ id: item.id, imageId: item.image_id, navigate: true })
             setPage('browse')
-            pushNavState('browse', [], item.image_id, inuksukViewParams(item))
+            pushNavState('browse', [], item.image_id, markerViewParams(item))
           })
         })
         .catch((err) => {
@@ -2533,7 +2594,7 @@ export default function App() {
       canManageUsers={canManageUsers}
       canViewPeople={canViewPeople}
       collectionsEnabled={collectionsEnabled}
-      inuksuksEnabled={features?.inuksuks === true}
+      markersEnabled={features?.markers === true}
       currentUser={currentUser}
       bannerSlot={
         bannerPost ? (
@@ -2642,16 +2703,26 @@ export default function App() {
         >
           {page === 'boards' ? (
             <BoardsPage
-              key={`${currentUser.id}:${boardLocation.boardId}`}
-              enabled={features?.inuksuks === true}
+              key={currentUser.id}
+              enabled={features?.markers === true}
               currentUser={currentUser}
               programs={programs}
               groups={groups}
               boardId={boardLocation.boardId}
-              onOpenInuksuk={handleOpenBoardInuksuk}
+              onOpenMarker={handleOpenBoardMarker}
               collectionsEnabled={collectionsEnabled}
               categories={categories}
               onOpenCollection={handleOpenCollection}
+              onNavigateCategory={(categoryPath) => {
+                runCanvasNavigation(() => {
+                  setPath(categoryPath)
+                  setPage('browse')
+                  pushNavState(
+                    'browse',
+                    categoryPath.map((c) => c.id),
+                  )
+                })
+              }}
               onSelectBoard={(boardId) => {
                 graphImageEpoch.current++
                 setBoardLocation({ boardId })
@@ -2681,7 +2752,7 @@ export default function App() {
             />
           ) : page === 'collections' && !collectionsEnabled ? null : page === 'collections' ? (
             <CollectionsPage
-              inuksuksEnabled={features?.inuksuks === true}
+              markersEnabled={features?.markers === true}
               currentUser={currentUser}
               programs={programs}
               groups={groups}
@@ -2706,9 +2777,11 @@ export default function App() {
               onOpenCollection={handleOpenCollection}
               onCloseCollection={handleCloseCollection}
               onOpenImage={handleOpenCollectionImage}
+              onOpenBoard={handleOpenBoardDialog}
+              markersReloadSignal={markersReloadTick}
               onOpenImageById={handleOpenGraphImage}
               selectedCollectionItemId={selectedCollectionItemId}
-              selectedCollectionSlotId={features?.inuksuks ? selectedCollectionSlotId : null}
+              selectedCollectionSlotId={features?.markers ? selectedCollectionSlotId : null}
               onSelectCollectionItem={handleSelectCollectionItem}
               onReorderImages={collectionsData.reorderImages}
               onCollectionImageRenewed={handleCollectionImageRenewed}
@@ -2856,6 +2929,9 @@ export default function App() {
                   mb: 2,
                   gap: 1,
                   flexShrink: 0,
+                  // Buttons are size="small" (30.75px) — keep the row at the
+                  // historical 36.5px so content position doesn't shift.
+                  minHeight: 36.5,
                 }}
               >
                 <Box
@@ -2981,6 +3057,7 @@ export default function App() {
                         return (
                           <Button
                             variant="text"
+                            size="small"
                             startIcon={<VisibilityOff />}
                             disabled
                             aria-label="Visibility: Hidden by category"
@@ -2997,6 +3074,7 @@ export default function App() {
                         return (
                           <Button
                             variant="text"
+                            size="small"
                             startIcon={<VisibilityOff />}
                             onClick={() => {
                               toggleImageVisibility(selectedImage.id).catch(() => {})
@@ -3011,6 +3089,7 @@ export default function App() {
                       return (
                         <Button
                           variant="text"
+                          size="small"
                           startIcon={<Visibility />}
                           onClick={() => {
                             toggleImageVisibility(selectedImage.id).catch(() => {})
@@ -3033,6 +3112,7 @@ export default function App() {
                       <span>
                         <Button
                           variant="outlined"
+                          size="small"
                           startIcon={<PlaylistAddIcon />}
                           onClick={() => {
                             setAddToCollectionImageIds([selectedImage.id])
@@ -3051,6 +3131,7 @@ export default function App() {
                       <span>
                         <Button
                           variant="contained"
+                          size="small"
                           startIcon={<EditIcon />}
                           onClick={() => setImageEditOpen(true)}
                           disabled={canvasEditActive}
@@ -3061,16 +3142,19 @@ export default function App() {
                       </span>
                     </Tooltip>
                   )}
-                  <Tooltip title="Copy shareable link to clipboard">
-                    <Button
-                      variant="outlined"
-                      startIcon={<LinkIcon />}
-                      onClick={copyShareLink}
-                      sx={inactiveViewerActionSx}
-                    >
-                      Share View
-                    </Button>
-                  </Tooltip>
+                  {features?.markers !== true && (
+                    <Tooltip title="Copy shareable link to clipboard">
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<LinkIcon />}
+                        onClick={copyShareLink}
+                        sx={inactiveViewerActionSx}
+                      >
+                        Share View
+                      </Button>
+                    </Tooltip>
+                  )}
                 </Box>
               </Box>
 
@@ -3087,7 +3171,13 @@ export default function App() {
                 }}
               >
                 <ImageViewer
-                  inuksuksEnabled={features?.inuksuks === true}
+                  markersEnabled={features?.markers === true}
+                  onShareView={copyShareLink}
+                  onOpenBoard={handleOpenBoardDialog}
+                  markersReloadSignal={markersReloadTick}
+                  markerFocus={
+                    markerFocus && markerFocus.imageId === selectedImage.id ? markerFocus : null
+                  }
                   key={selectedImage.id}
                   height={{ xs: '70vh', md: '100%' }}
                   tileSources={selectedImage.tileSources}
@@ -3116,17 +3206,9 @@ export default function App() {
                       setViewerDialog(null)
                     }
                   }}
-                  viewportControl={
-                    <ImageDetailsTrigger
-                      open={imageDetailsOpen}
-                      onOpenChange={setImageDetailsOpen}
-                      disabled={canvasEditActive}
-                      triggerRef={imageDetailsTriggerRef}
-                    />
-                  }
-                  viewportOverlay={
-                    <>
-                      <ImageDetailsDrawer
+                  sidePanelDetails={
+                    features?.markers === true ? (
+                      <ViewerImageDetails
                         image={selectedImage}
                         programNames={ancestorProgramIds.map(
                           (pid) =>
@@ -3136,11 +3218,38 @@ export default function App() {
                           (gid) => groups.find((group) => group.id === gid)?.name ?? String(gid),
                         )}
                         measurement={selectedImageMeasurement}
-                        sourceInfo={imageSourceInfo}
+                      />
+                    ) : undefined
+                  }
+                  viewportControl={
+                    features?.markers === true ? null : (
+                      <ImageDetailsTrigger
                         open={imageDetailsOpen}
                         onOpenChange={setImageDetailsOpen}
+                        disabled={canvasEditActive}
                         triggerRef={imageDetailsTriggerRef}
                       />
+                    )
+                  }
+                  viewportOverlay={
+                    <>
+                      {features?.markers !== true && (
+                        <ImageDetailsDrawer
+                          image={selectedImage}
+                          programNames={ancestorProgramIds.map(
+                            (pid) =>
+                              programs.find((program) => program.id === pid)?.name ?? String(pid),
+                          )}
+                          groupNames={ancestorGroupIds.map(
+                            (gid) => groups.find((group) => group.id === gid)?.name ?? String(gid),
+                          )}
+                          measurement={selectedImageMeasurement}
+                          sourceInfo={imageSourceInfo}
+                          open={imageDetailsOpen}
+                          onOpenChange={setImageDetailsOpen}
+                          triggerRef={imageDetailsTriggerRef}
+                        />
+                      )}
                       <ViewportDialog
                         open={viewerDialog === 'note'}
                         title="Notes"
@@ -3218,6 +3327,9 @@ export default function App() {
                   flexWrap: 'wrap',
                   mb: 2,
                   gap: 1,
+                  // Buttons are size="small" (30.75px) — keep the row at the
+                  // historical 36.5px so content position doesn't shift.
+                  minHeight: 36.5,
                 }}
               >
                 <Box
@@ -3383,6 +3495,7 @@ export default function App() {
                               return (
                                 <Button
                                   variant="text"
+                                  size="small"
                                   startIcon={<VisibilityOff />}
                                   disabled
                                   aria-label="Visibility: Hidden by parent category"
@@ -3399,6 +3512,7 @@ export default function App() {
                               return (
                                 <Button
                                   variant="text"
+                                  size="small"
                                   startIcon={<VisibilityOff />}
                                   onClick={() => toggleCategoryVisibility(current.id)}
                                   aria-label="Visibility: Show category"
@@ -3411,6 +3525,7 @@ export default function App() {
                             return (
                               <Button
                                 variant="text"
+                                size="small"
                                 startIcon={<Visibility />}
                                 onClick={() => toggleCategoryVisibility(current.id)}
                                 aria-label="Visibility: Hide category"
@@ -3423,6 +3538,7 @@ export default function App() {
                         {collectionsEnabled && (
                           <Button
                             variant="outlined"
+                            size="small"
                             startIcon={<AddIcon />}
                             onClick={openBrowseCollectionCreate}
                             sx={categoryPageHiddenSx}
@@ -3434,6 +3550,7 @@ export default function App() {
                           liveCategoryPath.length < MAX_DEPTH && (
                             <Button
                               variant="outlined"
+                              size="small"
                               startIcon={<CreateNewFolderIcon />}
                               onClick={() => setAddCatOpen(true)}
                               sx={categoryPageHiddenSx}
@@ -3443,6 +3560,7 @@ export default function App() {
                           )}
                         <Button
                           variant="contained"
+                          size="small"
                           startIcon={<AddPhotoAlternateIcon />}
                           onClick={() => setUploadOpen(true)}
                           sx={categoryPageHiddenSx}
@@ -3671,6 +3789,7 @@ export default function App() {
         </DialogContent>
         <DialogActions>
           <Button
+            size="small"
             onClick={() => {
               setDiscardNavigationOpen(false)
               pendingNavigationRef.current = null
@@ -3679,7 +3798,12 @@ export default function App() {
           >
             Keep Editing
           </Button>
-          <Button color="error" onClick={confirmCanvasNavigationDiscard} disabled={canvasSaving}>
+          <Button
+            size="small"
+            color="error"
+            onClick={confirmCanvasNavigationDiscard}
+            disabled={canvasSaving}
+          >
             Discard Changes
           </Button>
         </DialogActions>
@@ -3952,8 +4076,8 @@ export default function App() {
         collections={searchableCollections.collections}
         collectionsEnabled={collectionsEnabled}
         onSelectCollection={handleOpenCollection}
-        inuksuksEnabled={features?.inuksuks === true}
-        onSelectInuksuk={handleOpenBoardInuksuk}
+        markersEnabled={features?.markers === true}
+        onSelectMarker={handleOpenBoardMarker}
         onSelectBoard={(boardId) =>
           runCanvasNavigation(() => {
             graphImageEpoch.current++
@@ -4016,6 +4140,30 @@ export default function App() {
             pushNavState('guide', [], null, { doc: slug })
             guideDocSeqRef.current += 1
             setGuideDocRequest({ slug, anchor, seq: guideDocSeqRef.current })
+          })
+        }}
+      />
+
+      {/* Board dialog opened from a viewer drawer heading — stays on the image. */}
+      <BoardDialog
+        boardId={boardDialogId}
+        currentUser={currentUser}
+        programs={programs}
+        groups={groups}
+        container={boardDialogContainer}
+        onClose={() => setBoardDialogId(null)}
+        onChanged={() => setMarkersReloadTick((tick) => tick + 1)}
+        onOpenMarker={(item) => {
+          setBoardDialogId(null)
+          handleOpenBoardMarker(item)
+        }}
+        onManage={(boardId) => {
+          setBoardDialogId(null)
+          runCanvasNavigation(() => {
+            graphImageEpoch.current++
+            setBoardLocation({ boardId })
+            setPage('boards')
+            pushNavState('boards', [], null, { board: String(boardId) })
           })
         }}
       />

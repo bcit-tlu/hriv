@@ -44,11 +44,11 @@ data:
         default "";
     }
 
-    # Whole-image thumbnails, exact Inuksuk paths, and shared tile scope
-    # must not reuse each other's verdicts. Inuksuk tokens bind one id.
+    # Whole-image thumbnails, exact Marker paths, and shared tile scope
+    # must not reuse each other's verdicts. Marker tokens bind one id.
     map $uri $tile_path_class_from_uri {
         ~^/api/tiles/[0-9]+/thumbnail\.jpeg$ thumb;
-        ~^/api/tiles/[0-9]+/inuksuks/[0-9]+\.jpg$ $uri;
+        ~^/api/tiles/[0-9]+/markers/[0-9]+\.jpg$ $uri;
         ~^/api/tiles/[0-9]+/collection_slots/[0-9]+\.jpg$ $uri;
         default tiles;
     }

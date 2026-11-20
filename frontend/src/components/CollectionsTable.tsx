@@ -384,7 +384,15 @@ export default function CollectionsTable({
     }
     return {
       cover: (
-        <TableCell sx={{ p: 0.5, width: 56 }}>
+        <TableCell
+          sx={{ p: 0.5, width: 56 }}
+          // Like the Manage Images thumbnail cell: clicking the cover opens
+          // the collection directly rather than firing the row handler.
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpenCollection(c.id)
+          }}
+        >
           {c.coverThumb ? (
             <RenewingThumbnail
               image={{ id: c.id, thumb: c.coverThumb }}
@@ -395,6 +403,7 @@ export default function CollectionsTable({
                 height: 40,
                 objectFit: 'cover',
                 borderRadius: 0.5,
+                cursor: 'pointer',
                 // Centered under the centered Cover header.
                 display: 'block',
                 mx: 'auto',

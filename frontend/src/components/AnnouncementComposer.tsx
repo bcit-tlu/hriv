@@ -471,16 +471,21 @@ function ComposerDialog({
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={saving}>
+        <Button size="small" onClick={onClose} disabled={saving}>
           Cancel
         </Button>
         <Box sx={{ flex: 1 }} />
         {(!isEdit || source?.status === 'draft') && (
-          <Button onClick={() => void submit(true)} disabled={!canSubmit}>
+          <Button size="small" onClick={() => void submit(true)} disabled={!canSubmit}>
             Save draft
           </Button>
         )}
-        <Button variant="contained" onClick={() => void submit(false)} disabled={!canSubmit}>
+        <Button
+          size="small"
+          variant="contained"
+          onClick={() => void submit(false)}
+          disabled={!canSubmit}
+        >
           {saving ? 'Saving…' : postLabel}
         </Button>
       </DialogActions>
