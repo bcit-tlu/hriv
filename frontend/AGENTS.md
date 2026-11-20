@@ -54,8 +54,10 @@ meaningfully distinct visual states, not one story per code path:
 - Story format: `Components/<Name>` title, `Basic` first, an attached
   `<Name>.docs.mdx` page, and `play` functions for small deterministic
   interactions — see [`docs/storybook-chromatic.md`](../docs/storybook-chromatic.md).
-- CI (`frontend-checks`) runs every story's `play` function and axe check:
-  `npm run test:storybook -- --run --no-file-parallelism` (one-time
+- CI (`frontend-checks`) runs every story's `play` function and axe check;
+  axe violations fail the build unless the story opts down to
+  `a11y.test: 'todo'` (tracked debt, #1345 — never use it to silence new
+  violations): `npm run test:storybook -- --run --no-file-parallelism` (one-time
   `npx playwright install chromium`). Update a story's `play` function in the
   same PR that changes the UI it asserts on. Dialogs render in a portal, so
   query `canvasElement.ownerDocument.body`, and wait (`waitFor`) for fade-in

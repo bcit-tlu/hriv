@@ -19,7 +19,8 @@ All test file names below are verified against `backend/tests/` and
 `frontend/tests/`. Run the **full** suite (`poetry run pytest` / `npm test`)
 before opening a PR; the targeted subsets are for fast inner-loop iteration.
 If you changed a component that has stories, also run its story file — CI runs
-every story's `play` function and axe check.
+every story's `play` function and axe check (axe violations only report, not
+fail, in stories marked `a11y.test: 'todo'`).
 
 ## Matrix
 
