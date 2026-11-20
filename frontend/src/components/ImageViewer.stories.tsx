@@ -2,7 +2,11 @@ import { useRef, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import Box from '@mui/material/Box'
 import ImageViewer from './ImageViewer'
-import ImageDetailsDrawer, { ImageDetailsTrigger } from './ImageDetailsDrawer'
+import { expect, userEvent, within } from 'storybook/test'
+import { MARKER_FIXTURE, BOARD_FIXTURE } from './markerFixtures'
+import { BOARD_AUTH } from './boardsFixtures'
+import { AuthContext } from '../authContextValue'
+import ImageDetailsDrawer, { ImageDetailsTrigger, ImageDetailsContent } from './ImageDetailsDrawer'
 
 const IMAGE = {
   copyright: '© Museo del Duomo',
@@ -13,37 +17,107 @@ const IMAGE = {
   fileSize: 4_718_592,
 }
 
-function ImageViewerExample() {
+function ImageViewerExample({ markersEnabled = false }: { markersEnabled?: boolean }) {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   return (
-    <Box sx={{ width: 720 }}>
-      <ImageViewer
-        tileSources="/sample.dzi"
-        height={420}
-        viewportControl={
-          <ImageDetailsTrigger open={open} onOpenChange={setOpen} triggerRef={triggerRef} />
-        }
-        viewportOverlay={
-          <ImageDetailsDrawer
-            image={IMAGE}
-            programNames={['Architecture']}
-            groupNames={['Image Research']}
-            open={open}
-            onOpenChange={setOpen}
-            triggerRef={triggerRef}
-          />
-        }
-      />
-    </Box>
+    <AuthContext.Provider value={BOARD_AUTH}>
+      <Box sx={{ width: '100%', height: '100vh' }}>
+        <ImageViewer
+          tileSources="/marker-image.json"
+          height="100%"
+          imageId={42}
+          markersEnabled={markersEnabled}
+          sidePanelDetails={
+            <ImageDetailsContent dense image={IMAGE} programNames={['Histology']} groupNames={[]} />
+          }
+          viewportControl={
+            markersEnabled ? null : (
+              <ImageDetailsTrigger open={open} onOpenChange={setOpen} triggerRef={triggerRef} />
+            )
+          }
+          viewportOverlay={
+            !markersEnabled && (
+              <ImageDetailsDrawer
+                image={IMAGE}
+                programNames={['Architecture']}
+                groupNames={['Image Research']}
+                open={open}
+                onOpenChange={setOpen}
+                triggerRef={triggerRef}
+              />
+            )
+          }
+        />
+      </Box>
+    </AuthContext.Provider>
   )
 }
 
 const meta = {
   title: 'Components/ImageViewer',
   component: ImageViewerExample,
+  parameters: { layout: 'fullscreen' },
+  beforeEach: () => {
+    localStorage.setItem(
+      'hrivpref:viewer-panel:user:9',
+      JSON.stringify({ open: false, tab: 'markers' }),
+    )
+    localStorage.removeItem('hriv.markerVisibility.9')
+    const original = globalThis.fetch
+    globalThis.fetch = async (input, init) => {
+      const path = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+        window.location.href,
+      ).pathname
+      if (/^\/api\/images\/\d+\/markers$/.test(path)) return Response.json([MARKER_FIXTURE])
+      if (path === '/api/boards') return Response.json([BOARD_FIXTURE])
+      return original(input, init)
+    }
+    return () => {
+      globalThis.fetch = original
+    }
+  },
 } satisfies Meta<typeof ImageViewerExample>
 
 export default meta
 
 export const WithImageDetails: StoryObj<typeof meta> = {}
+
+type Story = StoryObj<typeof meta>
+export const PanelClosed: Story = {
+  args: { markersEnabled: true },
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByRole('button', { name: 'Open viewer panel' })
+  },
+}
+export const PanelMarkers: Story = {
+  args: { markersEnabled: true },
+  parameters: {
+    chromatic: {
+      modes: {
+        light: { theme: 'light' },
+        dark: { theme: 'dark' },
+        mobile: { theme: 'light', viewport: { width: 390, height: 844 } },
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
+    await expect(
+      within(canvas.getByRole('complementary')).getByRole('button', {
+        name: 'View Marker: Rose window',
+      }),
+    ).toBeVisible()
+  },
+}
+export const PanelDetails: Story = {
+  args: { markersEnabled: true },
+  play: async (context) => {
+    await PanelMarkers.play?.(context)
+    await userEvent.click(
+      within(context.canvasElement).getByRole('button', { name: 'Show image details' }),
+    )
+  },
+}

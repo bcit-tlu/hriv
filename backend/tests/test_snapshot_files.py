@@ -1,4 +1,5 @@
 import errno
+import shutil
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,7 +14,7 @@ from app.snapshot_files import snapshot_files
 def test_snapshot_files_archive_round_trip(tmp_path, monkeypatch):
     data = tmp_path / "data"
     tiles = data / "tiles"
-    for namespace in ("inuksuks", "collection_slots"):
+    for namespace in ("markers", "collection_slots"):
         directory = tiles / "42" / namespace
         directory.mkdir(parents=True)
         (directory / "7.jpg").write_bytes(b"original JPEG")
@@ -34,6 +35,28 @@ def test_snapshot_files_archive_round_trip(tmp_path, monkeypatch):
     assert (tiles / "42" / "image.dzi").read_text() == "keep current tiles"
 
 
+def test_snapshot_files_restore_legacy_marker_namespace(tmp_path, monkeypatch):
+    """Pre-Marker archives' ``inuksuks/`` JPEGs restore into ``markers/``."""
+    data = tmp_path / "data"
+    tiles = data / "tiles"
+    legacy = tiles / "42" / "inuksuks"
+    legacy.mkdir(parents=True)
+    (legacy / "7.jpg").write_bytes(b"legacy JPEG")
+    (legacy / ".partial.jpg").write_bytes(b"partial")
+    (data / "source_images").mkdir()
+    monkeypatch.setattr(settings, "tiles_dir", str(tiles))
+    monkeypatch.setattr(settings, "source_images_dir", str(data / "source_images"))
+    archive = tmp_path / "archive.tar.gz"
+    _create_tar_file(str(data), str(archive))
+    shutil.rmtree(legacy)
+    (tiles / "42" / "image.dzi").write_text("keep current tiles")
+    _extract_and_restore(str(archive), str(tmp_path / "staging"), str(data), str(tiles), str(data / "source_images"))
+    assert (tiles / "42" / "markers" / "7.jpg").read_bytes() == b"legacy JPEG"
+    assert not (tiles / "42" / "inuksuks").exists()
+    assert not (tiles / "42" / "markers" / ".partial.jpg").exists()
+    assert (tiles / "42" / "image.dzi").read_text() == "keep current tiles"
+
+
 def test_snapshot_files_skip_symlinks_and_missing_directories(tmp_path):
     assert list(snapshot_files(tmp_path / "missing")) == []
     external = tmp_path / "external"
@@ -41,7 +64,7 @@ def test_snapshot_files_skip_symlinks_and_missing_directories(tmp_path):
     (external / "1.jpg").write_bytes(b"private")
     tiles = tmp_path / "tiles"
     (tiles / "42").mkdir(parents=True)
-    (tiles / "42" / "inuksuks").symlink_to(external, target_is_directory=True)
+    (tiles / "42" / "markers").symlink_to(external, target_is_directory=True)
     assert list(snapshot_files(tiles)) == []
 
 
@@ -49,7 +72,7 @@ def test_snapshot_files_skip_symlinks_and_missing_directories(tmp_path):
 def test_snapshot_file_restore_rolls_back_with_other_entries(tmp_path, monkeypatch, failure_phase):
     data = tmp_path / "data"
     tiles = data / "tiles"
-    for namespace, name in (("inuksuks", "1.jpg"), ("collection_slots", "2.jpg")):
+    for namespace, name in (("markers", "1.jpg"), ("collection_slots", "2.jpg")):
         directory = tiles / "42" / namespace
         directory.mkdir(parents=True)
         (directory / name).write_bytes(b"before")
@@ -82,7 +105,7 @@ def test_snapshot_file_restore_rolls_back_with_other_entries(tmp_path, monkeypat
 def test_snapshot_restore_stages_on_separate_tiles_filesystem(tmp_path, monkeypatch):
     data = tmp_path / "data"
     tiles = data / "tiles"
-    for namespace in ("inuksuks", "collection_slots"):
+    for namespace in ("markers", "collection_slots"):
         directory = tiles / "42" / namespace
         directory.mkdir(parents=True)
         (directory / "7.jpg").write_bytes(b"original JPEG")

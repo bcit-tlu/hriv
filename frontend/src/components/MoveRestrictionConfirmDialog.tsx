@@ -163,8 +163,10 @@ export default function MoveRestrictionConfirmDialog({
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onCancel}>Cancel</Button>
-        <Button onClick={onConfirm} variant="contained">
+        <Button size="small" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button size="small" onClick={onConfirm} variant="contained">
           {hasRestrictionChange ? 'Move Anyway' : 'Move'}
         </Button>
       </DialogActions>

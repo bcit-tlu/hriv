@@ -100,10 +100,10 @@ export default function MoveCollectionDialog({
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={saving}>
+        <Button size="small" onClick={onClose} disabled={saving}>
           Cancel
         </Button>
-        <Button onClick={handleMove} variant="contained" disabled={saving}>
+        <Button size="small" onClick={handleMove} variant="contained" disabled={saving}>
           {saving ? 'Moving…' : 'Move'}
         </Button>
       </DialogActions>

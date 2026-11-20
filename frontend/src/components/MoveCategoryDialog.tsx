@@ -83,8 +83,10 @@ export default function MoveCategoryDialog({
         />
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button onClick={handleMove} variant="contained">
+        <Button size="small" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button size="small" onClick={handleMove} variant="contained">
           Move
         </Button>
       </DialogActions>

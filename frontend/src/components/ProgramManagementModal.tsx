@@ -97,6 +97,7 @@ export default function ProgramManagementModal({
             helperText="IdP group name for auto-assignment"
           />
           <Button
+            size="small"
             variant="contained"
             onClick={handleAdd}
             disabled={!newName.trim()}
@@ -187,7 +188,9 @@ export default function ProgramManagementModal({
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+        <Button size="small" onClick={onClose}>
+          Close
+        </Button>
       </DialogActions>
     </Dialog>
   )

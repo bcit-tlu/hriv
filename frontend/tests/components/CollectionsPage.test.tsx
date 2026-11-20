@@ -329,7 +329,7 @@ describe('CollectionsPage', () => {
         ],
       })
       expect(screen.getByTestId('collection-card-action-area')).toHaveStyle({
-        filter: 'grayscale(100%)',
+        filter: 'grayscale(1)',
       })
       // Inherited hidden state desaturates but carries no marker — the
       // eye-off icon is reserved for the collection's own hidden flag.
@@ -1955,10 +1955,10 @@ describe('CollectionsPage', () => {
       expect(screen.getByRole('button', { name: 'Show collection' })).toBeInTheDocument()
       // The action buttons greyscale like the hidden image view's controls.
       expect(screen.getByRole('button', { name: 'Manage Images' })).toHaveStyle({
-        filter: 'grayscale(100%)',
+        filter: 'grayscale(1)',
       })
       expect(screen.getByRole('button', { name: 'Edit collection' })).toHaveStyle({
-        filter: 'grayscale(100%)',
+        filter: 'grayscale(1)',
       })
       // …and the flag reaches the viewer so the filmstrip desaturates too.
       expect(sequenceViewerProps.current?.hidden).toBe(true)
@@ -1990,10 +1990,10 @@ describe('CollectionsPage', () => {
       expect(screen.queryByRole('button', { name: 'Hide collection' })).not.toBeInTheDocument()
       // Header controls desaturate like an own-hidden collection (#1567).
       expect(screen.getByRole('button', { name: 'Manage Images' })).toHaveStyle({
-        filter: 'grayscale(100%)',
+        filter: 'grayscale(1)',
       })
       expect(screen.getByRole('button', { name: 'Edit collection' })).toHaveStyle({
-        filter: 'grayscale(100%)',
+        filter: 'grayscale(1)',
       })
       // …and the flag reaches the viewer so the filmstrip desaturates too.
       expect(sequenceViewerProps.current?.hidden).toBe(true)

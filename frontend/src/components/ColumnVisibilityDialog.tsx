@@ -169,7 +169,9 @@ export default function ColumnVisibilityDialog<Key extends string>({
         </DragDropProvider>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Done</Button>
+        <Button size="small" onClick={onClose}>
+          Done
+        </Button>
       </DialogActions>
     </Dialog>
   )

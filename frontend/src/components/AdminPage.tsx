@@ -1685,8 +1685,15 @@ export default function AdminPage() {
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRestoreConfirmOpen(false)}>Cancel</Button>
-          <Button color="warning" variant="contained" onClick={() => void handleConfirmRestore()}>
+          <Button size="small" onClick={() => setRestoreConfirmOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="small"
+            color="warning"
+            variant="contained"
+            onClick={() => void handleConfirmRestore()}
+          >
             Restore
           </Button>
         </DialogActions>
@@ -1848,6 +1855,7 @@ export default function AdminPage() {
                 logTask.status === 'pending' ||
                 logTask.status === 'running') && (
                 <Button
+                  size="small"
                   color="warning"
                   startIcon={<CancelIcon />}
                   onClick={() => handleCancel(logTask.id)}
@@ -1857,6 +1865,7 @@ export default function AdminPage() {
               )}
               {logTask.status === 'cancelling' && (
                 <Button
+                  size="small"
                   color="error"
                   startIcon={<CancelIcon />}
                   onClick={() => handleCancel(logTask.id, true)}
@@ -1866,13 +1875,16 @@ export default function AdminPage() {
               )}
               {logTask.status === 'completed' && logTask.result_filename && (
                 <Button
+                  size="small"
                   onClick={() => downloadAdminTaskResult(logTask.id)}
                   startIcon={<DownloadIcon />}
                 >
                   Download
                 </Button>
               )}
-              <Button onClick={() => setLogTask(null)}>Close</Button>
+              <Button size="small" onClick={() => setLogTask(null)}>
+                Close
+              </Button>
             </DialogActions>
           </>
         )}

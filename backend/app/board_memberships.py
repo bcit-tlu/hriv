@@ -5,25 +5,25 @@ from collections.abc import Iterable
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Board, BoardInuksuk, Inuksuk
+from .models import Board, BoardMarker, Marker
 
 
 async def bump_board_membership_versions(
     db: AsyncSession, board_ids: Iterable[int] = (), *,
-    inuksuk_ids: Iterable[int] = (), image_ids: Iterable[int] = (),
+    marker_ids: Iterable[int] = (), image_ids: Iterable[int] = (),
 ) -> None:
-    board_ids, inuksuk_ids, image_ids = set(board_ids), set(inuksuk_ids), set(image_ids)
+    board_ids, marker_ids, image_ids = set(board_ids), set(marker_ids), set(image_ids)
     affected = []
     if board_ids:
         affected.append(Board.id.in_(board_ids))
-    if inuksuk_ids:
+    if marker_ids:
         affected.append(Board.id.in_(
-            select(BoardInuksuk.board_id).where(BoardInuksuk.inuksuk_id.in_(inuksuk_ids))
+            select(BoardMarker.board_id).where(BoardMarker.marker_id.in_(marker_ids))
         ))
     if image_ids:
         affected.append(Board.id.in_(
-            select(BoardInuksuk.board_id).join(Inuksuk, Inuksuk.id == BoardInuksuk.inuksuk_id)
-            .where(Inuksuk.image_id.in_(image_ids))
+            select(BoardMarker.board_id).join(Marker, Marker.id == BoardMarker.marker_id)
+            .where(Marker.image_id.in_(image_ids))
         ))
     if not affected:
         return
