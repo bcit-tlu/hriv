@@ -63,7 +63,7 @@ function services() {
 }
 const LAST_BOARD = 'hrivpref:marker:lastBoard:9'
 const RECENT_BOARDS = 'hrivpref:marker:recentBoards:9'
-const BOARDS_BUTTON = /^(Choose Boards|Save to another Board)$/
+const BOARDS_BUTTON = /^(Choose Boards|Choose a Board|Save to another Board)$/
 const picker = () => screen.getByRole('dialog', { name: 'Save to' })
 const row = (name: string) =>
   within(picker()).getByText(name, { exact: true }).closest('[role="button"]') as HTMLElement
@@ -439,7 +439,8 @@ describe('MarkerFormDialog', () => {
     await waitFor(() => expect(within(savedTo).getAllByRole('listitem')).toHaveLength(1))
     await user.click(screen.getByRole('button', { name: 'Remove from Architecture inspiration' }))
     expect(within(savedTo).queryAllByRole('listitem')).toHaveLength(0)
-    expect(within(savedTo).getByText('Save this Marker to at least one Board.')).toBeVisible()
+    expect(within(savedTo).queryByRole('button', { name: 'Save to another Board' })).toBeNull()
+    expect(within(savedTo).getByRole('button', { name: 'Choose a Board' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
     await openPicker(user)
     await user.click(row('Architecture inspiration'))

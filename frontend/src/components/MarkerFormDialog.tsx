@@ -10,7 +10,6 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import ButtonGroup from '@mui/material/ButtonGroup'
 import IconButton from '@mui/material/IconButton'
-import FormHelperText from '@mui/material/FormHelperText'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
@@ -719,22 +718,38 @@ export default function MarkerFormDialog({
                   ))}
                 </Stack>
               )}
-              {!loading && assignments.length === 0 && (
-                <FormHelperText error sx={{ mx: 0 }}>
-                  Save this Marker to at least one Board.
-                </FormHelperText>
+              {!loading && assignments.length === 0 ? (
+                // Empty slot in place of the rows: a Marker needs one Board.
+                <Button
+                  ref={boardsButtonRef}
+                  fullWidth
+                  variant="outlined"
+                  startIcon={<Add />}
+                  aria-haspopup="dialog"
+                  disabled={busy}
+                  onClick={openPicker}
+                  sx={{
+                    justifyContent: 'flex-start',
+                    minHeight: 42,
+                    borderStyle: 'dashed',
+                    textTransform: 'none',
+                  }}
+                >
+                  Choose a Board
+                </Button>
+              ) : (
+                <Button
+                  ref={boardsButtonRef}
+                  size="small"
+                  startIcon={<Add />}
+                  aria-haspopup="dialog"
+                  disabled={busy || loading}
+                  onClick={openPicker}
+                  sx={{ mt: 0.5 }}
+                >
+                  Save to another Board
+                </Button>
               )}
-              <Button
-                ref={boardsButtonRef}
-                size="small"
-                startIcon={<Add />}
-                aria-haspopup="dialog"
-                disabled={busy || loading}
-                onClick={openPicker}
-                sx={{ mt: 0.5 }}
-              >
-                Save to another Board
-              </Button>
             </Box>
           ) : null
         ) : (

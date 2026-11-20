@@ -1580,7 +1580,8 @@ selection MouseTracker ignores their presses.
   to popover of editable Board rows (cover, name, Marker count, checkmark, aria-pressed)
   ordered selected, then recently used (`hrivpref:marker:recentBoards:<userId>`, falling
   back to the legacy lastBoard key), then name with ID ties; Search Boards appears above
-  8 rows. Editing shows a Saved to list with remove × and Save to another Board. The
+  8 rows. Editing shows a Saved to list with remove × and Save to another Board (a dashed
+  Choose a Board row when empty). The
   picker's Create Board slides a New Board
   pane in from the right over the form, reusing the Boards & Markers Add Board field
   set (name, description, visibility and restricted Program/Group chips); a top-left

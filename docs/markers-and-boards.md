@@ -384,7 +384,8 @@ ordered selected, most recently used, then by name (case-insensitive, stable ID
 ties), with **Search Boards** above more than 8 rows, and Create Board / Done in
 its footer. Toggling does not reorder rows. Editing replaces the split button
 with **Save**/**Save changes** and shows a **Saved to** list of Board rows with a
-remove × plus **Save to another Board**, which opens the same picker. Create Board
+remove × plus **Save to another Board**, which opens the same picker; with no
+Board left, a dashed **Choose a Board** row replaces both. Create Board
 slides a **New Board** pane in from the right over the form — the same fields
 as the Boards & Markers page's Add Board dialog (name, description, visibility
 and restricted Program/Group chips, lazily loaded) — and a top-left back arrow
