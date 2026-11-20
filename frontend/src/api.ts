@@ -4,20 +4,20 @@ import type { CollectionSlot, SlotViewport } from './types'
 import type {
   ApiBoard,
   ApiBoardSummary,
-  ApiInuksuk,
+  ApiMarker,
   BoardAssignment,
   BoardVisibility,
-  InuksukSource,
-  InuksukView,
+  MarkerSource,
+  MarkerView,
 } from './types'
 export type {
   ApiBoard,
   ApiBoardSummary,
-  ApiInuksuk,
+  ApiMarker,
   BoardAssignment,
   BoardVisibility,
-  InuksukSource,
-  InuksukView,
+  MarkerSource,
+  MarkerView,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? ''
@@ -1042,14 +1042,14 @@ export function fetchImageCollectionsMap(
 export interface CollectionSlotInput {
   id?: number
   image_id: number
-  inuksuk_id?: number
+  marker_id?: number
   viewport_state?: SlotViewport | null
   label?: string | null
 }
 
 export interface CollectionSources {
   slots?: CollectionSlotInput[]
-  inuksuk_ids?: number[]
+  marker_ids?: number[]
   source_board_id?: number
 }
 
@@ -2669,7 +2669,7 @@ export interface VersionsResponse {
 
 /** ``GET /api/features`` — deployment feature flags (docs/collections.md). */
 export interface ApiFeatures {
-  inuksuks?: boolean
+  markers?: boolean
   collections_student_access?: boolean
   collections: boolean
   collections_home_shelf: boolean
@@ -2689,7 +2689,7 @@ export interface BoardFilters {
     | 'description'
     | 'visibility'
     | 'owner'
-    | 'inuksuk_count'
+    | 'marker_count'
     | 'sort_order'
     | 'created_at'
     | 'updated_at'
@@ -2698,11 +2698,11 @@ export interface BoardFilters {
   page?: number
   page_size?: number
 }
-export interface InuksukFilters extends Omit<BoardFilters, 'visibility' | 'sort'> {
+export interface MarkerFilters extends Omit<BoardFilters, 'visibility' | 'sort'> {
   board_id?: number
   image_id?: number
   favourite?: boolean
-  scope?: InuksukSource
+  scope?: MarkerSource
   sort?:
     | 'id'
     | 'title'
@@ -2720,7 +2720,7 @@ export interface BoardCreate {
   program_ids?: number[]
   group_ids?: number[]
 }
-export interface InuksukCreate extends InuksukView {
+export interface MarkerCreate extends MarkerView {
   image_id: number
   title: string
   description?: string | null
@@ -2728,7 +2728,7 @@ export interface InuksukCreate extends InuksukView {
   board_assignments: BoardAssignment[]
 }
 type Versioned = { version: number }
-function inuksukQuery(filters: BoardFilters | InuksukFilters): string {
+function markerQuery(filters: BoardFilters | MarkerFilters): string {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(filters)) {
     if (value === undefined) continue
@@ -2740,18 +2740,25 @@ export function fetchBoards(
   filters: BoardFilters = {},
   init?: RequestInit,
 ): Promise<ApiBoardSummary[]> {
-  return request('/boards' + inuksukQuery(filters), init)
+  return request('/boards' + markerQuery(filters), init)
 }
 export function fetchBoard(id: number, init?: RequestInit): Promise<ApiBoard> {
   return request(`/boards/${id}`, init)
 }
-export function fetchInuksuk(id: number, init?: RequestInit): Promise<ApiInuksuk> {
-  return request(`/inuksuks/${id}`, init)
+export function fetchMarker(id: number, init?: RequestInit): Promise<ApiMarker> {
+  return request(`/markers/${id}`, init)
 }
 export function createBoard(body: BoardCreate): Promise<ApiBoard> {
   return request('/boards', { method: 'POST', body: JSON.stringify(body) })
 }
-export function updateBoard(id: number, body: Partial<BoardCreate> & Versioned): Promise<ApiBoard> {
+export interface BoardUpdate extends Partial<BoardCreate> {
+  /** Pinned cover member; `null` clears the pin (first-member fallback). */
+  cover_marker_id?: number | null
+  /** Explicit "no cover" pick — the tile renders the placeholder icon. */
+  cover_blank?: boolean
+  version?: number
+}
+export function updateBoard(id: number, body: BoardUpdate & Versioned): Promise<ApiBoard> {
   return request(`/boards/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
 }
 export function deleteBoard(id: number, version: number): Promise<void> {
@@ -2772,59 +2779,59 @@ export function transferBoard(
 ): Promise<ApiBoard> {
   return request(`/boards/${id}/transfer`, { method: 'POST', body: JSON.stringify(body) })
 }
-export function reorderBoardInuksuks(
+export function reorderBoardMarkers(
   id: number,
-  body: { items: { inuksuk_id: number }[] } & Versioned,
+  body: { items: { marker_id: number }[] } & Versioned,
 ): Promise<ApiBoard> {
-  return request(`/boards/${id}/inuksuks/order`, { method: 'PUT', body: JSON.stringify(body) })
+  return request(`/boards/${id}/markers/order`, { method: 'PUT', body: JSON.stringify(body) })
 }
-export function removeBoardInuksuk(
+export function removeBoardMarker(
   id: number,
-  inuksukId: number,
+  markerId: number,
   version: number,
 ): Promise<ApiBoard> {
-  return request(`/boards/${id}/inuksuks/${inuksukId}`, {
+  return request(`/boards/${id}/markers/${markerId}`, {
     method: 'DELETE',
     headers: { 'If-Match': `"${version}"` },
   })
 }
-export function fetchInuksuks(
-  filters: InuksukFilters = {},
+export function fetchMarkers(
+  filters: MarkerFilters = {},
   init?: RequestInit,
-): Promise<ApiInuksuk[]> {
-  return request('/inuksuks' + inuksukQuery(filters), init)
+): Promise<ApiMarker[]> {
+  return request('/markers' + markerQuery(filters), init)
 }
-export function fetchImageInuksuks(imageId: number, init?: RequestInit): Promise<ApiInuksuk[]> {
-  return request(`/images/${imageId}/inuksuks`, init)
+export function fetchImageMarkers(imageId: number, init?: RequestInit): Promise<ApiMarker[]> {
+  return request(`/images/${imageId}/markers`, init)
 }
-export function createInuksuk(body: InuksukCreate): Promise<ApiInuksuk> {
-  return request('/inuksuks', { method: 'POST', body: JSON.stringify(body) })
+export function createMarker(body: MarkerCreate): Promise<ApiMarker> {
+  return request('/markers', { method: 'POST', body: JSON.stringify(body) })
 }
-export function updateInuksuk(
+export function updateMarker(
   id: number,
-  body: Partial<Omit<InuksukCreate, 'image_id'>> & Versioned,
-): Promise<ApiInuksuk> {
-  return request(`/inuksuks/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+  body: Partial<Omit<MarkerCreate, 'image_id'>> & Versioned,
+): Promise<ApiMarker> {
+  return request(`/markers/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
 }
-export function deleteInuksuk(id: number, version: number): Promise<void> {
-  return request(`/inuksuks/${id}`, { method: 'DELETE', headers: { 'If-Match': `"${version}"` } })
+export function deleteMarker(id: number, version: number): Promise<void> {
+  return request(`/markers/${id}`, { method: 'DELETE', headers: { 'If-Match': `"${version}"` } })
 }
-export function reorderInuksuks(
-  items: { inuksuk_id: number; version: number }[],
-): Promise<ApiInuksuk[]> {
-  return request('/inuksuks/order', { method: 'PUT', body: JSON.stringify({ items }) })
+export function reorderMarkers(
+  items: { marker_id: number; version: number }[],
+): Promise<ApiMarker[]> {
+  return request('/markers/order', { method: 'PUT', body: JSON.stringify({ items }) })
 }
-export function replaceInuksukOwners(
+export function replaceMarkerOwners(
   id: number,
   body: { user_ids: number[] } & Versioned,
-): Promise<ApiInuksuk> {
-  return request(`/inuksuks/${id}/owners`, { method: 'PUT', body: JSON.stringify(body) })
+): Promise<ApiMarker> {
+  return request(`/markers/${id}/owners`, { method: 'PUT', body: JSON.stringify(body) })
 }
-export type InuksukConflict = Pick<
-  ApiInuksuk,
+export type MarkerConflict = Pick<
+  ApiMarker,
   'id' | 'version' | 'title' | 'description' | 'favourite' | 'board_ids' | 'permissions'
 >
-function isInuksukConflict(value: unknown): value is InuksukConflict {
+function isMarkerConflict(value: unknown): value is MarkerConflict {
   return (
     isRecord(value) &&
     typeof value.id === 'number' &&
@@ -2839,9 +2846,9 @@ function isInuksukConflict(value: unknown): value is InuksukConflict {
     typeof value.permissions.can_delete === 'boolean'
   )
 }
-export function inuksukConflictCurrent(err: unknown): InuksukConflict | null {
+export function markerConflictCurrent(err: unknown): MarkerConflict | null {
   if (!(err instanceof ApiError) || err.status !== 409) return null
-  return isInuksukConflict(err.data) ? err.data : null
+  return isMarkerConflict(err.data) ? err.data : null
 }
 
 export function fetchVersions(): Promise<VersionsResponse> {

@@ -17,7 +17,7 @@ describe('useFeatures', () => {
     expect(result.current).toBeNull()
     await waitFor(() =>
       expect(result.current).toEqual({
-        inuksuks: false,
+        markers: false,
         collections: true,
         collectionsStudentAccess: true,
         collectionsHomeShelf: true,
@@ -31,7 +31,7 @@ describe('useFeatures', () => {
     const { result } = renderHook(() => useFeatures())
     await waitFor(() =>
       expect(result.current).toEqual({
-        inuksuks: false,
+        markers: false,
         collections: false,
         collectionsStudentAccess: true,
         collectionsHomeShelf: false,
@@ -44,7 +44,7 @@ describe('useFeatures', () => {
     const { result } = renderHook(() => useFeatures())
     await waitFor(() =>
       expect(result.current).toEqual({
-        inuksuks: false,
+        markers: false,
         collections: false,
         collectionsStudentAccess: true,
         collectionsHomeShelf: false,
@@ -62,12 +62,12 @@ describe('useFeatures', () => {
   })
 
   it.each([true, false, undefined, 'true'])(
-    'only enables Inuksuks for boolean true (%s)',
+    'only enables Markers for boolean true (%s)',
     async (value) => {
-      fetchFeatures.mockResolvedValue({ inuksuks: value })
+      fetchFeatures.mockResolvedValue({ markers: value })
       const { result } = renderHook(() => useFeatures())
-      await waitFor(() => expect(result.current?.inuksuks).toBe(value === true))
-      expect(DEFAULT_FEATURES.inuksuks).toBe(false)
+      await waitFor(() => expect(result.current?.markers).toBe(value === true))
+      expect(DEFAULT_FEATURES.markers).toBe(false)
     },
   )
 

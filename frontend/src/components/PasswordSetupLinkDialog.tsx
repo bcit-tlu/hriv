@@ -122,9 +122,16 @@ export default function PasswordSetupLinkDialog({
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+        <Button size="small" onClick={onClose}>
+          Close
+        </Button>
         {link && (
-          <Button variant="contained" startIcon={<ContentCopyIcon />} onClick={() => void copy()}>
+          <Button
+            size="small"
+            variant="contained"
+            startIcon={<ContentCopyIcon />}
+            onClick={() => void copy()}
+          >
             Copy link
           </Button>
         )}

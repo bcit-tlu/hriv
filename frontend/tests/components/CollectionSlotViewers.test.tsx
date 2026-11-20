@@ -88,11 +88,13 @@ it('steps between same-image coordinates by slot and remounts at the seeded view
   const props = {
     ...actions,
     collection,
-    inuksuksEnabled: true,
+    markersEnabled: true,
     itemId: 100,
     onSelectItem: selected,
   }
   const { rerender } = render(<SequenceCollectionViewer {...props} slotId={11} />)
+  expect(screen.getByTestId('sequence-thumbnail-strip').textContent).toBe('')
+  expect(screen.getByRole('heading', { name: 'Study 1' })).toBeVisible()
   expect(screen.getByTestId('slot-viewer')).toHaveAttribute('data-x', '0.2')
   expect(
     screen.getByRole('button', { name: 'Go to Study 1' }).querySelector('img'),
@@ -104,14 +106,38 @@ it('steps between same-image coordinates by slot and remounts at the seeded view
   expect(screen.getByTestId('slot-viewer')).toHaveAttribute('data-x', '0.8')
   expect(viewers.has(0.2)).toBe(false)
   expect(viewers.get(0.8)?.state.rotation).toBe(30)
+  expect(screen.getByTestId('sequence-thumbnail-strip').textContent).toBe('')
+  expect(screen.getByRole('heading', { name: 'Study 2' })).toBeVisible()
 })
+
+it.each([null, ''])(
+  'uses the image name when the slot label is %j without a visible thumbnail caption',
+  (label) => {
+    render(
+      <SequenceCollectionViewer
+        {...actions}
+        collection={makeCollection({
+          type: 'sequence',
+          images: [{ ...members[0], slot: { ...members[0].slot, label } }],
+        })}
+        markersEnabled
+        itemId={100}
+        slotId={11}
+        onSelectItem={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('sequence-thumbnail-strip').textContent).toBe('')
+    expect(screen.getByRole('button', { name: 'Go to One slide' })).toBeEnabled()
+    expect(screen.getByRole('img', { name: 'One slide' })).toHaveAttribute('src', '/crop-0.jpg')
+  },
+)
 
 it('falls back to the real image parameter for an unavailable slot', () => {
   render(
     <SequenceCollectionViewer
       {...actions}
       collection={makeCollection({ images: members })}
-      inuksuksEnabled
+      markersEnabled
       itemId={100}
       slotId={999}
       onSelectItem={vi.fn()}
@@ -126,7 +152,7 @@ it('compares one slide in two independent panes and saves slot viewports only', 
     <SynchronizedCollectionViewer
       {...actions}
       collection={makeCollection({ type: 'synchronized', images: members })}
-      inuksuksEnabled
+      markersEnabled
       onSaveViewport={save}
     />,
   )

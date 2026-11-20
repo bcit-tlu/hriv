@@ -1,4 +1,4 @@
-"""Batch-loaded Board/Inuksuk visibility and response projections."""
+"""Batch-loaded Board/Marker visibility and response projections."""
 
 from collections import defaultdict
 from collections.abc import Callable, Iterable
@@ -17,17 +17,17 @@ from sqlalchemy.orm import lazyload, selectinload
 
 from .auth import auth_settings
 from .authz import (
-    can_change_board_scope, can_delete_board, can_delete_inuksuk,
-    can_edit_board, can_edit_inuksuk, can_transfer_board, can_view_board,
-    is_inuksuk_owner,
+    can_change_board_scope, can_delete_board, can_delete_marker,
+    can_edit_board, can_edit_marker, can_transfer_board, can_view_board,
+    is_marker_owner,
 )
 from .collection_views import _owners_out
-from .models import Board, BoardInuksuk, Image, Inuksuk, User
+from .models import Board, BoardMarker, Image, Marker, User
 from .schemas import (
     BoardOut, BoardPermissionsOut,
-    BoardSummaryOut, CollectionOwnerOut, InuksukOut, InuksukPermissionsOut,
+    BoardSummaryOut, CollectionOwnerOut, MarkerOut, MarkerPermissionsOut,
 )
-from .tile_tokens import append_inuksuk_thumb_token, append_thumb_token
+from .tile_tokens import append_marker_thumb_token, append_thumb_token
 from .visibility import get_student_excluded_category_ids
 
 
@@ -57,21 +57,21 @@ class BoardViewerContext:
             image.category_id not in self.excluded_category_ids
         )
 
-    def visible_boards(self, links: Iterable[BoardInuksuk]) -> list[Board]:
+    def visible_boards(self, links: Iterable[BoardMarker]) -> list[Board]:
         return sorted(
             (link.board for link in links if self.can_view_board(link.board)),
             key=lambda board: board.id,
         )
 
-    def can_view_inuksuk(self, inuksuk: Inuksuk, boards: list[Board]) -> bool:
-        return self.can_view_image(inuksuk.image) and (
+    def can_view_marker(self, marker: Marker, boards: list[Board]) -> bool:
+        return self.can_view_image(marker.image) and (
             self.user.role != "student"
-            or is_inuksuk_owner(self.user, inuksuk)
+            or is_marker_owner(self.user, marker)
             or bool(boards)
         )
 
-    def source(self, inuksuk: Inuksuk, boards: list[Board]) -> str | None:
-        if is_inuksuk_owner(self.user, inuksuk):
+    def source(self, marker: Marker, boards: list[Board]) -> str | None:
+        if is_marker_owner(self.user, marker):
             return "mine"
         if any(
             b.owner_program_id is not None
@@ -91,33 +91,36 @@ def board_load_options() -> tuple:
         selectinload(Board.owner_program),
         selectinload(Board.programs),
         selectinload(Board.groups),
-        selectinload(Board.inuksuk_links).selectinload(BoardInuksuk.inuksuk)
-        .selectinload(Inuksuk.image),
-        selectinload(Board.inuksuk_links).selectinload(BoardInuksuk.inuksuk)
-        .selectinload(Inuksuk.owners),
+        selectinload(Board.marker_links).selectinload(BoardMarker.marker)
+        .selectinload(Marker.image).selectinload(Image.category),
+        selectinload(Board.marker_links).selectinload(BoardMarker.marker)
+        .selectinload(Marker.owners),
     )
 
 
-def inuksuk_load_options() -> tuple:
-    return (lazyload("*"), selectinload(Inuksuk.image), selectinload(Inuksuk.owners))
+def marker_load_options() -> tuple:
+    return (
+        lazyload("*"), selectinload(Marker.image).selectinload(Image.category),
+        selectinload(Marker.owners),
+    )
 
 
 async def load_memberships(
-    db: AsyncSession, inuksuk_ids: Iterable[int],
-) -> dict[int, list[BoardInuksuk]]:
-    ids = set(inuksuk_ids)
-    memberships: dict[int, list[BoardInuksuk]] = defaultdict(list)
+    db: AsyncSession, marker_ids: Iterable[int],
+) -> dict[int, list[BoardMarker]]:
+    ids = set(marker_ids)
+    memberships: dict[int, list[BoardMarker]] = defaultdict(list)
     if not ids:
         return memberships
-    stmt = select(BoardInuksuk).where(BoardInuksuk.inuksuk_id.in_(ids)).options(
+    stmt = select(BoardMarker).where(BoardMarker.marker_id.in_(ids)).options(
         lazyload("*"),
-        selectinload(BoardInuksuk.board).options(
+        selectinload(BoardMarker.board).options(
             lazyload("*"), selectinload(Board.owners),
             selectinload(Board.programs), selectinload(Board.groups),
         ),
     )
     for link in (await db.execute(stmt)).scalars().unique():
-        memberships[link.inuksuk_id].append(link)
+        memberships[link.marker_id].append(link)
     return memberships
 
 
@@ -132,47 +135,61 @@ async def get_visible_board(
     return board
 
 
-def inuksuk_thumb(inuksuk: Inuksuk) -> str | None:
-    if inuksuk.thumb:
-        return append_inuksuk_thumb_token(inuksuk.thumb)
-    return append_thumb_token(inuksuk.image.thumb) if inuksuk.image.thumb else None
+def marker_thumb(marker: Marker) -> str | None:
+    if marker.thumb:
+        return append_marker_thumb_token(marker.thumb)
+    return append_thumb_token(marker.image.thumb) if marker.image.thumb else None
 
 
-def inuksuk_out(
-    ctx: BoardViewerContext, inuksuk: Inuksuk, boards: list[Board],
-) -> InuksukOut:
-    return InuksukOut(
-        id=inuksuk.id, image_id=inuksuk.image_id, title=inuksuk.title,
-        description=inuksuk.description, x=inuksuk.x, y=inuksuk.y,
-        zoom=inuksuk.zoom, rotation=inuksuk.rotation, thumb=inuksuk_thumb(inuksuk),
-        favourite=inuksuk.favourite, sort_order=inuksuk.sort_order,
-        version=inuksuk.version,
+def marker_out(
+    ctx: BoardViewerContext, marker: Marker, boards: list[Board],
+) -> MarkerOut:
+    return MarkerOut(
+        id=marker.id, image_id=marker.image_id, title=marker.title,
+        category_name=(
+            marker.image.category.label
+            if ctx.can_view_image(marker.image) and marker.image.category else None
+        ),
+        description=marker.description, x=marker.x, y=marker.y,
+        zoom=marker.zoom, rotation=marker.rotation, thumb=marker_thumb(marker),
+        favourite=marker.favourite, sort_order=marker.sort_order,
+        version=marker.version,
         owners=[
             CollectionOwnerOut(user_id=o.id, name=o.name, role=o.role)
-            for o in sorted(inuksuk.owners, key=lambda o: (o.name.casefold(), o.id))
+            for o in sorted(marker.owners, key=lambda o: (o.name.casefold(), o.id))
         ],
-        board_ids=[b.id for b in boards], source=ctx.source(inuksuk, boards),
-        permissions=InuksukPermissionsOut(
-            can_edit=can_edit_inuksuk(ctx.user, inuksuk),
-            can_delete=can_delete_inuksuk(ctx.user, inuksuk),
+        board_ids=[b.id for b in boards], source=ctx.source(marker, boards),
+        permissions=MarkerPermissionsOut(
+            can_edit=can_edit_marker(ctx.user, marker),
+            can_delete=can_delete_marker(ctx.user, marker),
         ),
-        created_at=inuksuk.created_at, updated_at=inuksuk.updated_at,
+        created_at=marker.created_at, updated_at=marker.updated_at,
     )
 
 
 def board_summary_out(ctx: BoardViewerContext, board: Board) -> BoardSummaryOut:
     visible = sorted(
-        (link for link in board.inuksuk_links if ctx.can_view_image(link.inuksuk.image)),
-        key=lambda link: (link.sort_order, link.inuksuk_id),
+        (link for link in board.marker_links if ctx.can_view_image(link.marker.image)),
+        key=lambda link: (link.sort_order, link.marker_id),
     )
+    pinned = (
+        next((link for link in visible if link.marker_id == board.cover_marker_id), None)
+        if board.cover_marker_id is not None
+        else None
+    )
+    cover_link = pinned or (visible[0] if visible else None)
     return BoardSummaryOut(
         id=board.id, name=board.name, description=board.description,
         visibility=board.visibility, owners=_owners_out(board),
         owner_program_id=board.owner_program_id,
         program_ids=sorted(p.id for p in board.programs),
         group_ids=sorted(g.id for g in board.groups),
-        inuksuk_count=len(visible),
-        cover_thumb=inuksuk_thumb(visible[0].inuksuk) if visible else None,
+        marker_count=len(visible),
+        cover_thumb=(
+            None if board.cover_blank else marker_thumb(cover_link.marker) if cover_link else None
+        ),
+        cover_marker_id=pinned.marker_id if pinned else None,
+        cover_blank=board.cover_blank,
         sort_order=board.sort_order, version=board.version,
         permissions=BoardPermissionsOut(
             can_edit=can_edit_board(ctx.user, board),
@@ -186,23 +203,23 @@ def board_summary_out(ctx: BoardViewerContext, board: Board) -> BoardSummaryOut:
 
 def board_out(
     ctx: BoardViewerContext, board: Board,
-    memberships: dict[int, list[BoardInuksuk]],
+    memberships: dict[int, list[BoardMarker]],
 ) -> BoardOut:
     members = []
-    for link in sorted(board.inuksuk_links, key=lambda link: (link.sort_order, link.inuksuk_id)):
-        boards = ctx.visible_boards(memberships.get(link.inuksuk_id, []))
-        if ctx.can_view_inuksuk(link.inuksuk, boards):
-            fields = inuksuk_out(ctx, link.inuksuk, boards).model_dump()
+    for link in sorted(board.marker_links, key=lambda link: (link.sort_order, link.marker_id)):
+        boards = ctx.visible_boards(memberships.get(link.marker_id, []))
+        if ctx.can_view_marker(link.marker, boards):
+            fields = marker_out(ctx, link.marker, boards).model_dump()
             fields["sort_order"] = link.sort_order
-            members.append(InuksukOut(**fields))
+            members.append(MarkerOut(**fields))
     return BoardOut(
         **board_summary_out(ctx, board).model_dump(),
-        inuksuks=members,
+        markers=members,
     )
 
 
 SortValue = str | int | bool | datetime | None
-Row = TypeVar("Row", BoardSummaryOut, InuksukOut)
+Row = TypeVar("Row", BoardSummaryOut, MarkerOut)
 
 _BOARD_SORT_ACCESSORS: dict[str, Callable[[BoardSummaryOut], SortValue]] = {
     "id": lambda row: row.id,
@@ -210,12 +227,12 @@ _BOARD_SORT_ACCESSORS: dict[str, Callable[[BoardSummaryOut], SortValue]] = {
     "description": lambda row: row.description,
     "visibility": lambda row: row.visibility,
     "owner": lambda row: ", ".join(owner.name for owner in row.owners),
-    "inuksuk_count": lambda row: row.inuksuk_count,
+    "marker_count": lambda row: row.marker_count,
     "sort_order": lambda row: row.sort_order,
     "created_at": lambda row: row.created_at,
     "updated_at": lambda row: row.updated_at,
 }
-_INUKSUK_SORT_ACCESSORS: dict[str, Callable[[InuksukOut], SortValue]] = {
+_MARKER_SORT_ACCESSORS: dict[str, Callable[[MarkerOut], SortValue]] = {
     "id": lambda row: row.id,
     "title": lambda row: row.title,
     "description": lambda row: row.description,
@@ -243,14 +260,14 @@ def page_rows(
     if limit is not None and (page is not None or page_size is not None):
         raise HTTPException(status_code=422, detail="limit cannot be combined with page/page_size")
     descending = (order or direction or (
-        "desc" if sort in ("id", "created_at", "updated_at", "inuksuk_count") else "asc"
+        "desc" if sort in ("id", "created_at", "updated_at", "marker_count") else "asc"
     )) == "desc"
 
-    def key(row: BoardSummaryOut | InuksukOut) -> tuple[SortValue, int]:
+    def key(row: BoardSummaryOut | MarkerOut) -> tuple[SortValue, int]:
         if isinstance(row, BoardSummaryOut):
             value = _BOARD_SORT_ACCESSORS[sort](row)
         else:
-            value = _INUKSUK_SORT_ACCESSORS[sort](row)
+            value = _MARKER_SORT_ACCESSORS[sort](row)
         if value is None:
             value = ""
         if isinstance(value, str):
@@ -298,7 +315,7 @@ def read_response(
         "epoch": int(time.time() // max(1, auth_settings.tile_token_ttl_minutes * 60)),
     }
     digest = hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()
-    etag = f'W/"inuksuks-{digest}"'
+    etag = f'W/"markers-{digest}"'
     headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
     if total is not None:
         headers["X-Total-Count"] = str(total)

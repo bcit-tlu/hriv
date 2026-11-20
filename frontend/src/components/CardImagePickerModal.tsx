@@ -143,12 +143,19 @@ export default function CardImagePickerModal({
       </DialogContent>
       <DialogActions>
         {selectedId != null && (
-          <Button onClick={() => setSelectedId(null)} color="inherit" sx={{ mr: 'auto' }}>
+          <Button
+            size="small"
+            onClick={() => setSelectedId(null)}
+            color="inherit"
+            sx={{ mr: 'auto' }}
+          >
             Clear
           </Button>
         )}
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={handleSave}>
+        <Button size="small" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button size="small" variant="contained" onClick={handleSave}>
           Save
         </Button>
       </DialogActions>

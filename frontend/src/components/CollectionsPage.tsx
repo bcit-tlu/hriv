@@ -106,7 +106,7 @@ import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
 import type { CanvasDraftHandle } from '../useCanvasAnnotations'
 
 export interface CollectionsPageProps {
-  inuksuksEnabled?: boolean
+  markersEnabled?: boolean
   currentUser: User | null
   programs: Program[]
   groups: Group[]
@@ -142,6 +142,12 @@ export interface CollectionsPageProps {
   onOpenCollection: (id: number) => void
   onCloseCollection: () => void
   onOpenImage: (image: ImageItem) => void
+  /** Opens the Board dialog for a collection viewer's drawer group heading;
+   * carries the viewer's container for full-page mode. */
+  onOpenBoard?: (boardId: number, container?: HTMLElement | null) => void
+  /** Bumped when the in-place Board dialog mutates Marker/Board data so a
+   * mounted collection viewer reloads its markers. */
+  markersReloadSignal?: number
   /** Graph-view image clicks carry only an id (#1629) — the caller fetches
    *  the record and takes the normal `?image={id}` viewer path. */
   onOpenImageById?: (imageId: number) => void
@@ -269,7 +275,9 @@ export interface CollectionsPageProps {
 }
 
 // Icon + text label per view button (sentence case, like other buttons).
-const viewToggleSx = { gap: 0.75, px: 1.25, textTransform: 'none' } as const
+// py keeps the toggle group at the size="small" button height (30.75px) —
+// tops and bottoms align with the title row's other buttons.
+const viewToggleSx = { gap: 0.75, px: 1.25, py: '3px', textTransform: 'none' } as const
 
 function ownerFilterKey(owner: CollectionOwnerFilter): string {
   if (owner === 'any' || owner === 'orphaned') return owner
@@ -658,7 +666,7 @@ function CollectionDetailHeader({
 }
 
 export default function CollectionsPage({
-  inuksuksEnabled = false,
+  markersEnabled = false,
   currentUser,
   programs,
   groups,
@@ -683,6 +691,8 @@ export default function CollectionsPage({
   onOpenCollection,
   onCloseCollection,
   onOpenImage,
+  onOpenBoard,
+  markersReloadSignal,
   selectedCollectionItemId,
   selectedCollectionSlotId = null,
   onSelectCollectionItem,
@@ -1228,12 +1238,14 @@ export default function CollectionsPage({
             />
           </Box>
           <SequenceCollectionViewer
-            inuksuksEnabled={inuksuksEnabled}
+            markersEnabled={markersEnabled}
             collection={detail}
             itemId={selectedCollectionItemId}
             slotId={selectedCollectionSlotId}
             onSelectItem={onSelectCollectionItem}
             onOpenImage={onOpenImage}
+            onOpenBoard={onOpenBoard}
+            markersReloadSignal={markersReloadSignal}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
             memberInfoNames={memberInfoNames}
@@ -1265,7 +1277,7 @@ export default function CollectionsPage({
             />
           </Box>
           <SynchronizedCollectionViewer
-            inuksuksEnabled={inuksuksEnabled}
+            markersEnabled={markersEnabled}
             collection={detail}
             onSaveViewport={(viewportState, slotViewports) =>
               slotViewports
@@ -1273,6 +1285,8 @@ export default function CollectionsPage({
                 : onSaveViewport(detail.id, viewportState)
             }
             onOpenImage={onOpenImage}
+            onOpenBoard={onOpenBoard}
+            markersReloadSignal={markersReloadSignal}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
             memberInfoNames={memberInfoNames}
@@ -1354,6 +1368,9 @@ export default function CollectionsPage({
             gap: 1,
             mb: 3,
             flexShrink: 0,
+            // Buttons are size="small" (30.75px) — keep the row at the
+            // historical 36.5px so the FilterBar position doesn't shift.
+            minHeight: 36.5,
           }}
         >
           <Typography variant="h5" component="h1">
@@ -1402,6 +1419,7 @@ export default function CollectionsPage({
               <span>
                 <Button
                   variant="contained"
+                  size="small"
                   startIcon={<AddIcon />}
                   onClick={openCreate}
                   disabled={typesAtLimit.size === 2}
@@ -1914,7 +1932,7 @@ export default function CollectionsPage({
           commits them through one whole-replace PUT — only then does the
           detail behind it change. */}
       <CollectionManageDialog
-        inuksuksEnabled={inuksuksEnabled}
+        markersEnabled={markersEnabled}
         open={manageOpen}
         onClose={() => setManageOpen(false)}
         collection={detail}
