@@ -289,8 +289,15 @@ async def test_drawer_source_precedence_and_visible_board_ids(world):
     world.caller["role"] = "staff"
     rows = by_title(await world.client.get(f"/api/images/{world.images['visible']}/markers"))
     assert "private" not in rows and "restricted" not in rows
-    assert rows["public"]["source"] == "instructor"
+    # Another instructor's private Board neither tags nor groups the row.
+    assert rows["public"]["source"] == "public"
+    # board_ids stay complete: edits replace editable assignments from them.
+    assert rows["public"]["board_ids"] == sorted(
+        [world.boards["public"], world.boards["private_instructor"]]
+    )
     assert "owner_only" not in rows
+    listed = by_title(await world.client.get("/api/markers"))
+    assert world.boards["private_instructor"] in listed["public"]["board_ids"]
 
 
 @pytest.mark.parametrize("key", ["inactive", "hidden", "program", "group"])
