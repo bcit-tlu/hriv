@@ -13,12 +13,6 @@ opentelemetry-distro = "^0.57b0"
 opentelemetry-exporter-otlp = "^1.36.0"
 grpcio = ">=1.85.3,<2"
 
-[tool.poetry.group.dev.dependencies]
-pytest = ">=8.3.3,<10.0.0"
-
-[tool.pytest.ini_options]
-addopts = "-p no:logging"
-
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

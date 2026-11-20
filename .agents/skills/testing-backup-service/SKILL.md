@@ -18,10 +18,6 @@ interpret the design document as a deployed restore test.
 
 ## Prerequisites
 
-- Backup unit tests require Python 3.15: from `backup/`, run
-  `poetry install --no-root && poetry run pytest`. The backup image uses the
-  same interpreter; validate dependency changes with `docker build backup/`.
-
 - Docker and Docker Compose
 - The `db` service must be running: `docker compose up -d db`
 - Wait for DB readiness: `docker compose exec db pg_isready -U hriv`
