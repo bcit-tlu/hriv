@@ -216,11 +216,11 @@ describe('SortableTileGrid', () => {
 
     expectEffectiveOpacity(childCategoryCard, '1')
     expectEffectiveOpacity(childImageCard, '1')
-    expect(childCategoryAction).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(childImageAction).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(childCategoryAction).toHaveStyle({ filter: 'grayscale(1)' })
+    expect(childImageAction).toHaveStyle({ filter: 'grayscale(1)' })
     // Collection tiles grey out inside a hidden category the same way —
     // the hidden-subtree rule already keeps them out of student view.
-    expect(childCollectionAction).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(childCollectionAction).toHaveStyle({ filter: 'grayscale(1)' })
     // No marker icon for inherited hidden state — desaturation conveys it.
     expect(screen.queryByRole('img', { name: 'Hidden by category' })).toBeNull()
     expect(screen.queryByRole('img', { name: 'Visibility: Hidden' })).toBeNull()
@@ -239,7 +239,7 @@ describe('SortableTileGrid', () => {
     const childCollectionAction = screen
       .getByText('Child Collection')
       .closest('.MuiCardActionArea-root')
-    expect(childCollectionAction).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(childCollectionAction).toHaveStyle({ filter: 'grayscale(1)' })
     expect(screen.queryByRole('img', { name: 'Hidden by category' })).toBeNull()
   })
 

@@ -179,10 +179,15 @@ export default function ReportIssueModal({
         />
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} disabled={submitting}>
+        <Button size="small" onClick={handleClose} disabled={submitting}>
           {submitted ? 'Close' : 'Cancel'}
         </Button>
-        <Button onClick={handleSubmit} variant="contained" disabled={busy || !description.trim()}>
+        <Button
+          size="small"
+          onClick={handleSubmit}
+          variant="contained"
+          disabled={busy || !description.trim()}
+        >
           {submitting ? <CircularProgress size={20} /> : submitted ? 'Sent' : 'Submit'}
         </Button>
       </DialogActions>

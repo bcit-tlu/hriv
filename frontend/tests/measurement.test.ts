@@ -149,7 +149,9 @@ describe('createMeasurementLabel', () => {
     expect(label.style.pointerEvents).toBe('none')
     expect(label.style.zIndex).toBe('10')
     // The white "outline" effect relies on four offset shadows.
-    expect(label.style.textShadow).toContain('#fff')
+    const expected = document.createElement('div')
+    expected.style.textShadow = '-1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff'
+    expect(label.style.textShadow).toBe(expected.style.textShadow)
   })
 
   it('returns a fresh element on each call', () => {

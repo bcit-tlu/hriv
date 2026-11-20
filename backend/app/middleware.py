@@ -484,10 +484,10 @@ class CollectionsFeatureMiddleware:
         await self.app(scope, receive, send)
 
 
-class InuksuksFeatureMiddleware:
-    """Hide Board and Inuksuk routes before request parsing while disabled."""
+class MarkersFeatureMiddleware:
+    """Hide Board and Marker routes before request parsing while disabled."""
 
-    _PREFIXES = ("/api/boards", "/api/inuksuks")
+    _PREFIXES = ("/api/boards", "/api/markers")
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -497,7 +497,7 @@ class InuksuksFeatureMiddleware:
             await self.app(scope, receive, send)
             return
         path: str = scope["path"]
-        if not settings.inuksuks_enabled and any(
+        if not settings.markers_enabled and any(
             path == prefix or path.startswith(prefix + "/")
             for prefix in self._PREFIXES
         ):

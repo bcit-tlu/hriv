@@ -45,7 +45,7 @@ import {
 } from './imageViewerUtils'
 
 export interface SynchronizedCollectionViewerProps {
-  inuksuksEnabled?: boolean
+  markersEnabled?: boolean
   collection: Collection
   /** Persist `{ "<image_id>": ViewportState }` for the pair via `PUT …/viewport`. */
   onSaveViewport: (
@@ -56,6 +56,11 @@ export interface SynchronizedCollectionViewerProps {
   onOpenImage: (image: ImageItem) => void
   /** Refresh a member's tokenized URLs after the viewer's tile-token renewal. */
   onImageRenewed: (image: ApiImage) => void
+  /** Opens the Board dialog for a drawer group heading; carries the
+   * viewer's container so the dialog stays visible in full-page mode. */
+  onOpenBoard?: (boardId: number, container?: HTMLElement | null) => void
+  /** Bumped when the in-place Board dialog mutates Marker/Board data. */
+  markersReloadSignal?: number
   onError: (message: string) => void
   /**
    * Program/group display names per member image id for the details drawer
@@ -124,11 +129,13 @@ function usePortrait(): boolean {
 }
 
 export default function SynchronizedCollectionViewer({
-  inuksuksEnabled = false,
+  markersEnabled = false,
   collection,
   onSaveViewport,
   onOpenImage,
   onImageRenewed,
+  onOpenBoard,
+  markersReloadSignal,
   onError,
   memberInfoNames,
   actionsContainer,
@@ -419,8 +426,8 @@ export default function SynchronizedCollectionViewer({
     for (const image of panes) {
       const state = readViewport(viewersByImage.current.get(memberKey(image)) ?? null)
       if (!state) return
-      const target = inuksuksEnabled && image.slot ? slots : entries
-      target[String(inuksuksEnabled && image.slot ? image.slot.id : image.id)] = {
+      const target = markersEnabled && image.slot ? slots : entries
+      target[String(markersEnabled && image.slot ? image.slot.id : image.id)] = {
         zoom: state.zoom,
         x: state.x,
         y: state.y,
@@ -429,14 +436,14 @@ export default function SynchronizedCollectionViewer({
     }
     setSaving(true)
     try {
-      if (inuksuksEnabled) await onSaveViewport(entries, slots)
+      if (markersEnabled) await onSaveViewport(entries, slots)
       else await onSaveViewport(entries)
     } catch (err) {
       onError(userMessage(err, 'Failed to save the collection view.'))
     } finally {
       setSaving(false)
     }
-  }, [panes, onSaveViewport, onError, inuksuksEnabled])
+  }, [panes, onSaveViewport, onError, markersEnabled])
 
   const handleReset = useCallback(() => {
     // The default view is defined across linked panes, so Restore re-links any
@@ -664,7 +671,9 @@ export default function SynchronizedCollectionViewer({
                     measurement={pane.measurement}
                   >
                     <ImageViewer
-                      inuksuksEnabled={inuksuksEnabled}
+                      markersEnabled={markersEnabled}
+                      onOpenBoard={onOpenBoard}
+                      markersReloadSignal={markersReloadSignal}
                       tileSources={image.tileSources}
                       imageId={image.id}
                       categoryId={image.categoryId ?? undefined}
@@ -678,6 +687,7 @@ export default function SynchronizedCollectionViewer({
                       onViewerReady={(viewer) => handleViewerReady(memberKey(image), viewer)}
                       onTileSourceRenewed={onImageRenewed}
                       onError={(message) => handleViewerError(image, message)}
+                      viewerPanel={false}
                       viewportControl={<CollectionImageDetailsTrigger />}
                       viewportOverlay={
                         <>
@@ -736,7 +746,7 @@ export default function SynchronizedCollectionViewer({
                 </Paper>
                 <ImageCaptionRow
                   key={`caption-${memberKey(image)}`}
-                  name={inuksuksEnabled ? image.slot?.label || image.name : image.name}
+                  name={markersEnabled ? image.slot?.label || image.name : image.name}
                   active={image.active}
                   note={image.note}
                   noteDialogOpen={noteDialogImageId === memberKey(image)}

@@ -642,31 +642,31 @@ async def test_features_reports_announcements_always_on() -> None:
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-async def test_features_reports_inuksuks(monkeypatch, enabled) -> None:
+async def test_features_reports_markers(monkeypatch, enabled) -> None:
     from app.database import settings
     from app.main import app
 
-    monkeypatch.setattr(settings, "inuksuks_enabled", enabled)
+    monkeypatch.setattr(settings, "markers_enabled", enabled)
     with patch("app.middleware.is_maintenance_mode", return_value=False):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             result = await client.get("/api/features")
     assert result.status_code == 200
-    assert result.json()["inuksuks"] is enabled
+    assert result.json()["markers"] is enabled
 
 
-def test_maintenance_wins_over_disabled_inuksuks(monkeypatch) -> None:
+def test_maintenance_wins_over_disabled_markers(monkeypatch) -> None:
     from app.database import settings
     from app.main import app
 
-    monkeypatch.setattr(settings, "inuksuks_enabled", False)
+    monkeypatch.setattr(settings, "markers_enabled", False)
     with patch("app.middleware.is_maintenance_mode", return_value=True):
         with TestClient(app, raise_server_exceptions=False) as client:
             assert client.post("/api/boards", content="{").status_code == 503
     with patch("app.middleware.is_maintenance_mode", return_value=False):
         with TestClient(app, raise_server_exceptions=False) as client:
-            assert client.post("/api/inuksuks", content="{").status_code == 404
+            assert client.post("/api/markers", content="{").status_code == 404
 
 
 async def test_features_reports_student_access_per_request(monkeypatch):

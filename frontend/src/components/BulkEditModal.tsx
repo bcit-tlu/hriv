@@ -105,7 +105,9 @@ export default function BulkEditModal({
         </FormControl>
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose}>Cancel</Button>
+        <Button size="small" onClick={handleClose}>
+          Cancel
+        </Button>
         <Button
           onClick={handleSave}
           variant="contained"

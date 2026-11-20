@@ -7,9 +7,9 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 
 ## Entities
 
-### Inuksuk and Board _(added in `0046_inuksuks_and_boards`)_
+### Marker and Board _(added in `0046_inuksuks_and_boards`)_
 
-- **Inuksuk** (`inuksuks`): a bookmark on one image, with required `title`
+- **Marker** (`markers`): a bookmark on one image, with required `title`
   (255 characters), `x`, `y`, and `zoom`; `rotation` defaults to zero.
   Optional `description` and `thumb` store text and a cropped thumbnail path.
   `favourite` defaults to false; `sort_order` to zero; `version` to one
@@ -20,20 +20,20 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   private), `sort_order` (zero), and OCC `version` (one).
   `created_by_user_id` and optional `owner_program_id` are **SET NULL** FKs.
   Both entities have timezone-aware `created_at` / `updated_at` timestamps.
-- **Ownership and scope:** `inuksuk_owners(inuksuk_id, user_id)`,
+- **Ownership and scope:** `marker_owners(marker_id, user_id)`,
   `board_owners(board_id, user_id)`, `board_programs(board_id, program_id)`,
   and `board_groups(board_id, group_id)` use composite PKs and **CASCADE**
   FKs; both owner junctions index `user_id`. User deletion removes objects
   whose entire owner set is departing, except program-owned boards. Co-owned
   objects survive. Creator audit does not grant ownership.
-- **Membership:** `board_inuksuks` has composite PK `(board_id, inuksuk_id)`
+- **Membership:** `board_markers` has composite PK `(board_id, marker_id)`
   with **CASCADE** FKs and `sort_order` (zero). An index covers
-  `(board_id, sort_order)`. Removing a Board never deletes a linked Inuksuk
+  `(board_id, sort_order)`. Removing a Board never deletes a linked Marker
   that is still on another Board.
-- **Caps:** `STUDENT_MAX_BOARDS = 10`, `STUDENT_MAX_INUKSUKS = 200`.
+- **Caps:** `STUDENT_MAX_BOARDS = 10`, `STUDENT_MAX_MARKERS = 200`.
   These constants are for subsequent creation APIs, not DB constraints.
-- **Dark launch:** `INUKSUKS_ENABLED=false` by default. See
-  [Inuksuks and Boards](inuksuks-and-boards.md); no CRUD endpoints ship yet.
+- **Dark launch:** `MARKERS_ENABLED=false` by default. See
+  [Markers and Boards](markers-and-boards.md); no CRUD endpoints ship yet.
 
 ### User
 
@@ -424,7 +424,7 @@ and collection-level viewport dictionaries are preserved. Downgrade keeps the
 minimum-ID row per Collection/Image pair before restoring the composite PK.
 
 Nullable slot fields are `viewport_state JSONB`, `thumb TEXT`, and
-`label VARCHAR(255)`. They snapshot saved views without an Inuksuk FK. Thumb
+`label VARCHAR(255)`. They snapshot saved views without a Marker FK. Thumb
 paths use `/api/tiles/<source-id>/collection_slots/<slot-id>.jpg`; slot-scoped
 thumbnail-only JWTs are issued after member authorization. Slot identity is
 separate from Image identity. Admin import resets the new ID sequence and
@@ -432,14 +432,14 @@ allocates imported IDs above restored snapshot filenames to avoid collisions.
 
 ### Saved-view archive relationships (#1775)
 
-Admin JSON archives additionally preserve `boards`, `inuksuks`,
-`board_owners`, `board_programs`, `board_groups`, `inuksuk_owners` and
-`board_inuksuks` as explicit table records. IDs, timestamps, owner/scope links,
+Admin JSON archives additionally preserve `boards`, `markers`,
+`board_owners`, `board_programs`, `board_groups`, `marker_owners` and
+`board_markers` as explicit table records. IDs, timestamps, owner/scope links,
 Board membership and saved-view order round-trip independently of the feature
 flag. Imports delete association records before their parents and insert Boards
-and Inuksuks before their associations. Numeric sequences for Boards and
-Inuksuks are reset alongside Collection slots. Older archives may omit these keys.
+and Markers before their associations. Numeric sequences for Boards and
+Markers are reset alongside Collection slots. Older archives may omit these keys.
 
-Saved-view JPEGs under `tiles/<source-id>/{inuksuks,collection_slots}/<id>.jpg`
+Saved-view JPEGs under `tiles/<source-id>/{markers,collection_slots}/<id>.jpg`
 are authoritative snapshots: admin filesystem archives preserve them, while DZI
 pyramids remain derived. Same-source tile rebuilds retain both namespaces.
