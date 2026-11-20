@@ -44,6 +44,8 @@ export function KindIcon({ meta }: { meta: AnnouncementKindMeta }) {
   )
 }
 
+const TALL_BLOCKS = 'figure, video, pre, :has(img), :has(.md-media-missing)'
+
 export default function AnnouncementBanner({
   message,
   mediaTokens,
@@ -108,10 +110,11 @@ export default function AnnouncementBanner({
                   WebkitLineClamp: 2,
                   WebkitBoxOrient: 'vertical',
                   overflow: 'hidden',
-                  // A height budget, not a line count: media and code wait behind More,
-                  // headings shrink to body text and block gaps close, so the clamped banner
-                  // is never taller than two lines of text.
-                  '& figure, & img, & video, & pre, & .md-media-missing': { display: 'none' },
+                  // A height budget, not a line count: the preview stops at the first
+                  // block taller than a text line (media, code), so nothing after it is
+                  // pulled up; headings shrink to body text and block gaps close, so the
+                  // clamped banner is never taller than two lines of text.
+                  [`& > :is(${TALL_BLOCKS}), & > :is(${TALL_BLOCKS}) ~ *`]: { display: 'none' },
                   '& h1, & h2, & h3': { font: 'inherit', fontWeight: 600 },
                   '& p, & ul, & h1, & h2, & h3': { my: 0 },
                 }

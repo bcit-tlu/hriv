@@ -90,15 +90,18 @@ describe('AnnouncementBanner (announcements epic)', () => {
   it('keeps media behind More even when it sits within the first two lines', () => {
     renderWithTheme(
       <AnnouncementBanner
-        message={'Intro line\n\n![diagram](/api/media/4)'}
+        message={'Intro line\n\n![diagram](/api/media/4)\n\nAfter the image'}
         mediaTokens={{ '4': 'tok123' }}
       />,
     )
     expect(screen.getByText('Intro line')).toBeVisible()
     // Hidden while clamped, so query by alt text rather than accessible role.
     expect(screen.getByAltText('diagram')).not.toBeVisible()
+    // The preview stops at the image rather than pulling later text up into its place.
+    expect(screen.getByText('After the image')).not.toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'More' }))
     expect(screen.getByRole('img', { name: 'diagram' })).toBeVisible()
+    expect(screen.getByText('After the image')).toBeVisible()
   })
 
   it('offers More for a short single-line body that is only external media', () => {

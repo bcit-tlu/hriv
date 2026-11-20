@@ -164,7 +164,7 @@ menu and the Admin **Changelog** tab, so the Admin page opens on **Backups**.
 - **Banner** (`AnnouncementBanner.tsx`, `selectBannerAnnouncements`): only live,
   unseen Inbox posts flagged `banner` qualify; warnings first, then pinned, then
   newest `notified_at`. One shows at a time; closing marks it seen; `+N more`
-  opens the Announcements page. Two-line clamp with More/Less, measured as height rather than lines (#1953): while clamped, images, video and code blocks are hidden, headings render at body size and block gaps close, so the banner is never taller than two lines of text; the kind icon
+  opens the Announcements page. Two-line clamp with More/Less, measured as height rather than lines (#1953): while clamped, the preview stops at the first image, video or code block (nothing after it is shown), headings render at body size and block gaps close, so the banner is never taller than two lines of text; the kind icon
   matches the card. The body renders the same `MarkdownContent` as the card
   (links, lists, images/video via `media_tokens`). No reactions here or in the
   bell — only on the page. The banner stays off pages that already show the post
