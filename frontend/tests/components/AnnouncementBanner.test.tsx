@@ -87,6 +87,20 @@ describe('AnnouncementBanner (announcements epic)', () => {
     expect(screen.queryByRole('button', { name: /more/ })).not.toBeInTheDocument()
   })
 
+  it('keeps media behind More even when it sits within the first two lines', () => {
+    renderWithTheme(
+      <AnnouncementBanner
+        message={'Intro line\n\n![diagram](/api/media/4)'}
+        mediaTokens={{ '4': 'tok123' }}
+      />,
+    )
+    expect(screen.getByText('Intro line')).toBeVisible()
+    // Hidden while clamped, so query by alt text rather than accessible role.
+    expect(screen.getByAltText('diagram')).not.toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'More' }))
+    expect(screen.getByRole('img', { name: 'diagram' })).toBeVisible()
+  })
+
   it('renders the body as markdown, resolving media via the supplied tokens', () => {
     renderWithTheme(
       <AnnouncementBanner
@@ -95,7 +109,7 @@ describe('AnnouncementBanner (announcements epic)', () => {
       />,
     )
     expect(screen.getByText('Bold')).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'diagram' })).toHaveAttribute(
+    expect(screen.getByAltText('diagram')).toHaveAttribute(
       'src',
       expect.stringContaining('/api/media/4?token=tok123'),
     )
@@ -104,7 +118,7 @@ describe('AnnouncementBanner (announcements epic)', () => {
   it('shows a media placeholder when no token is supplied', () => {
     const { container } = renderWithTheme(<AnnouncementBanner message="![diagram](/api/media/4)" />)
     expect(container.querySelector('img')).toBeNull()
-    expect(screen.getByRole('img', { name: 'diagram' })).toHaveClass('md-media-missing')
+    expect(screen.getByLabelText('diagram')).toHaveClass('md-media-missing')
   })
 
   it('shows the kind icon when a kind is given', () => {

@@ -105,7 +105,12 @@ export default function AnnouncementBanner({
                   WebkitLineClamp: 2,
                   WebkitBoxOrient: 'vertical',
                   overflow: 'hidden',
-                  '& p:last-child': { mb: 0 },
+                  // A height budget, not a line count: media and code wait behind More,
+                  // headings shrink to body text and block gaps close, so the clamped banner
+                  // is never taller than two lines of text.
+                  '& figure, & img, & video, & pre, & .md-media-missing': { display: 'none' },
+                  '& h1, & h2, & h3': { font: 'inherit', fontWeight: 600 },
+                  '& p, & ul, & h1, & h2, & h3': { my: 0 },
                 }
               : { '& p:last-child': { mb: 0 } }
           }
