@@ -52,9 +52,10 @@ const lightPalette = {
   /**
    * Visibility status colours. Active uses a neutral dark-grey so the
    * default "visible" state stays unremarkable; inactive uses text.primary
-   * at 0.7 alpha (#3E3C3Ab3) giving ≈ 4.7 : 1 contrast on white — WCAG-AA.
+   * at 0.75 alpha (#3E3C3Abf) giving ≈ 5.2 : 1 on white and ≈ 4.9 : 1 on a
+   * selected table row — WCAG-AA (0.7 alpha fell to 4.3 : 1 when selected).
    */
-  visibility: { active: 'rgba(0,0,0,0.45)', inactive: '#3E3C3Ab3', inactiveChipBg: '#6B6966' },
+  visibility: { active: 'rgba(0,0,0,0.45)', inactive: '#3E3C3Abf', inactiveChipBg: '#6B6966' },
   /**
    * Presentation pointer tools (epic #1876). A laser-green dot and bright
    * cyan ink — both must read against stained-tissue imagery and a
