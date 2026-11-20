@@ -151,7 +151,7 @@ export const Placement: Story = {
       'aria-expanded',
       'true',
     )
-    await expect(await page.findByRole('heading', { name: 'Save a view' })).toBeInTheDocument()
+    await expect(await page.findByRole('heading', { name: 'Add Marker' })).toBeInTheDocument()
     await expect(
       within(canvas.getByRole('region', { name: 'Markers list' })).getByText('New Marker'),
     ).toBeVisible()
@@ -160,10 +160,8 @@ export const Placement: Story = {
     await expect(draft.y).toBeCloseTo(placementY, 0)
     await userEvent.keyboard('A closer look')
     await expect(page.getByRole('textbox', { name: /^Title/ })).toHaveValue('A closer look')
-    await expect(page.getByRole('button', { name: 'More options' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    )
+    // Description field is always visible, no collapsed More options (#1952).
+    await expect(page.queryByRole('button', { name: 'More options' })).not.toBeInTheDocument()
   },
 }
 export const InfoCard: Story = {
