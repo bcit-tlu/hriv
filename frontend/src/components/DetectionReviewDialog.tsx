@@ -347,13 +347,8 @@ function DialogBody({
                 {imageError}
               </Alert>
             ) : tileSources == null ? (
-              <Stack
-                alignItems="center"
-                justifyContent="center"
-                sx={{ height: '100%' }}
-                aria-label="Loading image"
-              >
-                <CircularProgress />
+              <Stack alignItems="center" justifyContent="center" sx={{ height: '100%' }}>
+                <CircularProgress aria-label="Loading image" />
               </Stack>
             ) : null}
             {/* The ref'd div hosts OSD; it must exist before tileSources resolves. */}
