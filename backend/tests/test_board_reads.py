@@ -291,7 +291,10 @@ async def test_drawer_source_precedence_and_visible_board_ids(world):
     assert "private" not in rows and "restricted" not in rows
     # Another instructor's private Board neither tags nor groups the row.
     assert rows["public"]["source"] == "public"
-    assert rows["public"]["board_ids"] == [world.boards["public"]]
+    # board_ids stay complete: edits replace editable assignments from them.
+    assert rows["public"]["board_ids"] == sorted(
+        [world.boards["public"], world.boards["private_instructor"]]
+    )
     assert "owner_only" not in rows
     listed = by_title(await world.client.get("/api/markers"))
     assert world.boards["private_instructor"] in listed["public"]["board_ids"]
