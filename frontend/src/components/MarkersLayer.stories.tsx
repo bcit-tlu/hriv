@@ -96,6 +96,8 @@ export const IndependentVisibility: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Reset visibility' }))
     await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
     const drawer = within(canvas.getByRole('complementary'))
+    // Others' Markers sit in the collapsed "Public & Shared" group (#1942).
+    await userEvent.click(drawer.getByRole('button', { name: 'Public & Shared' }))
     await userEvent.click(drawer.getByRole('button', { name: 'Rose window options' }))
     await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
     await userEvent.click(drawer.getByRole('button', { name: 'Stone columns options' }))
@@ -109,8 +111,10 @@ export const IndependentVisibility: Story = {
     await expect(
       canvas.queryByRole('button', { name: 'View Marker: Rose window' }),
     ).not.toBeInTheDocument()
-    await expect(canvas.getByText('Rose window')).toBeVisible()
+    // A hidden marker always hides its label (docs/markers-and-boards.md).
+    await expect(canvas.queryByText('Rose window')).not.toBeInTheDocument()
     await expect(canvas.getByRole('button', { name: 'View Marker: Stone columns' })).toBeVisible()
+    await expect(canvas.queryByText('Stone columns')).not.toBeInTheDocument()
   },
 }
 export const Placement: Story = {
