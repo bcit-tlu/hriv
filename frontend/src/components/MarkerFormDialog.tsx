@@ -819,12 +819,12 @@ export default function MarkerFormDialog({
     <Slide in={boardPane} direction="left" container={panesEl} mountOnEnter unmountOnExit>
       <Box
         sx={{
-          position: 'absolute',
-          inset: 0,
+          gridArea: '1 / 1',
           zIndex: 1,
           display: 'flex',
           flexDirection: 'column',
           minHeight: 0,
+          bgcolor: 'background.paper',
         }}
       >
         <DialogTitle
@@ -905,16 +905,25 @@ export default function MarkerFormDialog({
       sx={{
         position: 'relative',
         overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
+        // Both panes share one grid cell, so the form grows to whichever is
+        // taller instead of clipping the New Board pane to the Marker's height.
+        display: 'grid',
+        gridTemplateRows: 'minmax(0, 1fr)',
+        gridTemplateColumns: 'minmax(0, 1fr)',
         flex: '1 1 auto',
         minHeight: 0,
       }}
     >
-      {/* The marker pane stays mounted beneath the absolute Add Board slide-over
-          so its scroll height, field values and focus state are preserved. */}
+      {/* The marker pane stays mounted beneath the Add Board slide-over so its
+          scroll height, field values and focus state are preserved. */}
       <Box
-        sx={{ display: 'contents', visibility: boardPane ? 'hidden' : undefined }}
+        sx={{
+          gridArea: '1 / 1',
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          visibility: boardPane ? 'hidden' : undefined,
+        }}
         inert={boardPane}
       >
         {content}

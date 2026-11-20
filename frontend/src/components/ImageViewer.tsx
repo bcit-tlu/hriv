@@ -2128,6 +2128,7 @@ export default function ImageViewer({
       <Snackbar
         open={savedToast != null}
         autoHideDuration={6000}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         onClose={(_, reason) => {
           if (reason !== 'clickaway') setSavedToast(null)
         }}
