@@ -101,6 +101,13 @@ describe('AnnouncementBanner (announcements epic)', () => {
     expect(screen.getByRole('img', { name: 'diagram' })).toBeVisible()
   })
 
+  it('offers More for a short single-line body that is only external media', () => {
+    renderWithTheme(<AnnouncementBanner message="![poster](https://example.com/poster.png)" />)
+    expect(screen.getByAltText('poster')).not.toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'More' }))
+    expect(screen.getByAltText('poster')).toBeVisible()
+  })
+
   it('renders the body as markdown, resolving media via the supplied tokens', () => {
     renderWithTheme(
       <AnnouncementBanner

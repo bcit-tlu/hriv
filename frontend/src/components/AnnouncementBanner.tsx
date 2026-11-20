@@ -8,7 +8,7 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import CloseIcon from '@mui/icons-material/Close'
 import { kindAlertSx, kindMeta, type AnnouncementKindMeta } from '../announcementKinds'
-import type { MediaTokens } from '../markdownUtils'
+import { isVideoSrc, type MediaTokens } from '../markdownUtils'
 import MarkdownContent from './MarkdownContent'
 
 export interface AnnouncementBannerProps {
@@ -61,10 +61,13 @@ export default function AnnouncementBanner({
   const [expanded, setExpanded] = useState(false)
   if (!message && !title) return null
   const clamped = clamp && !expanded
-  // Media refs get a More/Less toggle too — an image or video under the
-  // two-line clamp is clipped with no controls otherwise.
+  // Any media gets a More/Less toggle — the clamp hides images and video, so
+  // a body with media would otherwise have no way to reveal them.
   const longBody =
-    message.length > 160 || message.includes('\n') || /\/api\/media\/\d+/.test(message)
+    message.length > 160 ||
+    message.includes('\n') ||
+    /\/api\/media\/\d+|!\[[^\]]*\]\(/.test(message) ||
+    isVideoSrc(message.trim())
   const meta = kind ? kindMeta(kind) : null
 
   const alert = (
