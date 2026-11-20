@@ -1,6 +1,7 @@
 import { useState, type MouseEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
@@ -38,6 +39,10 @@ export interface AnnouncementCardProps {
   compact?: boolean
   /** Makes the title a button (e.g. open the post on the Announcements page). */
   onOpen?: () => void
+  /** Home shelf: show only the title row; the body sits behind "Show more". */
+  collapsed?: boolean
+  /** Adds the Show more / Show less toggle. */
+  onToggleCollapsed?: () => void
 }
 
 const STATUS_COLOR = {
@@ -58,12 +63,28 @@ export default function AnnouncementCard({
   onDelete,
   compact = false,
   onOpen,
+  collapsed = false,
+  onToggleCollapsed,
 }: AnnouncementCardProps) {
   const meta = kindMeta(a.kind)
   const [actionsAnchor, setActionsAnchor] = useState<HTMLElement | null>(null)
   const quiet = a.seen
   const chips = compact ? [] : audienceChips(a)
   const showSeenCount = viewerIsStaff && a.seen_count != null && a.audience_size != null
+  const bodyId = `announcement-${a.id}-body`
+  const collapseToggle = (label: string) =>
+    onToggleCollapsed && (
+      <Button
+        size="small"
+        color="inherit"
+        onClick={onToggleCollapsed}
+        aria-expanded={!collapsed}
+        aria-controls={collapsed ? undefined : bodyId}
+        sx={{ px: 0.5, minWidth: 0 }}
+      >
+        {label}
+      </Button>
+    )
 
   return (
     <Alert
@@ -169,32 +190,38 @@ export default function AnnouncementCard({
             </Menu>
           </>
         )}
+        {collapsed && collapseToggle('Show more')}
       </Stack>
 
-      <Stack
-        direction="row"
-        spacing={1}
-        alignItems="center"
-        sx={{ flexWrap: 'wrap', mt: 0.25, mb: 1 }}
-      >
-        <Typography variant="caption" color="text.secondary">
-          {a.author_name || 'Site'}
-          {manage && !a.can_edit ? ' (co-managed)' : ''}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          ·
-        </Typography>
-        <Tooltip title={formatAbsolute(a.notified_at ?? a.publish_at ?? a.created_at)}>
-          <Typography variant="caption" color="text.secondary">
-            {announcementTimeLabel(a)}
-          </Typography>
-        </Tooltip>
-        {chips.map((chip) => (
-          <Chip key={chip} size="small" variant="outlined" label={chip} sx={{ height: 20 }} />
-        ))}
-      </Stack>
+      {!collapsed && (
+        <Box id={bodyId}>
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            sx={{ flexWrap: 'wrap', mt: 0.25, mb: 1 }}
+          >
+            <Typography variant="caption" color="text.secondary">
+              {a.author_name || 'Site'}
+              {manage && !a.can_edit ? ' (co-managed)' : ''}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              ·
+            </Typography>
+            <Tooltip title={formatAbsolute(a.notified_at ?? a.publish_at ?? a.created_at)}>
+              <Typography variant="caption" color="text.secondary">
+                {announcementTimeLabel(a)}
+              </Typography>
+            </Tooltip>
+            {chips.map((chip) => (
+              <Chip key={chip} size="small" variant="outlined" label={chip} sx={{ height: 20 }} />
+            ))}
+          </Stack>
 
-      {a.message && <MarkdownContent markdown={a.message} mediaTokens={a.media_tokens} />}
+          {a.message && <MarkdownContent markdown={a.message} mediaTokens={a.media_tokens} />}
+          {onToggleCollapsed && <Box sx={{ mt: 0.5 }}>{collapseToggle('Show less')}</Box>}
+        </Box>
+      )}
 
       {/* Reactions live on the Announcements page only — not on the Home shelf, bell or banner. */}
       {!compact && (

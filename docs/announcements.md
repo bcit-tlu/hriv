@@ -170,7 +170,9 @@ menu and the Admin **Changelog** tab, so the Admin page opens on **Backups**.
   bell — only on the page.
 - **Home Notices shelf** (`NoticesShelf.tsx`, `selectNotices`): up to three
   pinned live posts as compact cards (icon, title, full Markdown body — never
-  truncated (#1953); no audience chips or reactions)
+  truncated (#1953); no audience chips or reactions). Unseen posts show in
+  full; seen ones collapse to their title row with **Show more**. **Show
+  less** on an unseen post marks it seen; a re-notify expands it again
   at the Browse root; renders nothing when nothing is pinned. The seeded
   pinned `everyone` welcome post is the #1655 welcome message.
 - **Login broadcast** (`fetchAnnouncementBroadcast`): the newest live

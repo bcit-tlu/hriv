@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, userEvent, within } from 'storybook/test'
 import NoticesShelf from './NoticesShelf'
 import { storyAnnouncement, storyInbox } from './announcementStoryFixtures'
 
@@ -31,6 +32,28 @@ export const ThreeNotices: Story = {
       }),
       storyAnnouncement({ id: 13, pinned: true, title: 'Never shown (cap of three)' }),
     ],
+  },
+}
+
+/** Seen pinned posts collapse to their title; "Show more" reopens the body. */
+export const SeenCollapsed: Story = {
+  args: {
+    announcements: [
+      storyInbox[0],
+      storyAnnouncement({
+        id: 14,
+        pinned: true,
+        seen: true,
+        title: 'Lab coats are mandatory from Monday',
+        message: 'Already read: this body starts collapsed.',
+      }),
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.queryByText(/Already read/)).not.toBeInTheDocument()
+    await userEvent.click(canvas.getByRole('button', { name: 'Show more' }))
+    await expect(canvas.getByText(/Already read/)).toBeInTheDocument()
   },
 }
 

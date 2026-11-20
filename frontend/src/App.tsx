@@ -3316,6 +3316,7 @@ export default function App() {
                 <NoticesShelf
                   announcements={announcementsFeed.announcements}
                   onOpenAnnouncements={(id) => openAnnouncementsPage(id)}
+                  onMarkSeen={announcementsFeed.markSeen}
                 />
               )}
               {/* Breadcrumbs + action buttons */}

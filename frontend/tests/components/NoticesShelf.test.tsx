@@ -38,4 +38,52 @@ describe('NoticesShelf', () => {
     fireEvent.click(screen.getByText('All announcements'))
     expect(onOpen).toHaveBeenLastCalledWith()
   })
+
+  it('collapses seen posts to their title; Show more / Show less toggles the body', () => {
+    const seen = makeAnnouncement({
+      id: 1,
+      pinned: true,
+      title: 'Old news',
+      message: 'Seen body',
+      seen: true,
+    })
+    const onMarkSeen = vi.fn()
+    render(<NoticesShelf announcements={[seen]} onMarkSeen={onMarkSeen} />)
+    expect(screen.queryByText('Seen body')).toBeNull()
+    const more = screen.getByRole('button', { name: 'Show more' })
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(more)
+    expect(screen.getByText('Seen body')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show less' }))
+    expect(screen.queryByText('Seen body')).toBeNull()
+    expect(onMarkSeen).not.toHaveBeenCalled()
+  })
+
+  it('marks an unseen post seen when the reader collapses it', () => {
+    const fresh = makeAnnouncement({ id: 2, pinned: true, title: 'Fresh', message: 'Fresh body' })
+    const onMarkSeen = vi.fn()
+    render(<NoticesShelf announcements={[fresh]} onMarkSeen={onMarkSeen} />)
+    expect(screen.getByText('Fresh body')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show less' }))
+    expect(onMarkSeen).toHaveBeenCalledWith(fresh)
+    expect(screen.queryByText('Fresh body')).toBeNull()
+  })
+
+  it('re-expands a collapsed post when it is re-notified', () => {
+    const post = makeAnnouncement({
+      id: 3,
+      pinned: true,
+      message: 'Body',
+      notified_at: '2026-01-01T00:00:00Z',
+    })
+    const { rerender } = render(<NoticesShelf announcements={[post]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Show less' }))
+    expect(screen.queryByText('Body')).toBeNull()
+    rerender(
+      <NoticesShelf
+        announcements={[{ ...post, seen: false, notified_at: '2026-02-01T00:00:00Z' }]}
+      />,
+    )
+    expect(screen.getByText('Body')).toBeInTheDocument()
+  })
 })
