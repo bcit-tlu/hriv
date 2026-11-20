@@ -153,16 +153,35 @@ async def update_board(
         if body.program_ids or body.group_ids:
             raise HTTPException(422, "program_ids/group_ids require restricted visibility")
         programs, groups = [], []
+    fields = body.model_fields_set
+    if "cover_marker_id" in fields and body.cover_marker_id is not None:
+        # The pinned cover must be a member the caller can actually view —
+        # a cover the picker could not show would silently fall back to the
+        # first member anyway, so naming one is a 422 (mirrors the
+        # invisible-member rule on PATCH /collections).
+        member_ids = {link.marker_id for link in board.marker_links}
+        visible_ids = {
+            link.marker_id for link in board.marker_links if ctx.can_view_image(link.marker.image)
+        }
+        if body.cover_marker_id not in member_ids or body.cover_marker_id not in visible_ids:
+            raise HTTPException(422, "cover_marker_id must reference a marker on this Board")
     await bump_board(db, ctx, board, expected_version(request, body.version))
     if body.name is not None:
         board.name = body.name
-    if "description" in body.model_fields_set:
+    if "description" in fields:
         board.description = body.description
     board.visibility = visibility
     if programs is not None:
         board.programs = programs
     if groups is not None:
         board.groups = groups
+    if "cover_marker_id" in fields:
+        board.cover_marker_id = body.cover_marker_id
+        board.cover_blank = False
+    if "cover_blank" in fields:
+        board.cover_blank = bool(body.cover_blank)
+        if board.cover_blank:
+            board.cover_marker_id = None
     await commit_write(db, user, "board.updated", board_id)
     result = await board_projection(db, ctx, board_id)
     response.headers["ETag"] = f'"{result.version}"'
@@ -293,6 +312,10 @@ async def remove_board_marker(
     await bump_board(db, ctx, board, expected_version(request))
     await touch_markers(db, [marker_id])
     await db.delete(link)
+    # A pinned cover that is no longer a member reverts to the
+    # first-member fallback.
+    if board.cover_marker_id == marker_id:
+        board.cover_marker_id = None
     await commit_write(db, user, "board.marker_removed", board_id)
     result = await board_projection(db, ctx, board_id)
     response.headers["ETag"] = f'"{result.version}"'

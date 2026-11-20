@@ -204,6 +204,42 @@ async def test_non_owner_write_authority(world, role):
         assert result.status_code == 404
 
 
+async def test_board_cover_marker_pin(world):
+    """PATCH cover_marker_id pins a member marker; non-members 422."""
+    await world.create(title="First")
+    second = await world.create(title="Second")
+    path = f"/api/boards/{world.boards[world.caller['role']]}"
+    board = await world.board(world.caller["role"])
+    assert board["cover_marker_id"] is None and board["cover_blank"] is False
+    pinned = await world.client.patch(
+        path, json={"version": board["version"], "cover_marker_id": second["id"]},
+    )
+    assert pinned.status_code == 200, pinned.text
+    assert pinned.json()["cover_marker_id"] == second["id"]
+    # A marker that is not a member of the board is rejected.
+    non_member = await world.create(assignments=[{"board_id": world.boards["shared"]}])
+    rejected = await world.client.patch(
+        path, json={"version": pinned.json()["version"], "cover_marker_id": non_member["id"]},
+    )
+    assert rejected.status_code == 422, rejected.text
+    # The blank tile clears the pin.
+    blank = await world.client.patch(
+        path, json={"version": pinned.json()["version"], "cover_blank": True},
+    )
+    assert blank.status_code == 200, blank.text
+    assert blank.json()["cover_blank"] is True and blank.json()["cover_marker_id"] is None
+    assert blank.json()["cover_thumb"] is None
+    # Clearing the pin restores the first-member fallback.
+    cleared = await world.client.patch(
+        path, json={"version": blank.json()["version"], "cover_blank": False},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["cover_blank"] is False
+    summary = await world.client.get("/api/boards")
+    row = next(row for row in summary.json() if row["id"] == board["id"])
+    assert row["cover_marker_id"] is None and row["cover_blank"] is False
+
+
 async def test_ownership_checks_precede_target_validation(world):
     for key, expected in [("private", 404), ("other", 403), ("student", 403)]:
         result = await world.client.put(

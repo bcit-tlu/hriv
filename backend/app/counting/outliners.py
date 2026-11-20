@@ -17,7 +17,7 @@ Implementations:
 - ``StubOutliner`` — deterministic synthetic discs; ignores pixels.
 
 Cellpose ``cyto3`` is deliberately absent: cellpose 3.1 pins numpy<2.1,
-has no Python 3.14 wheels, and its weights are trained partly on
+has no wheels for the current Python runtime, and its weights are trained partly on
 CC-BY-NC data (owner decision pending). The ``Outliner`` seam stays the
 plugin point if it ever returns.
 """

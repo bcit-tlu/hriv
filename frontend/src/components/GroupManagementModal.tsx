@@ -553,6 +553,7 @@ export default function GroupManagementModal({
           >
             <Box sx={{ p: 2, pb: 1.5 }}>
               <Button
+                size="small"
                 variant="contained"
                 color="secondary"
                 fullWidth
@@ -990,6 +991,7 @@ export default function GroupManagementModal({
         </DialogContent>
         <DialogActions>
           <Button
+            size="small"
             onClick={() => {
               setGroupDialogMode(null)
               setGroupActionError(null)
@@ -998,6 +1000,7 @@ export default function GroupManagementModal({
             Cancel
           </Button>
           <Button
+            size="small"
             variant="contained"
             disabled={!groupNameDraft.trim() || groupPending}
             onClick={() => void handleGroupDialogSubmit()}
@@ -1078,6 +1081,7 @@ export default function GroupManagementModal({
         </DialogContent>
         <DialogActions>
           <Button
+            size="small"
             onClick={() => {
               setDeleteDialogOpen(false)
               setGroupActionError(null)
@@ -1086,6 +1090,7 @@ export default function GroupManagementModal({
             Cancel
           </Button>
           <Button
+            size="small"
             color="error"
             variant="contained"
             disabled={groupPending}

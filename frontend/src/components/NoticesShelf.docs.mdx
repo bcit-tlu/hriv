@@ -15,7 +15,7 @@ import * as NoticesShelfStories from './NoticesShelf.stories'
 
 <Subtitle>
   Home "Notices" shelf: up to three pinned, live announcements as compact cards (kind icon, title,
-  first line, reaction pills). Renders nothing when there is nothing pinned.
+  full Markdown body, no audience chips or reactions). Renders nothing when there is nothing pinned.
 </Subtitle>
 
 <Primary />
@@ -25,7 +25,9 @@ import * as NoticesShelfStories from './NoticesShelf.stories'
 
 - `selectNotices` keeps pinned + live posts from the shared feed, capped at three, in feed order.
 - Card titles call `onOpenAnnouncements(id)`; "All announcements" opens the page unfocused.
-- Reactions toggle through the same `useAnnouncements.toggleReaction` as the page and bell.
+- Bodies are never truncated: pinned posts must carry an expiry (#1953), so they cannot linger.
+- Unseen posts show in full; seen posts collapse to their title row. A **Close** / **Expand** button sits at
+  the top right, after the pin; closing an unseen post calls `onMarkSeen`, and a re-notify (new `notified_at`) re-expands it.
 - The #1655 welcome message is a seeded pinned `everyone` announcement — no separate component.
 
 <Stories includePrimary={false} />

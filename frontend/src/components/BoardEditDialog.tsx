@@ -1,4 +1,5 @@
-import { useContext, useState } from 'react'
+import { useContext, useRef, useState } from 'react'
+import { isSubmitKey, useInitialFocus } from '../formKeys'
 import {
   Alert,
   Box,
@@ -70,6 +71,8 @@ export function BoardFields({
   const canChangeScope = baseline == null || baseline.permissions.can_change_scope
   const canRestrict = user?.role === 'instructor' || user?.role === 'admin'
   const attachable = getAttachableProgramIds(user)
+  const nameRef = useRef<HTMLInputElement>(null)
+  useInitialFocus(nameRef, !disabled)
   const toggle = (ids: number[], id: number) =>
     ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id]
   return (
@@ -77,7 +80,7 @@ export function BoardFields({
       <TextField
         label="Name"
         required
-        autoFocus
+        inputRef={nameRef}
         value={name}
         onChange={(e) => onNameChange(e.target.value)}
         disabled={disabled}
@@ -274,6 +277,12 @@ export default function BoardEditDialog({
     }
   }
   const editable = !baseline || baseline.permissions.can_edit
+  const canSave =
+    !busy &&
+    !conflict &&
+    editable &&
+    !!name.trim() &&
+    !(visibility === 'restricted' && programIds.length + groupIds.length === 0)
   return (
     <Dialog
       open
@@ -282,17 +291,28 @@ export default function BoardEditDialog({
       maxWidth="sm"
       aria-labelledby="board-edit-dialog-title"
     >
-      <DialogTitle id="board-edit-dialog-title">
+      <DialogTitle id="board-edit-dialog-title" sx={baseline ? undefined : { pb: 1 }}>
         {baseline ? 'Edit Board' : 'New Board'}
       </DialogTitle>
-      <DialogContent>
+      <DialogContent
+        onKeyDown={(event) => {
+          if (!canSave || !isSubmitKey(event)) return
+          event.preventDefault()
+          void save()
+        }}
+      >
+        {!baseline && (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Boards collect saved image views (Markers) for study and sharing.
+          </Typography>
+        )}
         <Stack spacing={2} sx={{ pt: 1 }}>
           {error && (
             <Alert
               severity="error"
               action={
                 conflict ? (
-                  <Button onClick={() => void reload()} disabled={busy}>
+                  <Button size="small" onClick={() => void reload()} disabled={busy}>
                     Reload latest
                   </Button>
                 ) : undefined
@@ -322,6 +342,7 @@ export default function BoardEditDialog({
               <Divider sx={{ my: 2 }} />
               <Box>
                 <Button
+                  size="small"
                   color="error"
                   variant={confirmDelete ? 'contained' : 'outlined'}
                   fullWidth
@@ -346,20 +367,10 @@ export default function BoardEditDialog({
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={busy}>
+        <Button size="small" onClick={onClose} disabled={busy}>
           Cancel
         </Button>
-        <Button
-          variant="contained"
-          onClick={() => void save()}
-          disabled={
-            busy ||
-            conflict ||
-            !editable ||
-            !name.trim() ||
-            (visibility === 'restricted' && programIds.length + groupIds.length === 0)
-          }
-        >
+        <Button size="small" variant="contained" onClick={() => void save()} disabled={!canSave}>
           Save Board
         </Button>
       </DialogActions>

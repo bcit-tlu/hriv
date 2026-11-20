@@ -46,6 +46,20 @@ function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
 }
 
 describe('AppShell', () => {
+  it('opens the Boards popover from the AppBar except on the Boards page', () => {
+    const onBoardsMenu = vi.fn()
+    const props = makeProps({ markersEnabled: true, onBoardsMenu })
+    const { rerender } = render(<AppShell {...props} />)
+    const button = screen.getByRole('button', { name: 'Boards & Markers' })
+    expect(button).toHaveAttribute('aria-haspopup', 'dialog')
+    fireEvent.click(button)
+    expect(onBoardsMenu).toHaveBeenCalledWith(button)
+    expect(props.onTabChange).not.toHaveBeenCalled()
+    rerender(<AppShell {...props} page="boards" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Boards & Markers' }))
+    expect(props.onTabChange).toHaveBeenCalledWith('boards')
+    expect(onBoardsMenu).toHaveBeenCalledOnce()
+  })
   it('gates the Boards utility button without adding a navigation tab', () => {
     const props = makeProps({
       page: 'boards',

@@ -5,7 +5,6 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
-import Collapse from '@mui/material/Collapse'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
@@ -18,7 +17,6 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddPhotoAlternateOutlinedIcon from '@mui/icons-material/AddPhotoAlternateOutlined'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import {
   createAnnouncement,
   updateAnnouncement,
@@ -141,13 +139,13 @@ function ComposerDialog({
   const [pinned, setPinned] = useState(initial.pinned)
   const [banner, setBanner] = useState(initial.banner)
   const [notifyAgain, setNotifyAgain] = useState(false)
-  const [moreOpen, setMoreOpen] = useState(initial.moreOpen)
   const [preview, setPreview] = useState(false)
   const [mediaTokens, setMediaTokens] = useState<Record<string, string>>(initial.mediaTokens)
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const expiresRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const sentinel = targets.find((o) => o.kind === 'audience')
@@ -157,6 +155,9 @@ function ComposerDialog({
   const titleTrimmed = title.trim()
   const targetsValid = audience !== 'targeted' || programIds.length + groupIds.length > 0
   const canSubmit = titleTrimmed.length > 0 && targetsValid && !saving && !uploading
+  // Pinned posts feed the Home shelf, so they must expire; drafts may stay unfinished.
+  const expiryMissing = pinned && expiresAt === ''
+  const canPost = canSubmit && !expiryMissing
   const isEdit = mode === 'edit' && source != null
   const scheduled = publishAt !== ''
 
@@ -202,8 +203,17 @@ function ComposerDialog({
     banner,
   })
 
+  const handlePinnedChange = (next: boolean) => {
+    setPinned(next)
+    if (next && expiresAt === '') {
+      expiresRef.current
+        ?.querySelector<HTMLElement>('[role="spinbutton"], input:not([aria-hidden="true"])')
+        ?.focus()
+    }
+  }
+
   const submit = async (draft: boolean) => {
-    if (!canSubmit) return
+    if (!canSubmit || (!draft && expiryMissing)) return
     setSaving(true)
     setError(null)
     try {
@@ -368,16 +378,15 @@ function ComposerDialog({
             )}
           </Box>
 
-          <Button
-            size="small"
-            onClick={() => setMoreOpen((o) => !o)}
-            endIcon={<ExpandMoreIcon sx={{ transform: moreOpen ? 'rotate(180deg)' : undefined }} />}
-            sx={{ alignSelf: 'flex-start' }}
-            aria-expanded={moreOpen}
-          >
-            More options
-          </Button>
-          <Collapse in={moreOpen} unmountOnExit>
+          <Box component="section" aria-labelledby="announcement-publishing-heading">
+            <Typography
+              id="announcement-publishing-heading"
+              variant="subtitle2"
+              component="h3"
+              sx={{ mb: 1.5 }}
+            >
+              Publishing options
+            </Typography>
             <Stack spacing={2}>
               <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
                 {rangeShortcuts().map((r) => {
@@ -418,6 +427,7 @@ function ComposerDialog({
                     }}
                   />
                   <DateTimePicker
+                    ref={expiresRef}
                     label="Expires at"
                     value={expiresAt ? dayjs(expiresAt) : null}
                     onChange={(next) => {
@@ -427,7 +437,12 @@ function ComposerDialog({
                     format={PICKER_FORMAT}
                     ampm={false}
                     slotProps={{
-                      textField: { fullWidth: true, helperText: 'Optional' },
+                      textField: {
+                        fullWidth: true,
+                        required: pinned,
+                        error: expiryMissing,
+                        helperText: pinned ? 'Required for pinned posts' : 'Optional',
+                      },
                       field: { clearable: true },
                       shortcuts: { items: expiryShortcuts(publishAt) },
                     }}
@@ -443,7 +458,7 @@ function ComposerDialog({
                 <OptionCheckbox
                   id="announcement-pinned"
                   checked={pinned}
-                  onChange={setPinned}
+                  onChange={handlePinnedChange}
                   label="Pin to top"
                   hint="Stays above newer posts and appears in the Home notices shelf while live"
                 />
@@ -467,20 +482,24 @@ function ComposerDialog({
                 )}
               </Stack>
             </Stack>
-          </Collapse>
+          </Box>
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={saving}>
+        <Button size="small" onClick={onClose} disabled={saving}>
           Cancel
         </Button>
-        <Box sx={{ flex: 1 }} />
         {(!isEdit || source?.status === 'draft') && (
-          <Button onClick={() => void submit(true)} disabled={!canSubmit}>
+          <Button size="small" onClick={() => void submit(true)} disabled={!canSubmit}>
             Save draft
           </Button>
         )}
-        <Button variant="contained" onClick={() => void submit(false)} disabled={!canSubmit}>
+        <Button
+          size="small"
+          variant="contained"
+          onClick={() => void submit(false)}
+          disabled={!canPost}
+        >
           {saving ? 'Saving…' : postLabel}
         </Button>
       </DialogActions>

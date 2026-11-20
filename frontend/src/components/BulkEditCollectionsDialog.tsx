@@ -220,6 +220,7 @@ export default function BulkEditCollectionsDialog({
           >
             <span>
               <Button
+                size="small"
                 color="error"
                 variant={confirmDelete ? 'contained' : 'outlined'}
                 onClick={handleDelete}
@@ -244,11 +245,11 @@ export default function BulkEditCollectionsDialog({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} disabled={saving}>
+        <Button size="small" onClick={handleClose} disabled={saving}>
           Cancel
         </Button>
         {canCurate && (
-          <Button onClick={handleSave} variant="contained" disabled={saving}>
+          <Button size="small" onClick={handleSave} variant="contained" disabled={saving}>
             {saving ? 'Saving…' : 'Save Changes'}
           </Button>
         )}

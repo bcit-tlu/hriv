@@ -697,6 +697,7 @@ export default function CollectionEditDialog({
             <Divider sx={{ my: 2 }} />
             <Box>
               <Button
+                size="small"
                 color="error"
                 variant={confirmDelete ? 'contained' : 'outlined'}
                 onClick={() => void handleDelete()}
@@ -750,10 +751,10 @@ export default function CollectionEditDialog({
         </Box>
       )}
       <DialogActions>
-        <Button onClick={onClose} disabled={saving || deleting}>
+        <Button size="small" onClick={onClose} disabled={saving || deleting}>
           Cancel
         </Button>
-        <Button onClick={handleSubmit} variant="contained" disabled={!canSubmit}>
+        <Button size="small" onClick={handleSubmit} variant="contained" disabled={!canSubmit}>
           {isEdit ? 'Save' : 'Create'}
         </Button>
       </DialogActions>

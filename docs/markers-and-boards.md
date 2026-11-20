@@ -210,6 +210,14 @@ and permission fields are reused in write responses.
 | `PUT /api/boards/{id}/markers/order`          | `items: [{marker_id}]`, parent token; Board detail                                                                               |
 | `DELETE /api/boards/{id}/markers/{marker_id}` | Parent concurrency header; Board detail                                                                                          |
 
+`PATCH /api/boards/{id}` also accepts the tile cover fields, mirroring the
+Collections picker: `cover_marker_id` pins a member marker's thumbnail on
+the tile (422 when the marker is not a visible member of the Board; `null`
+clears the pin and restores the first-member fallback) and `cover_blank`
+renders the Board-icon placeholder. The two are mutually exclusive —
+writing either clears the other — and deleting the pinned marker clears the
+pin (`SET NULL`).
+
 Every Marker must have at least one Board link. Missing/empty
 `board_assignments` on create is 422. Assignments contain `board_id` and
 optional `sort_order`; new links
@@ -348,7 +356,7 @@ Drawer row Edit selects/pans to the Marker, focuses its row and
 opens that same in-place editor, not a central dialog. Cancel restores view mode.
 Outside presses keep the editor open, whether changed or not; other markers/rows
 do not replace an open editor. Use Save/Cancel or explicit Escape (cancel and close)
-first. Clicks within the portalled Boards menu never discard the edit. This applies
+first. Clicks within the portalled **Save to** Board picker never discard the edit. This applies
 to single-image, Sequence and Synchronized viewers; BoardsPage keeps its modal editor.
 
 Flip remains a presentation setting, not a saved coordinate transform.
@@ -367,19 +375,29 @@ other mutations send body versions.
 
 `MarkerFormDialog` requires a nonblank title and at least one editable Board.
 The multi-picker only lists `permissions.can_edit` Boards. Selected Boards retain their existing membership when editing. Other Boards' links are preserved by the backend assignment
-contract. The searchable checkbox menu sorts names case-insensitively, with stable
-ID ties. There are no selected chips: its closed field shows names as text (first
-two, then `+N`). A pinned **+ Add Board** row sits at the bottom of the
-fixed-height menu while the checkbox options scroll above it. Choosing it
+contract. Where the Marker is saved is part of the save action, not a field of
+the Marker. New Markers save first, change after: **Save** uses the default
+Board (most recently used editable Board) and the viewer shows a
+**Saved to {Board} · Change** snackbar (`onSaved`) whose Change opens that
+Marker's inline editor. With no default, the button reads **Choose a Board** and
+opens the **Save to** picker popover: each editable Board as a
+row with cover, name, Marker count and a checkmark when chosen (`aria-pressed`),
+ordered selected, most recently used, then by name (case-insensitive, stable ID
+ties), with **Search Boards** above more than 8 rows, and Create Board / Done in
+its footer. Toggling does not reorder rows. Editing replaces Save with **Save**/**Save changes** and shows a **Saved to** list of Board rows with a
+remove × plus **Save to another Board**, which opens the same picker; with no
+Board left, a dashed **Choose a Board** row replaces both. Create Board
 slides a **New Board** pane in from the right over the form — the same fields
 as the Boards & Markers page's Add Board dialog (name, description, visibility
 and restricted Program/Group chips, lazily loaded) — and a top-left back arrow
 or Escape returns to the Marker form with the draft intact. Creating selects
 the new Board and restores the form; empty names and incomplete restricted
 scopes disable creation; failures surface inside the pane.
-The last successfully used Board is remembered under the user-scoped
-`hrivpref:marker:lastBoard:<userId>` localStorage key, validated against the
-editable list on the next create; blocked storage is optional, not an error.
+Successful saves record their Boards in the user-scoped
+`hrivpref:marker:recentBoards:<userId>` localStorage list (newest first, at most
+50 IDs). It drives picker order, and its first editable Board is preselected on the
+next create. When the list is absent, the legacy `hrivpref:marker:lastBoard:<userId>`
+key seeds it. Storage is per browser and optional; blocked storage is not an error.
 Drawer and viewer-panel lists omit the redundant Markers total heading; group
 headings carry no counts.
 
@@ -507,7 +525,14 @@ ownership/visible-Board gates, returning 404 for missing or invisible items.
 Only visible Board IDs are projected; thumbnails carry thumbnail-only tokens.
 The response uses viewer-bound, token-epoch ETags and supports conditional 304s.
 
-The feature-gated **Boards & Markers** AppBar utility opens `?page=boards`.
+The feature-gated **Boards & Markers** AppBar utility opens a **My Boards**
+popover (`BoardsPopover`) rather than navigating: a vertical stack of the
+viewer's editable owned Boards (the page's chip row, in its order) with cover,
+name and Marker count, reloaded on each open. Choosing a Board opens the
+in-place `BoardDialog` over the current page, the same dialog the viewer drawer
+headings use; its Marker tiles jump to their saved views. **Open Boards &
+Markers** at the bottom opens `?page=boards`. On the Boards page the button
+navigates directly.
 It does not add a primary tab: students retain two mobile navigation tabs, and
 Boards uses `Tabs value={false}`. Selecting a Board writes
 `?page=boards&board={id}`; Back/Forward restores the selection.
@@ -525,9 +550,10 @@ Only the page heading changes; the Boards & Markers navigation label remains unc
 Below it, **My Markers** contains Collections-style Cards/Table controls and then
 the filter bar. There is no Graph view. Only personally owned Markers appear; both lists are
 fetched in pages of 200 without the former recent-60 cap.
-The overview's outlined Select button is right-aligned on the Filter by row in both views,
-and the resulting selection actions — including Cancel Selection — render on
-the same row so engaging Select never pushes controls downward.
+The overview's Multi-select button is right-aligned on the Filter by row in both views
+(contained while active; pressing it again ends selection), and the resulting
+selection actions render on the same row so engaging Multi-select never pushes
+controls downward.
 Each card shows the
 image's parent category below its title (`category_name`, null if unfiled).
 The heading uses the same h5/h1 typography as Collections. Marker cards are 234px
@@ -591,9 +617,28 @@ Owners/transfer reuse the Collections picker via a Board adapter, and require
 reload on 409; reload replaces the staged draft with current server values.
 
 The selected Board displays a flat, ordered collage of saved views.
-The My Markers overview instead sorts every fetched page together by case-insensitive
-title, with numeric Marker ID breaking ties. Favourite and membership changes do not
-change that order; renames move only to their new alphabetical position.
+The My Markers overview keeps the saved Marker order across every fetched page
+(`sort_order`, with numeric Marker ID breaking ties); dragging reorders it and the
+Order saved snackbar's Undo restores the prior order. Favourite, membership and
+title changes do not change that order.
+The Board dialog title reads "<name> Board (<n> markers)". Saving a Marker to a
+Board (drop or Move/Save to…) shows a success snackbar whose Undo restores the
+Marker's previous editable Board assignments, pinned to the version the save
+returned so a later edit makes Undo conflict instead of being overwritten.
+The New Board form opens with a one-line description of what Boards are for.
+The Marker edit form lists Description before Boards. An active favourite star
+sits on a Marker-blue disc. Saving a favourite does not disable or restyle the
+other tile actions; they ignore clicks until the save finishes. The viewer's
+Marker info card behaves the same: its Edit button keeps its look while the star
+saves.
+The Board Owners dialog names the Board as "<name> Board" in its subtitle.
+While placement is armed, the viewer's Add Marker toolbar button shows a blue
+pin on a white disc over the red active background.
+Marker and Board forms (Edit/Add Marker dialog, canvas popover, inline editor,
+New Board pane and dialog) focus Title or Name on open. Enter in a single-line
+field saves when Save is enabled; Ctrl/⌘+Enter saves from any field, including
+Description. The Move/Save to Board dialog saves on Ctrl/⌘+Enter, because plain
+Enter opens its Destination menu.
 Filled favourite stars are white on both cards and table rows. A contrasting
 background keeps the white star legible, including read-only favourite indicators.
 Dragging a member card reorders members within the Board, without a separate handle icon;
@@ -634,8 +679,10 @@ Opening a card fetches the authorized image record and reuses the existing
 parameter naming the target Marker, with an epoch guard
 against late navigation. While a marker-focused image is open the URL keeps
 `?marker=`; the viewer consumes it once loaded — recentring, selecting,
-focusing and revealing the Marker if it was canvas-hidden — so a marker link
-restores on refresh and Browser Back. Browser Back returns to the Board entry.
+focusing, revealing the Marker if it was canvas-hidden and opening its info
+card so the description is visible — so a marker link
+restores on refresh and Browser Back. Leaving that image consumes the focus:
+returning through Browse or Collections opens it with no Marker card. Browser Back returns to the Board entry.
 
 Tests: `boardUtils.test.ts`, `useBoardsData.test.ts`, `BoardsPage.test.tsx`,
 `BoardDialog.test.tsx`, `BoardEditDialog.test.tsx`, `BoardOwnersDialog.test.tsx`,
@@ -698,7 +745,7 @@ compose default true. This close-out does not remove the flag or alter its defau
 
 With `features.markers`, the image page and Sequence viewer use a single right-side
 panel instead of the earlier Details overlay and left Markers drawer described
-above. Its sidebar toggle opens/closes it; the header selects Markers, Shared View or Details.
+above. Its sidebar toggle opens/closes it; the header selects Markers, Share View or Details.
 MUI rounded-square action states replace the prototype's navigation-rail pills.
 There is no pin or click-away in this panel. At sm and above it reserves 256px by
 resizing OSD's actual container, so the minimap, toolbar and sequence arrows stay
@@ -719,8 +766,8 @@ Boards & Markers → All Boards → Public & Shared instead. This is frontend UX
 scoping;
 the backend continues to serve authorized public Boards and their contents.
 
-The link icon between Markers and Details selects **Shared View**. **Copy current
-view** reuses the image page's clipboard, fallback and feedback logic, replacing
+The link icon between Markers and Details selects **Share View**. Its centred
+outlined **Share View** button reuses the image page's clipboard, fallback and feedback logic, replacing
 the standalone Share View button only when this panel is enabled. Sequence's panel
 copies an image link with the current zoom, centre, rotation and selection rectangles,
 opening that specific view independently of the collection slot. Flag-off controls

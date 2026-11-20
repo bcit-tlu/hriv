@@ -32,14 +32,17 @@ star, Save/Cancel and permitted Delete. Description is collapsed under More opti
 even when filled; opening it reveals the saved text. Delete opens a separate
 confirmation dialog; cancelling that dialog leaves your draft untouched.
 While editing, outside presses—including other markers/rows—keep your editor open;
-finish with Save/Cancel, or explicitly Escape to cancel and close. The Boards menu
-does not dismiss it. Version conflicts retain your fields and offer Reload current.
+finish with Save/Cancel, or explicitly Escape to cancel and close. The **Save to** Board
+picker does not dismiss it. Version conflicts retain your fields and offer Reload current.
 This works in image, Sequence and Synchronized viewers; BoardsPage keeps its modal edit form.
 Saving a Marker does not modify the source image.
 The drawer/panel omits the redundant Markers total heading. Rows are grouped by
 their associated Boards: each Board name is a heading-link that opens the Board
 dialog right over the image — marker tiles inside it jump to their saved views,
-and **Open in Boards & Markers** reaches the full management page. Your own
+and **Open in Boards & Markers** reaches the full management page. The
+**Boards & Markers** button in the top bar lists your Boards too: choose one to
+open the same dialog wherever you are, or **Open Boards & Markers** for the full
+page. Your own
 Boards list first, then
 instructor-owned or program Boards; Boards shared by classmates sit under a
 collapsed **Public & Shared** section — open it to browse them, and their
@@ -160,11 +163,11 @@ the original Marker. See [Collections](collections) for the viewer controls.
 ## Image and Sequence viewer panel
 
 When Markers is enabled, use **Open viewer panel** at the image's top-right.
-Choose the pin for **Markers**, the link icon for **Shared View**, or the info icon for **Image details**.
+Choose the pin for **Markers**, the link icon for **Share View**, or the info icon for **Image details**.
 The panel stays open until you choose **Close viewer panel**; it does not need
 pinning and canvas clicks do not retract it. Your open state and selected content
 carry across images, Sequence steps and reloads for your account.
-The panel is 256px wide on larger screens. Shared View's **Copy current view**
+The panel is 256px wide on larger screens. The **Share View** tab's **Share View** button
 copies the current image location, zoom and selection boxes; it replaces the old
 Share View button. In Sequence it creates a standalone image link at that view.
 With the feature disabled the original Share View control remains unchanged.

@@ -530,6 +530,7 @@ export default function CountReportDialog({
         <Box>
           {adjustable && !adjusting ? (
             <Button
+              size="small"
               startIcon={<TuneIcon />}
               onClick={() => setAdjusting(true)}
               aria-label="Adjust count"
@@ -540,19 +541,25 @@ export default function CountReportDialog({
           {adjustable && adjusting ? (
             <>
               <Button
+                size="small"
                 startIcon={<RestartAltIcon />}
                 onClick={onResetAdjustments}
                 disabled={!hasAdjustments}
               >
                 Reset
               </Button>
-              <Button variant="outlined" onClick={() => setAdjusting(false)} sx={{ ml: 1 }}>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => setAdjusting(false)}
+                sx={{ ml: 1 }}
+              >
                 Done
               </Button>
             </>
           ) : null}
         </Box>
-        <Button variant="contained" onClick={onClose}>
+        <Button size="small" variant="contained" onClick={onClose}>
           Close
         </Button>
       </DialogActions>

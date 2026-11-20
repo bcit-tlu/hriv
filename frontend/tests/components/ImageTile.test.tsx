@@ -145,7 +145,7 @@ describe('ImageTile', () => {
       )
       const title = screen.getByText('Inactive Slide')
       expect(title.closest('[data-testid="image-tile-action-area"]')).toHaveStyle({
-        filter: 'grayscale(100%)',
+        filter: 'grayscale(1)',
       })
     })
 
@@ -217,7 +217,7 @@ describe('ImageTile', () => {
       const actionArea = title.closest('[data-testid="image-tile-action-area"]')
 
       expectEffectiveOpacity(card, '1')
-      expect(actionArea).toHaveStyle({ filter: 'grayscale(100%)' })
+      expect(actionArea).toHaveStyle({ filter: 'grayscale(1)' })
     })
   })
 

@@ -1057,6 +1057,7 @@ export default function CollectionManageDialog({
           <Box sx={{ px: 3, pb: 1 }}>
             <Divider sx={{ mb: 2 }} />
             <Button
+              size="small"
               color="error"
               variant="outlined"
               fullWidth
@@ -1075,10 +1076,16 @@ export default function CollectionManageDialog({
               Unsaved changes — apply with Done.
             </Typography>
           )}
-          <Button onClick={handleRequestClose} disabled={saving} data-testid="manage-cancel">
+          <Button
+            size="small"
+            onClick={handleRequestClose}
+            disabled={saving}
+            data-testid="manage-cancel"
+          >
             Cancel
           </Button>
           <Button
+            size="small"
             variant="contained"
             onClick={() => void handleDone()}
             disabled={saving}
@@ -1099,7 +1106,11 @@ export default function CollectionManageDialog({
           {pickerData.error && (
             <Alert
               severity="error"
-              action={<Button onClick={() => void pickerData.reload()}>Retry</Button>}
+              action={
+                <Button size="small" onClick={() => void pickerData.reload()}>
+                  Retry
+                </Button>
+              }
             >
               {pickerData.error}
             </Alert>
@@ -1126,10 +1137,11 @@ export default function CollectionManageDialog({
           )}
         </DialogContent>
         <DialogActions>
-          <Button disabled={pickerBusy} onClick={() => setPickerOpen(false)}>
+          <Button size="small" disabled={pickerBusy} onClick={() => setPickerOpen(false)}>
             Cancel
           </Button>
           <Button
+            size="small"
             disabled={pickerBusy || pickerData.loading || !pickerData.board?.markers.length}
             onClick={async () => {
               const items = pickerData.board?.markers ?? []

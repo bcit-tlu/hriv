@@ -50,8 +50,8 @@ function setup(boardId: number | null = 1, props: Partial<Parameters<typeof Boar
 describe('BoardDialog', () => {
   it('shows the Board heading, scope, description and marker tiles', async () => {
     setup()
-    await screen.findByRole('heading', { name: 'Architecture inspiration' })
-    expect(screen.getByText('(6 Markers)')).toBeInTheDocument()
+    await screen.findByRole('heading', { name: 'Architecture inspiration Board' })
+    expect(screen.getByText('(6 markers)')).toBeInTheDocument()
     expect(
       screen.getByText('Details worth a second look — our studio inspiration board.'),
     ).toBeInTheDocument()
@@ -78,14 +78,14 @@ describe('BoardDialog', () => {
 
   it('routes the manage link to the full Boards & Markers surface', async () => {
     const { onManage } = setup(2)
-    await screen.findByRole('heading', { name: 'Shared discoveries' })
+    await screen.findByRole('heading', { name: 'Shared discoveries Board' })
     fireEvent.click(screen.getByRole('button', { name: 'Open in Boards & Markers' }))
     expect(onManage).toHaveBeenCalledWith(2)
   })
 
   it('closes via the header button and hides management controls for read-only Boards', async () => {
     const { onClose } = setup(2)
-    await screen.findByRole('heading', { name: 'Shared discoveries' })
+    await screen.findByRole('heading', { name: 'Shared discoveries Board' })
     // A Board the user cannot edit hides Edit/owners affordances.
     expect(screen.queryByRole('button', { name: 'Edit Board' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Manage owners' })).not.toBeInTheDocument()
@@ -95,14 +95,14 @@ describe('BoardDialog', () => {
 
   it('opens the shared BoardEditDialog from the header pencil', async () => {
     setup()
-    await screen.findByRole('heading', { name: 'Architecture inspiration' })
+    await screen.findByRole('heading', { name: 'Architecture inspiration Board' })
     fireEvent.click(screen.getByRole('button', { name: 'Edit Board' }))
     expect(await screen.findByRole('dialog', { name: 'Edit Board' })).toBeInTheDocument()
   })
 
   it('opens the shared MarkerFormDialog from a marker pencil', async () => {
     setup()
-    await screen.findByRole('heading', { name: 'Architecture inspiration' })
+    await screen.findByRole('heading', { name: 'Architecture inspiration Board' })
     fireEvent.click(screen.getByRole('button', { name: 'Edit Marker: Rose window' }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     await waitFor(() => expect(api.fetchBoards).toHaveBeenCalled())
@@ -111,7 +111,7 @@ describe('BoardDialog', () => {
   it('toggles a marker favourite, reloads the Board and reports the change', async () => {
     const onChanged = vi.fn()
     setup(1, { onChanged })
-    await screen.findByRole('heading', { name: 'Architecture inspiration' })
+    await screen.findByRole('heading', { name: 'Architecture inspiration Board' })
     fireEvent.click(screen.getByRole('button', { name: 'Favourite Stone columns' }))
     await waitFor(() =>
       expect(api.updateMarker).toHaveBeenCalledWith(8, { version: 3, favourite: true }),
@@ -122,7 +122,7 @@ describe('BoardDialog', () => {
 
   it('clears a 409 block only after a successful reload', async () => {
     setup()
-    await screen.findByRole('heading', { name: 'Architecture inspiration' })
+    await screen.findByRole('heading', { name: 'Architecture inspiration Board' })
     vi.mocked(api.updateMarker).mockRejectedValueOnce(new ApiError(409, 'version conflict'))
     fireEvent.click(screen.getByRole('button', { name: 'Favourite Stone columns' }))
     await screen.findByRole('alert')
@@ -146,13 +146,13 @@ describe('BoardDialog', () => {
       async (id) => BOARDS_FIXTURES.find((board) => board.id === id) ?? BOARDS_FIXTURES[0],
     )
     fireEvent.click(screen.getByRole('button', { name: 'Reload latest' }))
-    await screen.findByRole('heading', { name: 'Architecture inspiration' })
+    await screen.findByRole('heading', { name: 'Architecture inspiration Board' })
   })
 
   it('renders an empty Board without markers', async () => {
     setup(3)
-    await screen.findByRole('heading', { name: 'Next studio project' })
+    await screen.findByRole('heading', { name: 'Next studio project Board' })
     expect(screen.getByText('No Markers yet. Save a view from an image.')).toBeInTheDocument()
-    expect(screen.getByText('(0 Markers)')).toBeInTheDocument()
+    expect(screen.getByText('(0 markers)')).toBeInTheDocument()
   })
 })
