@@ -130,7 +130,21 @@ export default function AnnouncementCard({
         )}
         {a.pinned && (
           <Tooltip title="Pinned">
-            <PushPinIcon fontSize="small" color="action" aria-label="Pinned" />
+            {/* Flat light-grey circle, echoing the drawers' pinned state; a marker, not a button. */}
+            <Box
+              component="span"
+              role="img"
+              aria-label="Pinned"
+              sx={{
+                display: 'inline-flex',
+                p: 0.5,
+                borderRadius: '50%',
+                bgcolor: 'action.hover',
+                color: 'action.active',
+              }}
+            >
+              <PushPinIcon fontSize="small" />
+            </Box>
           </Tooltip>
         )}
         {collapseToggle}
