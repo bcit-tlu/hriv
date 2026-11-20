@@ -151,6 +151,12 @@ function BoardPicker({
 }) {
   const titleId = useId()
   const [query, setQuery] = useState('')
+  // Pinned where it opened: the anchor moves as Board rows are added or the
+  // empty slot becomes a link, and following it would make the picker jump.
+  const [position] = useState(() => {
+    const rect = anchorEl.getBoundingClientRect()
+    return { top: rect.bottom, left: rect.right }
+  })
   const searchable = boards.length > SEARCH_THRESHOLD
   const needle = query.trim().toLocaleLowerCase()
   const matching = needle
@@ -159,11 +165,11 @@ function BoardPicker({
   return (
     <Popover
       open
-      anchorEl={anchorEl}
+      anchorReference="anchorPosition"
+      anchorPosition={position}
       container={container}
       data-hriv-canvas-ui
       onClose={onClose}
-      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       slotProps={{
         paper: {
@@ -534,6 +540,7 @@ export default function MarkerFormDialog({
     (link) => boards.find((board) => board.id === link.board_id) ?? [],
   )
   const openPicker = () => setPickerAnchor(splitRef.current ?? boardsButtonRef.current)
+  const empty = !loading && assignments.length === 0
   const missingDetails = assignments.some((link) => !details[link.board_id])
   const canSave =
     editable &&
@@ -718,37 +725,25 @@ export default function MarkerFormDialog({
                   ))}
                 </Stack>
               )}
-              {!loading && assignments.length === 0 ? (
-                // Empty slot in place of the rows: a Marker needs one Board.
-                <Button
-                  ref={boardsButtonRef}
-                  fullWidth
-                  variant="outlined"
-                  startIcon={<Add />}
-                  aria-haspopup="dialog"
-                  disabled={busy}
-                  onClick={openPicker}
-                  sx={{
-                    justifyContent: 'flex-start',
-                    minHeight: 42,
-                    borderStyle: 'dashed',
-                  }}
-                >
-                  Choose a Board
-                </Button>
-              ) : (
-                <Button
-                  ref={boardsButtonRef}
-                  size="small"
-                  startIcon={<Add />}
-                  aria-haspopup="dialog"
-                  disabled={busy || loading}
-                  onClick={openPicker}
-                  sx={{ mt: 0.5 }}
-                >
-                  Save to another Board
-                </Button>
-              )}
+              {/* One element for both states keeps the open picker's anchor
+                  attached when the first Board is chosen. */}
+              <Button
+                ref={boardsButtonRef}
+                size={empty ? 'medium' : 'small'}
+                fullWidth={empty}
+                variant={empty ? 'outlined' : 'text'}
+                startIcon={<Add />}
+                aria-haspopup="dialog"
+                disabled={busy || loading}
+                onClick={openPicker}
+                sx={
+                  empty
+                    ? { justifyContent: 'flex-start', minHeight: 42, borderStyle: 'dashed' }
+                    : { mt: 0.5 }
+                }
+              >
+                {empty ? 'Choose a Board' : 'Save to another Board'}
+              </Button>
             </Box>
           ) : null
         ) : (
