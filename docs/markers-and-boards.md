@@ -356,7 +356,7 @@ Drawer row Edit selects/pans to the Marker, focuses its row and
 opens that same in-place editor, not a central dialog. Cancel restores view mode.
 Outside presses keep the editor open, whether changed or not; other markers/rows
 do not replace an open editor. Use Save/Cancel or explicit Escape (cancel and close)
-first. Clicks within the portalled Boards menu never discard the edit. This applies
+first. Clicks within the portalled **Save to** Board picker never discard the edit. This applies
 to single-image, Sequence and Synchronized viewers; BoardsPage keeps its modal editor.
 
 Flip remains a presentation setting, not a saved coordinate transform.
@@ -375,19 +375,29 @@ other mutations send body versions.
 
 `MarkerFormDialog` requires a nonblank title and at least one editable Board.
 The multi-picker only lists `permissions.can_edit` Boards. Selected Boards retain their existing membership when editing. Other Boards' links are preserved by the backend assignment
-contract. The searchable checkbox menu sorts names case-insensitively, with stable
-ID ties. There are no selected chips: its closed field shows names as text (first
-two, then `+N`). A pinned **+ Add Board** row sits at the bottom of the
-fixed-height menu while the checkbox options scroll above it. Choosing it
+contract. Where the Marker is saved is part of the save action, not a field of
+the Marker. New Markers save first, change after: **Save** uses the default
+Board (most recently used editable Board) and the viewer shows a
+**Saved to {Board} · Change** snackbar (`onSaved`) whose Change opens that
+Marker's inline editor. With no default, the button reads **Choose a Board** and
+opens the **Save to** picker popover: each editable Board as a
+row with cover, name, Marker count and a checkmark when chosen (`aria-pressed`),
+ordered selected, most recently used, then by name (case-insensitive, stable ID
+ties), with **Search Boards** above more than 8 rows, and Create Board / Done in
+its footer. Toggling does not reorder rows. Editing replaces Save with **Save**/**Save changes** and shows a **Saved to** list of Board rows with a
+remove × plus **Save to another Board**, which opens the same picker; with no
+Board left, a dashed **Choose a Board** row replaces both. Create Board
 slides a **New Board** pane in from the right over the form — the same fields
 as the Boards & Markers page's Add Board dialog (name, description, visibility
 and restricted Program/Group chips, lazily loaded) — and a top-left back arrow
 or Escape returns to the Marker form with the draft intact. Creating selects
 the new Board and restores the form; empty names and incomplete restricted
 scopes disable creation; failures surface inside the pane.
-The last successfully used Board is remembered under the user-scoped
-`hrivpref:marker:lastBoard:<userId>` localStorage key, validated against the
-editable list on the next create; blocked storage is optional, not an error.
+Successful saves record their Boards in the user-scoped
+`hrivpref:marker:recentBoards:<userId>` localStorage list (newest first, at most
+50 IDs). It drives picker order, and its first editable Board is preselected on the
+next create. When the list is absent, the legacy `hrivpref:marker:lastBoard:<userId>`
+key seeds it. Storage is per browser and optional; blocked storage is not an error.
 Drawer and viewer-panel lists omit the redundant Markers total heading; group
 headings carry no counts.
 
@@ -515,7 +525,14 @@ ownership/visible-Board gates, returning 404 for missing or invisible items.
 Only visible Board IDs are projected; thumbnails carry thumbnail-only tokens.
 The response uses viewer-bound, token-epoch ETags and supports conditional 304s.
 
-The feature-gated **Boards & Markers** AppBar utility opens `?page=boards`.
+The feature-gated **Boards & Markers** AppBar utility opens a **My Boards**
+popover (`BoardsPopover`) rather than navigating: a vertical stack of the
+viewer's editable owned Boards (the page's chip row, in its order) with cover,
+name and Marker count, reloaded on each open. Choosing a Board opens the
+in-place `BoardDialog` over the current page, the same dialog the viewer drawer
+headings use; its Marker tiles jump to their saved views. **Open Boards &
+Markers** at the bottom opens `?page=boards`. On the Boards page the button
+navigates directly.
 It does not add a primary tab: students retain two mobile navigation tabs, and
 Boards uses `Tabs value={false}`. Selecting a Board writes
 `?page=boards&board={id}`; Back/Forward restores the selection.

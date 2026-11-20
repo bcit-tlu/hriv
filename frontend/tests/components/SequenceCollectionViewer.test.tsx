@@ -534,7 +534,7 @@ describe('SequenceCollectionViewer', () => {
   it('desaturates the filmstrip for a hidden collection (#1566)', () => {
     renderViewer({ hidden: true })
     expect(screen.getByTestId('sequence-thumbnail-strip')).toHaveStyle({
-      filter: 'grayscale(100%)',
+      filter: 'grayscale(1)',
     })
   })
 })

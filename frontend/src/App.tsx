@@ -157,6 +157,7 @@ import { getSurfaceVariant, getVisibilityColors } from './theme'
 import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
 import { parseShareableUrlParams, useShareableImageState } from './useShareableImageState'
 import BoardDialog from './components/BoardDialog'
+import BoardsPopover from './components/BoardsPopover'
 import BoardsPage from './components/BoardsPage'
 import { markerViewParams, parseBoardLocation } from './boardUtils'
 import type { ApiMarker } from './types'
@@ -167,7 +168,7 @@ import { useOverlayPersistence } from './useOverlayPersistence'
 import { useCategoryActions } from './useCategoryActions'
 import { useImageActions } from './useImageActions'
 import { useAnnouncements } from './useAnnouncements'
-import { selectBannerAnnouncements } from './announcementUtils'
+import { selectBannerAnnouncements, selectNotices } from './announcementUtils'
 import { useUserProfile } from './useUserProfile'
 import { useMostSevereScope, useTileOrdering } from './useTileOrdering'
 import { tileOrderingCoordinator } from './tileOrdering'
@@ -239,8 +240,6 @@ export default function App() {
       clearInterval(timer)
     }
   }, [currentUser])
-  const bannerCandidates = selectBannerAnnouncements(announcementsFeed.announcements)
-  const bannerPost = bannerCandidates[0]
   const [announcementsFocusId, setAnnouncementsFocusId] = useState<number | null>(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('page') !== 'announcements') return null
@@ -316,6 +315,7 @@ export default function App() {
   // Container of the viewer that opened the in-place Board dialog — the
   // dialog portals into it so it stays visible in full-page viewer mode.
   const [boardDialogContainer, setBoardDialogContainer] = useState<HTMLElement | null>(null)
+  const [boardsMenuAnchor, setBoardsMenuAnchor] = useState<HTMLElement | null>(null)
   const handleOpenBoardDialog = (id: number, container?: HTMLElement | null) => {
     setBoardDialogId(id)
     setBoardDialogContainer(container ?? null)
@@ -736,6 +736,17 @@ export default function App() {
   const onViewerPage =
     (page === 'browse' && selectedImage != null) ||
     (page === 'collections' && (selectedCollectionId != null || collectionsListView === 'graph'))
+  // No banner where the post is already in view: the Announcements page lists every post, and
+  // Home shows pinned ones on the Notices shelf (#1953).
+  const homeShelfIds =
+    page === 'browse' && selectedImage == null && path.length === 0
+      ? new Set(selectNotices(announcementsFeed.announcements).map((a) => a.id))
+      : undefined
+  const bannerCandidates =
+    page === 'announcements'
+      ? []
+      : selectBannerAnnouncements(announcementsFeed.announcements, homeShelfIds)
+  const bannerPost = bannerCandidates[0]
   const myCollectionsTypesAtLimit =
     currentUser?.role === 'student' && myCollectionsCapState?.userId === currentUser.id
       ? myCollectionsCapState.types
@@ -2595,6 +2606,7 @@ export default function App() {
       canViewPeople={canViewPeople}
       collectionsEnabled={collectionsEnabled}
       markersEnabled={features?.markers === true}
+      onBoardsMenu={setBoardsMenuAnchor}
       currentUser={currentUser}
       bannerSlot={
         bannerPost ? (
@@ -3316,6 +3328,7 @@ export default function App() {
                 <NoticesShelf
                   announcements={announcementsFeed.announcements}
                   onOpenAnnouncements={(id) => openAnnouncementsPage(id)}
+                  onMarkSeen={announcementsFeed.markSeen}
                 />
               )}
               {/* Breadcrumbs + action buttons */}
@@ -4144,7 +4157,21 @@ export default function App() {
         }}
       />
 
-      {/* Board dialog opened from a viewer drawer heading — stays on the image. */}
+      <BoardsPopover
+        anchorEl={boardsMenuAnchor}
+        currentUser={currentUser}
+        onClose={() => setBoardsMenuAnchor(null)}
+        onOpenBoard={(id) => {
+          setBoardsMenuAnchor(null)
+          handleOpenBoardDialog(id, null)
+        }}
+        onOpenBoardsPage={() => {
+          setBoardsMenuAnchor(null)
+          handleTabChange('boards')
+        }}
+      />
+      {/* Board dialog opened from a viewer drawer heading or the AppBar Boards
+          popover — stays on the current page. */}
       <BoardDialog
         boardId={boardDialogId}
         currentUser={currentUser}

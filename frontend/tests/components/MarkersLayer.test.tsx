@@ -28,11 +28,12 @@ describe('MarkersLayer', () => {
   it.each(['light', 'dark'] as const)('derives its shadow from the %s theme palette', (mode) => {
     const v = fakeViewer()
     const theme = createTheme({ palette: { mode, common: { black: '#123456' } } })
-    render(
+    const rendered = render(
       <ThemeProvider theme={theme}>
         <MarkersLayer viewer={v.instance} items={[MARKER_FIXTURE]} />
       </ThemeProvider>,
     )
+    rendered.container.appendChild(v.container)
     expect(within(v.container).getByRole('button')).toHaveStyle({
       boxShadow: `0 1px 4px ${alpha(theme.palette.common.black, 1 / 3)}`,
     })
@@ -61,7 +62,10 @@ describe('MarkersLayer', () => {
   })
   it('portals constant CSS-pixel upright markers and labels, reprojects each viewport event, and cleans up', () => {
     const v = fakeViewer()
-    const { unmount } = render(<MarkersLayer viewer={v.instance} items={[MARKER_FIXTURE]} />)
+    const { container, unmount } = render(
+      <MarkersLayer viewer={v.instance} items={[MARKER_FIXTURE]} />,
+    )
+    container.appendChild(v.container)
     const button = within(v.container).getByRole('button')
     const anchor = button.parentElement!
     const label = within(v.container).getByText('Rose window')

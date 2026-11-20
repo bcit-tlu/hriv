@@ -313,7 +313,7 @@ describe('CollectionCard', () => {
     // Desaturation alone conveys the inherited state — the eye-off marker
     // is reserved for the collection's own hidden flag (ImageTile rule).
     expect(screen.getByTestId('collection-card-action-area')).toHaveStyle({
-      filter: 'grayscale(100%)',
+      filter: 'grayscale(1)',
     })
     expect(screen.queryByRole('img', { name: 'Hidden by category' })).not.toBeInTheDocument()
     expect(screen.queryByRole('img', { name: 'Visibility: Hidden' })).not.toBeInTheDocument()

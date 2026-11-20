@@ -96,8 +96,8 @@ one at http://mozilla.org/MPL/2.0/.
 @(#) $RCSfile: certdata.txt,v $ $Revision: 1.80 $ $Date: 2011/11/03 15:11:58 $
 
 ================================================================================
-cffi@2.0.0
-License: MIT
+cffi@2.1.1
+License: MIT-0
 ================================================================================
 
 
@@ -151,7 +151,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-croniter@6.2.4
+croniter@7.0.0
 License: MIT
 Homepage: https://github.com/pallets-eco/croniter
 ================================================================================
@@ -615,7 +615,7 @@ Homepage: https://github.com/googleapis/google-cloud-python/tree/main/packages/g
    limitations under the License.
 
 ================================================================================
-grpcio@1.80.0
+grpcio@1.85.3
 License: Apache-2.0
 Homepage: https://grpc.io
 ================================================================================

@@ -1,20 +1,20 @@
 [tool.poetry]
 name = "hriv-backend"
-version = "0.70.1"
+version = "1.1.0"
 description = "HRIV Image Library API"
 authors = ["Devin AI"]
 license = "MPL-2.0"
 package-mode = false
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = "^3.15"
 fastapi = ">=0.136,<0.142"
 uvicorn = {extras = ["standard"], version = ">=0.34,<0.55"}
 sqlalchemy = {version = "^2.0.0", extras = ["asyncio"]}
 asyncpg = ">=0.30,<0.33"
 pydantic = "^2.0.0"
 pydantic-settings = "^2.0.0"
-python-multipart = ">=0.0.22,<0.0.33"
+python-multipart = ">=0.0.22,<0.0.34"
 pyjwt = "^2.15.0"
 bcrypt = "^5.0.0"
 httpx = "^0.28.0"
@@ -25,6 +25,7 @@ arq = ">=0.27,<0.29"
 redis = "^5.0.0"
 opentelemetry-distro = "^0.64b0"
 opentelemetry-exporter-otlp = "^1.36.0"
+grpcio = ">=1.85.3,<2"
 opentelemetry-instrumentation-fastapi = "^0.64b0"
 opentelemetry-instrumentation-httpx = "^0.64b0"
 opentelemetry-instrumentation-sqlalchemy = "^0.64b0"
@@ -50,7 +51,7 @@ instanseg-torch = ">=0.1.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.3.3,<10.0.0"
-pytest-asyncio = ">=0.24,<1.5"
+pytest-asyncio = ">=0.24,<1.6"
 pytest-cov = ">=7.1.0,<8"
 fakeredis = "2.40.0"
 lupa = "^2.8"

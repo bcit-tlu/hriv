@@ -317,6 +317,17 @@ async def list_announcements(
     return [_serialize(a, current_user, now=now, stats=stats.get(a.id)) for a in rows]
 
 
+def _check_pinned_expiry(
+    *, pinned: bool, publish_at: datetime | None, expires_at: datetime | None
+) -> None:
+    """Published pinned posts feed the Home shelf and must expire (#1953); drafts are exempt."""
+    if pinned and publish_at is not None and expires_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Pinned announcements need an expiry (expires_at)",
+        )
+
+
 @router.post("/", response_model=AnnouncementOut, status_code=status.HTTP_201_CREATED)
 async def create_announcement(
     body: AnnouncementCreate,
@@ -334,6 +345,7 @@ async def create_announcement(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="expires_at must be after publish_at",
         )
+    _check_pinned_expiry(pinned=body.pinned, publish_at=publish_at, expires_at=body.expires_at)
     ann = Announcement(
         title=body.title,
         message=rules.strip_media_tokens(body.message),
@@ -419,6 +431,7 @@ async def update_announcement(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="expires_at must be after publish_at",
         )
+    _check_pinned_expiry(pinned=ann.pinned, publish_at=ann.publish_at, expires_at=ann.expires_at)
 
     await db.commit()
     await db.refresh(ann)
