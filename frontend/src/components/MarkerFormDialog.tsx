@@ -797,7 +797,7 @@ export default function MarkerFormDialog({
             <Button
               disabled={assignments.length ? !canSave : busy || loading}
               onClick={() => (assignments.length ? void persist() : openPicker())}
-              sx={{ minWidth: 0, textTransform: 'none' }}
+              sx={{ minWidth: 0 }}
             >
               <Box
                 component="span"
