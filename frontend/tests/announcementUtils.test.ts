@@ -3,6 +3,14 @@ import { mergeStreams, selectBannerAnnouncements, selectNotices } from '../src/a
 import { makeAnnouncement } from './announcementFixtures'
 
 describe('selectBannerAnnouncements', () => {
+  it('skips posts already on screen (the Home Notices shelf)', () => {
+    const rows = [
+      makeAnnouncement({ id: 1, banner: true, pinned: true }),
+      makeAnnouncement({ id: 2, banner: true }),
+    ]
+    expect(selectBannerAnnouncements(rows, new Set([1])).map((a) => a.id)).toEqual([2])
+  })
+
   it('keeps only live, unseen, banner-flagged posts', () => {
     const rows = [
       makeAnnouncement({ id: 1, banner: true }),

@@ -245,10 +245,14 @@ export function buildUpdatePatch(
 /**
  * Banner policy (#1838): live, unseen posts flagged `banner`, warnings first,
  * then pinned, then newest. The first is shown; the rest count towards "+N more".
+ * `onScreen` drops posts the page already shows in full (the Home Notices shelf).
  */
-export function selectBannerAnnouncements(rows: ApiAnnouncement[]): ApiAnnouncement[] {
+export function selectBannerAnnouncements(
+  rows: ApiAnnouncement[],
+  onScreen?: ReadonlySet<number>,
+): ApiAnnouncement[] {
   return rows
-    .filter((a) => a.banner && a.status === 'live' && !a.seen)
+    .filter((a) => a.banner && a.status === 'live' && !a.seen && !onScreen?.has(a.id))
     .sort((a, b) => {
       const aw = a.kind === 'warning' ? 0 : 1
       const bw = b.kind === 'warning' ? 0 : 1

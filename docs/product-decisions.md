@@ -91,7 +91,9 @@ specified in detail.
   dialog. Release notes are announcements (`kind=release`, default audience
   `staff`), not a separate changelog surface. The Admin page has no Changelog tab.
 - Only posts flagged `banner` take the app-bar banner slot (warnings first, then
-  pinned, then newest); closing the banner marks the post seen. The Home
+  pinned, then newest); closing the banner marks the post seen. Pin and banner may
+  be combined, but the banner never repeats a post already on screen: none on the
+  Announcements page, and none on Home for posts on the Notices shelf (#1953). The Home
   **Notices** shelf shows at most three pinned posts, each in full (never
   truncated) until the reader has seen it, then collapsed to its title (**Collapse** /
   **Expand** at the top right) — readers collapse, they do not dismiss; the welcome message (#1655) is a seeded pinned `everyone`

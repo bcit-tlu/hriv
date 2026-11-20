@@ -167,7 +167,9 @@ menu and the Admin **Changelog** tab, so the Admin page opens on **Backups**.
   opens the Announcements page. Two-line clamp with More/Less; the kind icon
   matches the card. The body renders the same `MarkdownContent` as the card
   (links, lists, images/video via `media_tokens`). No reactions here or in the
-  bell — only on the page.
+  bell — only on the page. The banner stays off pages that already show the post
+  (#1953): the Announcements page shows no banner, and Home skips posts that are on
+  the Notices shelf, so a pinned banner post appears on Home only as its shelf card.
 - **Home Notices shelf** (`NoticesShelf.tsx`, `selectNotices`): up to three
   pinned live posts as compact cards (icon, title, full Markdown body — never
   truncated (#1953); no audience chips or reactions). Unseen posts show in
