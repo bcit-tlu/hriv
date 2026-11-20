@@ -356,7 +356,7 @@ Drawer row Edit selects/pans to the Marker, focuses its row and
 opens that same in-place editor, not a central dialog. Cancel restores view mode.
 Outside presses keep the editor open, whether changed or not; other markers/rows
 do not replace an open editor. Use Save/Cancel or explicit Escape (cancel and close)
-first. Clicks on Board chips or within the portalled **…more** dialog never discard the edit. This applies
+first. Clicks within the portalled **Save to** Board picker never discard the edit. This applies
 to single-image, Sequence and Synchronized viewers; BoardsPage keeps its modal editor.
 
 Flip remains a presentation setting, not a saved coordinate transform.
@@ -375,15 +375,16 @@ other mutations send body versions.
 
 `MarkerFormDialog` requires a nonblank title and at least one editable Board.
 The multi-picker only lists `permissions.can_edit` Boards. Selected Boards retain their existing membership when editing. Other Boards' links are preserved by the backend assignment
-contract. Boards render as wrapping toggle chips (filled primary when selected,
-outlined otherwise, `aria-pressed`), matching the category program-restriction
-chips; there is no dropdown and no inner scroll, so chips push later fields down.
-Chips are ordered selected first, then most recently used, then by name
-(case-insensitive, stable ID ties); toggling does not reorder until the form
-reopens. The group shows at most six wrapped rows. When more Boards exist, a
-**…more** link opens a **Choose Boards** dialog with a filter field, every editable
-Board as a toggle chip and Done; Boards picked there move to the front of the
-visible chips. A trailing **+ New Board** chip, always last, opens the slide-in. Choosing it
+contract. Where the Marker is saved is part of the save action, not a field of
+the Marker: creating shows a split button naming the destination (**Save to
+{Board}**, or **Save to N Boards**; **Save to…** opens the picker when none is
+chosen). Its **▾** opens the **Save to** picker popover: each editable Board as a
+row with cover, name, Marker count and a checkmark when chosen (`aria-pressed`),
+ordered selected, most recently used, then by name (case-insensitive, stable ID
+ties), with **Search Boards** above more than 8 rows, and Create Board / Done in
+its footer. Toggling does not reorder rows. Editing replaces the split button
+with **Save**/**Save changes** and shows a **Saved to** list of Board rows with a
+remove × plus **Save to another Board**, which opens the same picker. Create Board
 slides a **New Board** pane in from the right over the form — the same fields
 as the Boards & Markers page's Add Board dialog (name, description, visibility
 and restricted Program/Group chips, lazily loaded) — and a top-left back arrow
@@ -392,7 +393,7 @@ the new Board and restores the form; empty names and incomplete restricted
 scopes disable creation; failures surface inside the pane.
 Successful saves record their Boards in the user-scoped
 `hrivpref:marker:recentBoards:<userId>` localStorage list (newest first, at most
-50 IDs). It drives chip order, and its first editable Board is preselected on the
+50 IDs). It drives picker order, and its first editable Board is preselected on the
 next create. When the list is absent, the legacy `hrivpref:marker:lastBoard:<userId>`
 key seeds it. Storage is per browser and optional; blocked storage is not an error.
 Drawer and viewer-panel lists omit the redundant Markers total heading; group

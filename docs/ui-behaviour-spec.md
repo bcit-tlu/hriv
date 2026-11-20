@@ -1573,14 +1573,15 @@ selection MouseTracker ignores their presses.
   Description starts collapsed under More options even when filled. Delete opens
   a secondary confirmation dialog whose Cancel/Escape preserves the editor draft.
   Outside presses keep the editor open, including presses on other markers/rows;
-  Save/Cancel finish, and explicit Escape cancels/closes. Board chips and the portalled …more dialog remain usable.
+  Save/Cancel finish, and explicit Escape cancels/closes. The portalled Save to Board picker remains usable.
   OCC/error/reload behavior is shared with the existing form; BoardsPage retains its modal editor.
-- Boards are wrapping toggle chips (filled primary when selected, outlined otherwise,
-  aria-pressed) with no dropdown or inner scroll; they push later fields down. Order is
-  selected, then recently used (`hrivpref:marker:recentBoards:<userId>`, falling back to
-  the legacy lastBoard key), then name with ID ties. At most six rows show; overflow adds
-  a …more link opening a Choose Boards dialog with a filter, toggle chips and Done. A
-  trailing + New Board chip, always last, slides a New Board
+- New Markers save through a split button naming the destination (Save to {Board} /
+  Save to N Boards; Save to… opens the picker when none is chosen). Its ▾ opens a Save
+  to popover of editable Board rows (cover, name, Marker count, checkmark, aria-pressed)
+  ordered selected, then recently used (`hrivpref:marker:recentBoards:<userId>`, falling
+  back to the legacy lastBoard key), then name with ID ties; Search Boards appears above
+  8 rows. Editing shows a Saved to list with remove × and Save to another Board. The
+  picker's Create Board slides a New Board
   pane in from the right over the form, reusing the Boards & Markers Add Board field
   set (name, description, visibility and restricted Program/Group chips); a top-left
   back arrow or Escape returns with the draft preserved. Creation selects the new

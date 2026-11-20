@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import type { ReactNode, Ref } from 'react'
+import type { ReactNode } from 'react'
 import { isSubmitKey, useInitialFocus } from '../formKeys'
 import { createPortal } from 'react-dom'
 import { markerAccentColor, markerFavouriteButtonSx } from '../theme'
@@ -8,17 +8,22 @@ import { markerPanelSx } from './markerPanelStyles'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Chip from '@mui/material/Chip'
+import ButtonGroup from '@mui/material/ButtonGroup'
 import IconButton from '@mui/material/IconButton'
-import FormControl from '@mui/material/FormControl'
 import FormHelperText from '@mui/material/FormHelperText'
-import FormLabel from '@mui/material/FormLabel'
-import Link from '@mui/material/Link'
+import List from '@mui/material/List'
+import ListItemButton from '@mui/material/ListItemButton'
+import ListItemText from '@mui/material/ListItemText'
+import Popover from '@mui/material/Popover'
 import Slide from '@mui/material/Slide'
 import Tooltip from '@mui/material/Tooltip'
 import Star from '@mui/icons-material/Star'
 import StarBorder from '@mui/icons-material/StarBorder'
 import Add from '@mui/icons-material/Add'
+import ArrowDropDown from '@mui/icons-material/ArrowDropDown'
+import CheckCircle from '@mui/icons-material/CheckCircle'
+import Close from '@mui/icons-material/Close'
+import RadioButtonUnchecked from '@mui/icons-material/RadioButtonUnchecked'
 import ArrowBack from '@mui/icons-material/ArrowBack'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -32,6 +37,7 @@ import Room from '@mui/icons-material/Room'
 import * as api from '../api'
 import { apiGroupToGroup } from '../groupUtils'
 import { BoardFields } from './BoardEditDialog'
+import BoardCover from './BoardCover'
 import type {
   ApiBoard,
   ApiBoardSummary,
@@ -73,7 +79,7 @@ export interface MarkerFormDialogProps {
   onEscape?: () => void
 }
 const RECENT_BOARDS_LIMIT = 50
-const MAX_BOARD_ROWS = 6
+const SEARCH_THRESHOLD = 8
 function recentKey(userId: number) {
   return `hrivpref:marker:recentBoards:${userId}`
 }
@@ -124,213 +130,117 @@ function orderBoards(boards: ApiBoardSummary[], selected: number[], recents: num
 
 /** Wrapping Board toggle chips capped at six rows; the overflow is reachable
  *  through "…more", and "+ New Board" always ends the group. */
-function BoardChipGroup({
-  boards,
-  selectedIds,
-  disabled,
-  onToggle,
-  onShowAll,
-  onNewBoard,
-  newBoardRef,
-}: {
-  boards: ApiBoardSummary[]
-  selectedIds: Set<number>
-  disabled: boolean
-  onToggle: (board: ApiBoardSummary) => void
-  onShowAll: (hidden: number[]) => void
-  onNewBoard: () => void
-  newBoardRef: Ref<HTMLDivElement>
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-  const signature = boards.map((board) => `${board.id}:${board.name}`).join('|')
-  const [fit, setFit] = useState<{ key: string; count: number } | null>(null)
-  const visible = fit?.key === signature ? fit.count : boards.length
-  // Measures the full chip list and keeps the longest prefix whose wrapped
-  // rows, plus the trailing "…more" and "+ New Board", fit MAX_BOARD_ROWS.
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    let width: number | null = null
-    const measure = () => {
-      const box = el.getBoundingClientRect()
-      const items = Array.from(el.children) as HTMLElement[]
-      const chips = items.filter((item) => item.dataset.boardChip != null)
-      if (chips.length < boards.length) return
-      const more = items.find((item) => item.dataset.boardMore != null)
-      const add = items.find((item) => item.dataset.boardNew != null)
-      const gap = parseFloat(getComputedStyle(el).columnGap) || 0
-      const rects = chips.map((chip) => chip.getBoundingClientRect())
-      const tops = [...new Set(rects.map((rect) => Math.round(rect.top)))].sort((x, y) => x - y)
-      const place = ([row, right]: [number, number], size: number): [number, number] =>
-        right < 0 || right + gap + size <= box.width
-          ? [row, right < 0 ? size : right + gap + size]
-          : [row + 1, size]
-      let count = 0
-      for (let k = chips.length; k >= 0; k--) {
-        const last = rects[k - 1]
-        const start: [number, number] = last
-          ? [tops.indexOf(Math.round(last.top)), last.right - box.left]
-          : [0, -1]
-        if (start[0] >= MAX_BOARD_ROWS) continue
-        const trailing = k === chips.length ? [add] : [more, add]
-        const end = trailing.reduce(
-          (at, item) => place(at, item?.getBoundingClientRect().width ?? 0),
-          start,
-        )
-        if (end[0] < MAX_BOARD_ROWS) {
-          count = k
-          break
-        }
-      }
-      setFit(count === chips.length ? null : { key: signature, count })
-    }
-    const observer = new ResizeObserver(([entry]) => {
-      const next = Math.round(entry?.contentRect.width ?? 0)
-      const resized = width != null && next !== width
-      width = next
-      // A truncated list is re-measured from its full layout after a resize.
-      if (resized && el.querySelectorAll('[data-board-chip]').length < boards.length) setFit(null)
-      else measure()
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [signature, boards.length])
-  const shown = boards.slice(0, visible)
-  return (
-    <Box
-      ref={ref}
-      sx={{
-        position: 'relative',
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: 0.5,
-      }}
-    >
-      {shown.map((board) => {
-        const selected = selectedIds.has(board.id)
-        return (
-          <Chip
-            key={board.id}
-            data-board-chip=""
-            data-board-id={board.id}
-            label={board.name}
-            size="small"
-            color={selected ? 'primary' : 'default'}
-            variant={selected ? 'filled' : 'outlined'}
-            aria-pressed={selected}
-            onClick={() => onToggle(board)}
-            disabled={disabled}
-            sx={{ maxWidth: '100%' }}
-          />
-        )
-      })}
-      <Link
-        component="button"
-        type="button"
-        variant="body2"
-        data-board-more=""
-        disabled={disabled}
-        onClick={() => onShowAll(boards.slice(visible).map((board) => board.id))}
-        aria-label={`Show all ${boards.length} Boards`}
-        aria-hidden={visible < boards.length ? undefined : true}
-        tabIndex={visible < boards.length ? undefined : -1}
-        sx={{
-          px: 0.5,
-          ...(visible < boards.length ? {} : { position: 'absolute', visibility: 'hidden' }),
-        }}
-      >
-        …more
-      </Link>
-      <Chip
-        ref={newBoardRef}
-        data-board-new=""
-        icon={<Add />}
-        label="New Board"
-        size="small"
-        variant="outlined"
-        onClick={onNewBoard}
-        disabled={disabled}
-      />
-    </Box>
-  )
-}
-
-/** "…more" picker: every editable Board as a filterable toggle chip. */
-function BoardPickerDialog({
+/** "Save to" picker: every editable Board as a row with its cover, toggled
+ *  with a checkmark, plus Create Board. Shared by the Save split button and
+ *  the edit form's "Save to another Board". */
+function BoardPicker({
+  anchorEl,
   boards,
   selectedIds,
   container,
   onToggle,
+  onCreate,
   onClose,
 }: {
+  anchorEl: HTMLElement
   boards: ApiBoardSummary[]
   selectedIds: Set<number>
   container?: HTMLElement | null
   onToggle: (board: ApiBoardSummary) => void
+  onCreate: () => void
   onClose: () => void
 }) {
   const titleId = useId()
   const [query, setQuery] = useState('')
+  const searchable = boards.length > SEARCH_THRESHOLD
   const needle = query.trim().toLocaleLowerCase()
-  const matching = [...boards]
-    .filter((board) => board.name.toLocaleLowerCase().includes(needle))
-    .sort(byName)
+  const matching = needle
+    ? boards.filter((board) => board.name.toLocaleLowerCase().includes(needle))
+    : boards
   return (
-    <Dialog
+    <Popover
       open
+      anchorEl={anchorEl}
       container={container}
       data-hriv-canvas-ui
-      fullWidth
-      maxWidth="xs"
-      aria-labelledby={titleId}
       onClose={onClose}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      slotProps={{
+        paper: {
+          role: 'dialog',
+          'aria-labelledby': titleId,
+          sx: {
+            width: 320,
+            maxWidth: 'calc(100vw - 32px)',
+            maxHeight: 'min(440px, calc(100vh - 64px))',
+            display: 'flex',
+            flexDirection: 'column',
+          },
+        },
+      }}
     >
-      <DialogTitle id={titleId}>Choose Boards</DialogTitle>
-      <DialogContent sx={{ '.MuiDialogTitle-root + &': { pt: 1 } }}>
+      <Typography id={titleId} variant="subtitle2" component="h2" sx={{ px: 2, pt: 1.5, pb: 1 }}>
+        Save to
+      </Typography>
+      {searchable && (
         <TextField
-          label="Filter Boards"
+          label="Search Boards"
           size="small"
-          fullWidth
           autoFocus
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          sx={{ mb: 1.5 }}
+          sx={{ mx: 2, mb: 1, flexShrink: 0 }}
         />
-        <Box role="group" aria-label="Boards" sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-          {matching.map((board) => {
-            const selected = selectedIds.has(board.id)
-            return (
-              <Chip
-                key={board.id}
-                label={board.name}
-                size="small"
-                color={selected ? 'primary' : 'default'}
-                variant={selected ? 'filled' : 'outlined'}
-                aria-pressed={selected}
-                onClick={() => onToggle(board)}
-                sx={{ maxWidth: '100%' }}
+      )}
+      <List dense disablePadding component="div" sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        {matching.map((board) => {
+          const selected = selectedIds.has(board.id)
+          return (
+            <ListItemButton
+              key={board.id}
+              data-board-id={board.id}
+              selected={selected}
+              aria-pressed={selected}
+              autoFocus={!searchable && board === matching[0]}
+              onClick={() => onToggle(board)}
+              sx={{ gap: 1.5, py: 0.5 }}
+            >
+              <BoardCover board={board} size={36} radius={1} />
+              <ListItemText
+                primary={board.name}
+                secondary={`${board.marker_count} ${board.marker_count === 1 ? 'Marker' : 'Markers'}`}
+                slotProps={{ primary: { noWrap: true } }}
+                sx={{ minWidth: 0 }}
               />
-            )
-          })}
-        </Box>
+              {selected ? (
+                <CheckCircle color="primary" fontSize="small" />
+              ) : (
+                <RadioButtonUnchecked fontSize="small" sx={{ color: 'action.disabled' }} />
+              )}
+            </ListItemButton>
+          )
+        })}
         {matching.length === 0 && (
-          <Typography variant="body2" color="text.secondary">
-            No matching Boards.
+          <Typography variant="body2" color="text.secondary" sx={{ px: 2, py: 1 }}>
+            {boards.length ? 'No matching Boards.' : 'You have no Boards you can edit yet.'}
           </Typography>
         )}
-      </DialogContent>
-      <DialogActions>
-        <Button size="small" variant="contained" onClick={onClose}>
+      </List>
+      <Divider />
+      <Box sx={{ display: 'flex', alignItems: 'center', px: 1, py: 0.5, flexShrink: 0 }}>
+        <Button size="small" startIcon={<Add />} onClick={onCreate}>
+          Create Board
+        </Button>
+        <Box sx={{ flex: 1 }} />
+        <Button size="small" onClick={onClose}>
           Done
         </Button>
-      </DialogActions>
-    </Dialog>
+      </Box>
+    </Popover>
   )
 }
 
-/** The shared "Delete Marker?" confirmation — the marker form's secondary
- *  dialog and the viewer drawer Delete action render this same surface. */
 export function MarkerDeleteDialog({
   title,
   container,
@@ -422,8 +332,7 @@ export default function MarkerFormDialog({
   const [boardBusy, setBoardBusy] = useState(false)
   const [boardError, setBoardError] = useState<string | null>(null)
   const [boardOrder, setBoardOrder] = useState<number[]>([])
-  const [pickerHidden, setPickerHidden] = useState<number[] | null>(null)
-  const boardsHelperId = useId()
+  const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null)
   const formTitleId = useId()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const panesRef = useRef<HTMLDivElement>(null)
@@ -432,19 +341,21 @@ export default function MarkerFormDialog({
     panesRef.current = el
     setPanesEl(el)
   }, [])
-  const newBoardRef = useRef<HTMLDivElement>(null)
+  const boardsButtonRef = useRef<HTMLButtonElement>(null)
+  const splitRef = useRef<HTMLDivElement>(null)
+  const savedToId = useId()
   const titleRef = useRef<HTMLInputElement>(null)
   const editable = !baseline || baseline.permissions.can_edit
 
   const closeBoardPane = useCallback(() => {
     setBoardPane(false)
-    requestAnimationFrame(() => newBoardRef.current?.focus())
+    requestAnimationFrame(() => boardsButtonRef.current?.focus())
   }, [])
 
   useEffect(() => {
     if (!inline) return
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented || confirmDelete || pickerHidden) return
+      if (event.key !== 'Escape' || event.defaultPrevented || confirmDelete || pickerAnchor) return
       event.stopPropagation()
       if (boardPane) {
         closeBoardPane()
@@ -462,7 +373,7 @@ export default function MarkerFormDialog({
     onClose,
     onEscape,
     confirmDelete,
-    pickerHidden,
+    pickerAnchor,
     boardPane,
     closeBoardPane,
   ])
@@ -514,15 +425,6 @@ export default function MarkerFormDialog({
       .then((value) => setDetails((previous) => ({ ...previous, [value.id]: value })))
       .catch((err) => setError(api.userMessage(err, 'Unable to load this Board.')))
   }
-  const closePicker = () => {
-    // Boards chosen from the overflow move to the front so they stay visible.
-    const promoted = (pickerHidden ?? []).filter((id) =>
-      assignments.some((link) => link.board_id === id),
-    )
-    if (promoted.length)
-      setBoardOrder((previous) => [...promoted, ...previous.filter((id) => !promoted.includes(id))])
-    setPickerHidden(null)
-  }
   const openBoardPane = useCallback(() => {
     setBoardName('')
     setBoardDescription('')
@@ -549,9 +451,7 @@ export default function MarkerFormDialog({
       setDetails((previous) => ({ ...previous, [board.id]: board }))
       setAssignments((previous) => [...previous, { board_id: board.id }])
       setBoardPane(false)
-      requestAnimationFrame(() =>
-        panesRef.current?.querySelector<HTMLElement>(`[data-board-id="${board.id}"]`)?.focus(),
-      )
+      requestAnimationFrame(() => boardsButtonRef.current?.focus())
     } catch (err) {
       setBoardError(api.userMessage(err, 'Unable to create Board.'))
     } finally {
@@ -631,6 +531,10 @@ export default function MarkerFormDialog({
   }
   const selectedIds = new Set(assignments.map((link) => link.board_id))
   const orderedBoards = boardOrder.flatMap((id) => boards.find((board) => board.id === id) ?? [])
+  const selectedBoards = assignments.flatMap(
+    (link) => boards.find((board) => board.id === link.board_id) ?? [],
+  )
+  const openPicker = () => setPickerAnchor(splitRef.current ?? boardsButtonRef.current)
   const missingDetails = assignments.some((link) => !details[link.board_id])
   const canSave =
     editable &&
@@ -771,42 +675,68 @@ export default function MarkerFormDialog({
           disabled={busy || !editable}
         />
         {editable ? (
-          <FormControl
-            component="fieldset"
-            required
-            aria-describedby={boardsHelperId}
-            sx={{ minWidth: 0 }}
-          >
-            <FormLabel
-              component="legend"
-              sx={{
-                typography: 'subtitle2',
-                color: 'text.primary',
-                mb: 0.75,
-                '&.Mui-focused': { color: 'text.primary' },
-              }}
-            >
-              Boards
-            </FormLabel>
-            <BoardChipGroup
-              boards={orderedBoards}
-              selectedIds={selectedIds}
-              disabled={busy || loading}
-              onToggle={toggleBoard}
-              onShowAll={setPickerHidden}
-              onNewBoard={openBoardPane}
-              newBoardRef={newBoardRef}
-            />
-            {(loading || boards.length === 0 || !placement) && (
-              <FormHelperText id={boardsHelperId} sx={{ mx: 0 }}>
-                {loading
-                  ? 'Loading Boards…'
-                  : boards.length === 0
-                    ? 'Create a Board to save this Marker.'
-                    : 'Choose at least one Board. Only Boards you can edit are listed.'}
-              </FormHelperText>
-            )}
-          </FormControl>
+          baseline ? (
+            <Box component="section" aria-labelledby={savedToId}>
+              <Typography id={savedToId} variant="subtitle2" component="h3" sx={{ mb: 0.75 }}>
+                Saved to
+              </Typography>
+              {loading ? (
+                <Typography variant="body2" color="text.secondary">
+                  Loading Boards…
+                </Typography>
+              ) : (
+                <Stack spacing={0.5} role="list" aria-labelledby={savedToId}>
+                  {selectedBoards.map((board) => (
+                    <Box
+                      key={board.id}
+                      role="listitem"
+                      data-board-id={board.id}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        p: 0.5,
+                        border: 1,
+                        borderColor: 'divider',
+                        borderRadius: 1,
+                      }}
+                    >
+                      <BoardCover board={board} size={32} radius={0.5} />
+                      <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
+                        {board.name}
+                      </Typography>
+                      <Tooltip title={`Remove from ${board.name}`}>
+                        <IconButton
+                          size="small"
+                          aria-label={`Remove from ${board.name}`}
+                          disabled={busy}
+                          onClick={() => toggleBoard(board)}
+                        >
+                          <Close fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  ))}
+                </Stack>
+              )}
+              {!loading && assignments.length === 0 && (
+                <FormHelperText error sx={{ mx: 0 }}>
+                  Save this Marker to at least one Board.
+                </FormHelperText>
+              )}
+              <Button
+                ref={boardsButtonRef}
+                size="small"
+                startIcon={<Add />}
+                aria-haspopup="dialog"
+                disabled={busy || loading}
+                onClick={openPicker}
+                sx={{ mt: 0.5 }}
+              >
+                Save to another Board
+              </Button>
+            </Box>
+          ) : null
         ) : (
           <Typography variant="caption" component="p">
             Saved on {baseline?.board_ids.length} Board(s). Only its owners can edit this Marker.
@@ -843,21 +773,47 @@ export default function MarkerFormDialog({
         <Button size="small" disabled={busy} onClick={onClose}>
           {editable ? 'Cancel' : 'Close'}
         </Button>
-        {editable && (
+        {editable && baseline && (
           <Button
             size="small"
             variant="contained"
             disabled={!canSave}
             onClick={() => void persist()}
           >
-            {busy
-              ? 'Saving…'
-              : inline || placement
-                ? 'Save'
-                : baseline
-                  ? 'Save changes'
-                  : 'Save to Board'}
+            {busy ? 'Saving…' : inline || placement ? 'Save' : 'Save changes'}
           </Button>
+        )}
+        {editable && !baseline && (
+          <ButtonGroup ref={splitRef} size="small" variant="contained" sx={{ minWidth: 0 }}>
+            <Button
+              disabled={assignments.length ? !canSave : busy || loading}
+              onClick={() => (assignments.length ? void persist() : openPicker())}
+              sx={{ minWidth: 0, textTransform: 'none' }}
+            >
+              <Box
+                component="span"
+                sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
+                {busy
+                  ? 'Saving…'
+                  : selectedBoards.length === 0
+                    ? 'Save to…'
+                    : selectedBoards.length === 1
+                      ? `Save to ${selectedBoards[0].name}`
+                      : `Save to ${selectedBoards.length} Boards`}
+              </Box>
+            </Button>
+            <Button
+              ref={boardsButtonRef}
+              aria-label="Choose Boards"
+              aria-haspopup="dialog"
+              disabled={busy || loading}
+              onClick={openPicker}
+              sx={{ px: 0.25, minWidth: 0 }}
+            >
+              <ArrowDropDown />
+            </Button>
+          </ButtonGroup>
         )}
       </DialogActions>
     </>
@@ -1010,13 +966,18 @@ export default function MarkerFormDialog({
   return (
     <>
       {form}
-      {pickerHidden && (
-        <BoardPickerDialog
-          boards={boards}
+      {pickerAnchor && (
+        <BoardPicker
+          anchorEl={pickerAnchor}
+          boards={orderedBoards}
           selectedIds={selectedIds}
           container={container}
           onToggle={toggleBoard}
-          onClose={closePicker}
+          onCreate={() => {
+            setPickerAnchor(null)
+            openBoardPane()
+          }}
+          onClose={() => setPickerAnchor(null)}
         />
       )}
       {baseline?.permissions.can_delete && confirmDelete && (
