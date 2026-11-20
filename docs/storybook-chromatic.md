@@ -281,6 +281,14 @@ with `frontend/vitest.config.ts` and runs story tests in Chromium via
 `npx playwright install chromium` before running `npm run test:storybook` on a
 fresh machine.
 
+CI runs this suite too: the `frontend-checks` job in
+`.github/workflows/ci.yaml` installs headless Chromium and runs
+`npm run test:storybook -- --run --no-file-parallelism` on every PR that
+changes `frontend/`, so a stale `play` function or a new axe violation fails
+the build (#1961). Use `--no-file-parallelism` locally as well when running the
+whole suite: in parallel, dialog and popover transitions time out under load
+and stories fail at random.
+
 ## First implementation slice
 
 The original recommended first PR was intentionally small:
