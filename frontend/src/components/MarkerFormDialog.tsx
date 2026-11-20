@@ -229,7 +229,7 @@ function BoardPicker({
         })}
         {matching.length === 0 && (
           <Typography variant="body2" color="text.secondary" sx={{ px: 2, py: 1 }}>
-            {boards.length ? 'No matching Boards.' : 'You have no Boards you can edit yet.'}
+            {boards.length ? 'No matching Boards.' : 'You have no Boards yet.'}
           </Typography>
         )}
       </List>
@@ -824,7 +824,6 @@ export default function MarkerFormDialog({
           display: 'flex',
           flexDirection: 'column',
           minHeight: 0,
-          bgcolor: 'background.paper',
         }}
       >
         <DialogTitle

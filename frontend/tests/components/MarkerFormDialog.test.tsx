@@ -268,7 +268,7 @@ describe('MarkerFormDialog', () => {
     await user.type(screen.getByLabelText('Title *'), 'A view')
     // Without a Board the main button opens the picker instead of saving.
     await user.click(screen.getByRole('button', { name: 'Choose a Board' }))
-    expect(within(picker()).getByText('You have no Boards you can edit yet.')).toBeVisible()
+    expect(within(picker()).getByText('You have no Boards yet.')).toBeVisible()
     expect(api.createMarker).not.toHaveBeenCalled()
     await user.click(within(picker()).getByRole('button', { name: 'Create Board' }))
     await waitFor(() => expect(screen.getByLabelText('Name *')).toHaveFocus())
