@@ -7,7 +7,6 @@
       "path": "frontend",
       "component": "frontend",
       "release-type": "node",
-      "release-as": "1.0.0",
       "extra-files": [
         {
           "type": "generic",
@@ -20,7 +19,6 @@
       "path": "backend",
       "component": "backend",
       "release-type": "python",
-      "release-as": "1.0.0",
       "extra-files": [
         {
           "type": "generic",
