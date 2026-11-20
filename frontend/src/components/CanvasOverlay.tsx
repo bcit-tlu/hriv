@@ -2131,8 +2131,10 @@ export default function CanvasOverlay({
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setLinkDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleLinkConfirm} disabled={!linkUrl}>
+          <Button size="small" onClick={() => setLinkDialogOpen(false)}>
+            Cancel
+          </Button>
+          <Button size="small" variant="contained" onClick={handleLinkConfirm} disabled={!linkUrl}>
             Add Link
           </Button>
         </DialogActions>
@@ -2147,8 +2149,10 @@ export default function CanvasOverlay({
         <DialogTitle>Discard annotation changes?</DialogTitle>
         <DialogContent>Your unsaved annotation changes will be lost.</DialogContent>
         <DialogActions>
-          <Button onClick={() => setDiscardDialogOpen(false)}>Keep Editing</Button>
-          <Button color="error" onClick={performCancel}>
+          <Button size="small" onClick={() => setDiscardDialogOpen(false)}>
+            Keep Editing
+          </Button>
+          <Button size="small" color="error" onClick={performCancel}>
             Discard Changes
           </Button>
         </DialogActions>

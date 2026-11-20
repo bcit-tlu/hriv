@@ -470,7 +470,7 @@ export default function EditCategoryDialog({
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} disabled={saving}>
+        <Button size="small" onClick={handleClose} disabled={saving}>
           Cancel
         </Button>
         <Button

@@ -1,0 +1,49 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as BoardCoverPickerModalStories from './BoardCoverPickerModal.stories'
+
+<Meta of={BoardCoverPickerModalStories} />
+
+<Title />
+
+<Subtitle>
+  Pick the board tile's cover image — the board counterpart of the collection cover picker.
+</Subtitle>
+
+## When to use
+
+The modal opens from the **Set cover image** overlay on a board tile (the image icon,
+top-right, `canEdit`-gated like the title edit pencil). The tile summary carries no member
+list, so the caller loads the board detail first and passes its `markers` — visible members
+only, in member order.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={BoardCoverPickerModalStories.Basic} />
+
+## Implementation guidance
+
+- **Save pins a member.** `onSave` emits the picked marker id and `blank=false`;
+  the app PATCHes `cover_marker_id` on the board (clearing `cover_blank`).
+- **"None" is the blank tile.** The first row emits `(null, true)` — the tile
+  renders the type-logo placeholder like an uncovered category.
+- **"Automatic" restores the fallback.** The second row emits `(null, false)` —
+  clears both states so the tile uses the first member again; it is
+  pre-selected when no cover is pinned and the blank flag is off.
+- **Backend validation.** `PATCH /api/boards/{id}` 422s a `cover_marker_id` that is
+  not a member visible to the caller; removing the pinned member clears the pin, and
+  deleting the marker row clears it via `ON DELETE SET NULL`.
+- **Invisible pins read as no pin.** If the pinned member is not visible to the viewer,
+  summaries report `cover_marker_id: null` and `cover_thumb` falls back to the first
+  visible member.
+
+<Stories of={BoardCoverPickerModalStories} />

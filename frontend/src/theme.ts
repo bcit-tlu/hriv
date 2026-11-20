@@ -1,4 +1,11 @@
-import { alpha, createTheme, type ThemeOptions } from '@mui/material/styles'
+import {
+  alpha,
+  createTheme,
+  darken,
+  type SxProps,
+  type Theme,
+  type ThemeOptions,
+} from '@mui/material/styles'
 
 // ---------------------------------------------------------------------------
 // Colour palettes – edit these values to adjust light / dark appearance.
@@ -205,3 +212,30 @@ export const appBarAvatarSx = {
 
 /** Responsive gap between the app-bar's right-hand controls. */
 export const appBarClusterGap = { xs: 0.25, sm: 0.5, md: 1 } as const
+
+// ---------------------------------------------------------------------------
+// Marker accent + favourite-star face
+// ---------------------------------------------------------------------------
+
+/** Marker tile/pin accent — blue in both modes, deliberately distinct from
+ *  the red primary brand colour. */
+export function markerAccentColor(theme: Theme): string {
+  return theme.palette.mode === 'dark' ? '#2196F3' : '#4A78A7'
+}
+
+/** Marker favourite-star face, shared by the table cell, tile overlays, the
+ *  view-page info popover and the Marker dialog: on = white filled star over
+ *  the primary (red) disc; off = white outline star over a low-opacity black
+ *  disc — proportionally darker than whatever surface it floats over. */
+export function markerFavouriteButtonSx(favourite: boolean): SxProps<Theme> {
+  return favourite
+    ? (theme: Theme) => ({
+        bgcolor: markerAccentColor(theme),
+        '&:hover': { bgcolor: darken(markerAccentColor(theme), 0.2) },
+      })
+    : (theme: Theme) => ({
+        color: theme.palette.common.white,
+        bgcolor: alpha(theme.palette.common.black, 0.25),
+        '&:hover': { bgcolor: alpha(theme.palette.common.black, 0.45) },
+      })
+}

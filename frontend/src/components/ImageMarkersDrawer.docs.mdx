@@ -1,0 +1,83 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as DrawerStories from './ImageMarkersDrawer.stories'
+
+<Meta of={DrawerStories} />
+
+<Title />
+
+The Room trigger is an auto-fading TOP_LEFT OpenSeadragon control.
+It has no number badge, matching adjacent white-on-dark viewer controls.
+The left-anchored panel stops above the toolbar and stays inside the viewer in
+full-page mode and shares its existing image-data request with the markers.
+
+The redundant Markers (total) heading is removed in both the legacy drawer and
+the shared viewer panel. Rows group under their associated Boards: the markers
+hook pages through the visible-Board summaries and each Marker lists under
+every Board in its board_ids. Groups are tiered by ownership — the viewer's
+own Boards first, then instructor or program Boards, while remaining visible
+Boards sit inside a collapsed Public & Shared section (it expands on click or
+when a shared row is focused) whose markers start hidden on the canvas.
+Group headings are body2 titles, never
+collapsible and carry no counts; a Board heading is a link
+(`Open Board: {name}`) that opens `BoardDialog` in place over the viewer —
+the same title, scope/owner chrome, marker grid and edit affordances as the
+Boards & Markers dialog, with an “Open in Boards & Markers” escape to the
+full management page. Markers with no visible Board fall under a trailing Other group,
+and an open draft sits in a leading Unsaved group.
+
+Each row's ⋮ menu starts
+with Show/Hide marker, then Show/Hide label and permitted Edit/Delete.
+Hide/Show label(s) use LabelOff/Label icons. Group headings carry inline eye and
+label icon buttons instead of a ⋮ menu. A hidden marker always hides its label —
+the row and group label controls disable while markers are hidden — while a shown
+marker's label toggles independently. Group actions write the choice as a row
+override on every member of that group in one batched update, leaving other
+Boards and other images untouched; a later row action overrides the group.
+Mixed groups show
+accessible “Mixed” states (aria-pressed); clicking a mixed group shows all.
+A row navigates without opening an editor, and selecting a canvas-hidden row
+reveals the marker — selection always lands on a visible marker, matching the
+`?marker=` navigation used by Boards & Markers and search. The explicit owner edit
+action selects/focuses and pans to the Marker and opens its top-right in-place
+editor, not a central dialog. Delete opens the shared confirmation dialog alone,
+without the information card. Outside
+presses preserve an open editor until Save/Cancel or explicit Escape. The
+information card has no close X. Rows have titles only; drafts appear in a
+leading Unsaved group. Escape restores focus to the trigger when no draft needs cancelling.
+Hover backgrounds span the full row, including the separate options button.
+Hidden-marker titles use text.disabled (contrast-safe text.secondary in light mode)
+and an accessible “marker hidden” suffix; the row stays navigable.
+
+Pin/Unpin mirrors My collections: pinned panels have no close button and stay open
+across image and sequence navigation, and reopen on new viewer pages. Unpinning
+keeps the panel open. The user-scoped localStorage preference is
+`hrivpref:markers-drawer:pinned:user:<id>` (anonymous previews use `anonymous`).
+Unpinned panels retract on outside presses/clicks, including the OSD canvas, without
+consuming placement clicks. Their menu portals count as inside; the stable viewer
+portal container survives menu exit transitions. Escape closes temporary panels only.
+
+Preferences are scoped to the signed-in user, bounded to 500 recent overrides,
+and shared across synchronized panes and browser tabs. Sequence navigation
+arrows hide while this panel is open, rather than painting over its rows.
+
+<Primary />
+The list uses dense caption-sized rows and group labels. A newly saved view requests focus once and
+scrolls into view without stealing focus on reload.
+
+<Stories />
+
+## Current image and Sequence panel
+
+The pin/click-away drawer above is now the legacy Synchronized-pane interface.
+Image and Sequence viewers with Markers enabled instead render the exported
+`ImageMarkersList` inside `ViewerSidePanel`, without this drawer's header, pin,
+close button or dismissal handlers. The groups, full-width hover, dimmed titles,
+visibility preferences and stable menu portal remain shared. Persistent and
+Permanent stories cover navigation persistence and non-dismissal on outside
+presses/Escape. Synchronized continues to exercise the legacy interface.
+All viewer variants keep My and Instructor markers prominent in both the list
+and the canvas. Markers that only reach the viewer through a classmate's public
+or shared Board stay in the collapsed Public & Shared section and render hidden
+on the canvas until the viewer opts in; they are also browsable through
+Boards & Markers → All Boards → Public & Shared, without changing backend
+visibility.
