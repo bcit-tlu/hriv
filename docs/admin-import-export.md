@@ -119,7 +119,7 @@ dumps written before #1781 use (images also fall back to the older `origin`
 key); `instructor_note` is restored as-is. Reading old dumps is supported, but
 not the reverse: an older HRIV importing a newer dump only reads `note`, so
 descriptions would import empty. Dumps written before migration
-`0050_image_description_split` have no `instructor_note`, so it imports as
+`0051_image_description_split` have no `instructor_note`, so it imports as
 `NULL`. Because the archive includes `instructor_note`, treat exported dumps as
 staff-only content. See
 [Image metadata and versioning](image-metadata-and-versioning.md#description-and-instructor-note).
