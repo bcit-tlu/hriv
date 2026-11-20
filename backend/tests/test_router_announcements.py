@@ -313,6 +313,28 @@ async def test_create_draft_has_no_publish_or_notified_at(no_stats) -> None:
     assert out.status == "draft" and out.publish_at is None and out.notified_at is None
 
 
+async def test_create_pinned_requires_expiry_unless_draft(no_stats) -> None:
+    admin = _user("admin", id=9)
+    with pytest.raises(HTTPException) as exc:
+        await create_announcement(
+            AnnouncementCreate(title="Lab closed", audience="everyone", pinned=True), _targets_db(), admin
+        )
+    assert exc.value.status_code == 422
+    assert "expiry" in exc.value.detail
+    draft = await create_announcement(
+        AnnouncementCreate(title="Lab closed", audience="everyone", pinned=True, draft=True), _targets_db(), admin
+    )
+    assert draft.pinned and draft.expires_at is None
+    live = await create_announcement(
+        AnnouncementCreate(
+            title="Lab closed", audience="everyone", pinned=True, expires_at=datetime.now(timezone.utc) + HOUR
+        ),
+        _targets_db(),
+        admin,
+    )
+    assert live.pinned and live.expires_at is not None
+
+
 async def test_create_schema_validation() -> None:
     with pytest.raises(ValidationError):
         AnnouncementCreate(title="x", audience="targeted")  # no targets
@@ -467,6 +489,32 @@ async def test_update_expiry_validation_and_clear(no_stats) -> None:
     ann.expires_at = NOW + HOUR
     await update_announcement(10, AnnouncementUpdate(clear_expires_at=True), _update_db(ann), _user("admin", id=9))
     assert ann.expires_at is None
+
+
+async def test_update_pinned_requires_expiry_on_published_posts(no_stats) -> None:
+    admin = _user("admin", id=9)
+    # Pinning a live post without an expiry is rejected…
+    ann = _ann(author_id=9)
+    with pytest.raises(HTTPException) as exc:
+        await update_announcement(10, AnnouncementUpdate(pinned=True), _update_db(ann), admin)
+    assert exc.value.status_code == 422
+    # …as is clearing the expiry of a pinned one, or publishing a pinned draft without one.
+    ann = _ann(author_id=9, pinned=True, expires_at=NOW + HOUR)
+    with pytest.raises(HTTPException) as exc:
+        await update_announcement(10, AnnouncementUpdate(clear_expires_at=True), _update_db(ann), admin)
+    assert exc.value.status_code == 422
+    ann = _ann(author_id=9, pinned=True, publish_at=None, notified_at=None)
+    with pytest.raises(HTTPException) as exc:
+        await update_announcement(10, AnnouncementUpdate(draft=False), _update_db(ann), admin)
+    assert exc.value.status_code == 422
+    # Drafts may stay pinned without one; adding an expiry satisfies the rule.
+    ann = _ann(author_id=9, pinned=True, publish_at=None, notified_at=None)
+    await update_announcement(10, AnnouncementUpdate(title="Still a draft"), _update_db(ann), admin)
+    expires = datetime.now(timezone.utc) + 24 * HOUR
+    await update_announcement(
+        10, AnnouncementUpdate(draft=False, expires_at=expires), _update_db(ann), admin
+    )
+    assert ann.publish_at is not None and ann.expires_at == expires
 
 
 async def test_update_404_when_missing(no_stats) -> None:

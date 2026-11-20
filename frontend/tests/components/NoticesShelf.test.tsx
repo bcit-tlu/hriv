@@ -29,8 +29,9 @@ describe('NoticesShelf', () => {
     render(<NoticesShelf announcements={rows} onOpenAnnouncements={onOpen} />)
     expect(screen.getByRole('heading', { name: 'Notices' })).toBeInTheDocument()
     expect(screen.getAllByTestId('announcement-card')).toHaveLength(3)
+    // Full Markdown body: pinned posts are never truncated to their first line.
     expect(screen.getByText('Line 1')).toBeInTheDocument()
-    expect(screen.queryByText('more body')).not.toBeInTheDocument()
+    expect(screen.getAllByText(/more body/)).toHaveLength(3)
     fireEvent.click(screen.getByRole('button', { name: 'Pinned 2' }))
     expect(onOpen).toHaveBeenCalledWith(2)
     expect(screen.queryByLabelText('heart reaction, 3')).toBeNull()

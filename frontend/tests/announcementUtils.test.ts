@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  firstLine,
-  mergeStreams,
-  selectBannerAnnouncements,
-  selectNotices,
-} from '../src/announcementUtils'
+import { mergeStreams, selectBannerAnnouncements, selectNotices } from '../src/announcementUtils'
 import { makeAnnouncement } from './announcementFixtures'
 
 describe('selectBannerAnnouncements', () => {
@@ -49,17 +44,6 @@ describe('selectNotices', () => {
     )
     expect(selectNotices(rows).map((a) => a.id)).toEqual([1, 2, 3])
     expect(selectNotices([])).toEqual([])
-  })
-})
-
-describe('firstLine', () => {
-  it('strips headings, list markers, inline markup and skips media-only lines', () => {
-    expect(firstLine('# Welcome **all**\nmore')).toBe('Welcome all')
-    expect(firstLine('\n- First *item* with [a link](https://x)\n- second')).toBe(
-      'First item with a link',
-    )
-    expect(firstLine('![slide](/api/media/1)\n/api/media/2\nActual text')).toBe('Actual text')
-    expect(firstLine('')).toBe('')
   })
 })
 

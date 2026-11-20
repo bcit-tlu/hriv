@@ -18,7 +18,7 @@ import {
   kindAlertSx,
   kindMeta,
 } from '../announcementKinds'
-import { announcementTimeLabel, firstLine, formatAbsolute } from '../announcementUtils'
+import { announcementTimeLabel, formatAbsolute } from '../announcementUtils'
 import { KindIcon } from './AnnouncementBanner'
 import AnnouncementReactions from './AnnouncementReactions'
 import MarkdownContent from './MarkdownContent'
@@ -34,7 +34,7 @@ export interface AnnouncementCardProps {
   onEdit?: (announcement: ApiAnnouncement) => void
   onDuplicate?: (announcement: ApiAnnouncement) => void
   onDelete?: (announcement: ApiAnnouncement) => void
-  /** Home shelf: first line of the body instead of the full Markdown, no audience chips. */
+  /** Home shelf: full Markdown body without audience chips or reactions. */
   compact?: boolean
   /** Makes the title a button (e.g. open the post on the Announcements page). */
   onOpen?: () => void
@@ -194,13 +194,7 @@ export default function AnnouncementCard({
         ))}
       </Stack>
 
-      {compact
-        ? firstLine(a.message) && (
-            <Typography variant="body2" color="text.secondary" noWrap>
-              {firstLine(a.message)}
-            </Typography>
-          )
-        : a.message && <MarkdownContent markdown={a.message} mediaTokens={a.media_tokens} />}
+      {a.message && <MarkdownContent markdown={a.message} mediaTokens={a.media_tokens} />}
 
       {/* Reactions live on the Announcements page only — not on the Home shelf, bell or banner. */}
       {!compact && (

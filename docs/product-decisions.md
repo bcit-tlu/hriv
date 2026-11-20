@@ -92,8 +92,10 @@ specified in detail.
   `staff`), not a separate changelog surface. The Admin page has no Changelog tab.
 - Only posts flagged `banner` take the app-bar banner slot (warnings first, then
   pinned, then newest); closing the banner marks the post seen. The Home
-  **Notices** shelf shows at most three pinned posts; the welcome message (#1655)
-  is a seeded pinned `everyone` announcement, not bespoke UI.
+  **Notices** shelf shows at most three pinned posts, each in full (never
+  truncated); the welcome message (#1655) is a seeded pinned `everyone`
+  announcement, not bespoke UI. Published pinned posts require an expiry so
+  they cannot go stale; drafts are exempt (#1953).
 - Announcements are _seen_, never dismissed: the Inbox is the record; an edit
   only resurfaces a post when the author ticks "Notify readers again" (a full
   reset: unseen for everyone, back in every bell and banner slot). The
