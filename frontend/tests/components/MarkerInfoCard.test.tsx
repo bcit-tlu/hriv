@@ -40,12 +40,12 @@ describe('MarkerInfoCard', () => {
     })
     fireEvent.pointerDown(document.body)
     expect(close).not.toHaveBeenCalled()
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Boards' }))
-    const option = await screen.findByRole('option', { name: BOARD_FIXTURE.name })
-    expect(option).toBeVisible()
-    fireEvent.pointerDown(option)
+    const chip = await screen.findByRole('button', { name: BOARD_FIXTURE.name })
+    fireEvent.pointerDown(chip)
+    fireEvent.click(chip)
+    fireEvent.click(chip)
+    expect(chip).toHaveAttribute('aria-pressed', 'true')
     expect(close).not.toHaveBeenCalled()
-    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Boards' }), { key: 'Escape' })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(update).toHaveBeenCalledWith(

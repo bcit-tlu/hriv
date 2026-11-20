@@ -62,7 +62,7 @@ export const Edit: Story = {
     await waitFor(() => expect(page.getByText(BOARD_FIXTURE.name)).toBeVisible())
   },
 }
-export const BoardsMenu: Story = {
+export const BoardChips: Story = {
   args: {
     item: null,
     placement: true,
@@ -71,6 +71,9 @@ export const BoardsMenu: Story = {
       fetchBoards: async () => [
         BOARD_FIXTURE,
         { ...BOARD_FIXTURE, id: 3, name: 'Biology references' },
+        { ...BOARD_FIXTURE, id: 4, name: 'Histology' },
+        { ...BOARD_FIXTURE, id: 5, name: 'Cell structure review' },
+        { ...BOARD_FIXTURE, id: 6, name: 'Exam prep' },
       ],
     },
   },
@@ -89,17 +92,45 @@ export const BoardsMenu: Story = {
   ],
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
-    await waitFor(() => expect(page.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
-    await userEvent.click(page.getByRole('combobox', { name: 'Boards' }))
-    await expect(page.getAllByRole('option')[0]).toHaveTextContent(BOARD_FIXTURE.name)
+    await waitFor(() => expect(page.getByRole('button', { name: 'New Board' })).toBeEnabled())
+    const histology = page.getByRole('button', { name: 'Histology' })
+    await userEvent.click(histology)
+    await expect(histology).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.queryByRole('combobox')).toBeNull()
+  },
+}
+export const BoardOverflow: Story = {
+  args: {
+    item: null,
+    placement: true,
+    services: {
+      ...services,
+      fetchBoards: async () =>
+        Array.from({ length: 40 }, (_, index) => ({
+          ...BOARD_FIXTURE,
+          id: index + 1,
+          name: index % 3 ? `Board ${index + 1}` : `Histology review set ${index + 1}`,
+        })),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body)
+    const more = await page.findByRole('button', { name: 'Show all 40 Boards' })
+    const group = page.getByRole('group', { name: /^Boards/ })
+    const tops = new Set(
+      Array.from(group.children, (child) => Math.round(child.getBoundingClientRect().top)),
+    )
+    await expect(tops.size).toBeLessThanOrEqual(6)
     await expect(page.getByRole('button', { name: 'New Board' })).toBeVisible()
+    await userEvent.click(more)
+    await waitFor(() => expect(page.getByRole('dialog', { name: 'Choose Boards' })).toBeVisible())
+    await userEvent.keyboard('{Escape}')
   },
 }
 export const CreatePrivateBoard: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
-    await waitFor(() => expect(page.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
-    await userEvent.click(page.getByRole('combobox', { name: 'Boards' }))
+    await waitFor(() => expect(page.getByRole('button', { name: 'New Board' })).toBeEnabled())
     await userEvent.click(page.getByRole('button', { name: 'New Board' }))
     await expect(page.getByRole('heading', { name: 'New Board' })).toBeVisible()
     await userEvent.type(page.getByLabelText('Name *', { exact: true }), 'Architecture favourites')

@@ -60,6 +60,8 @@ function services() {
   }
 }
 const LAST_BOARD = 'hrivpref:marker:lastBoard:9'
+const RECENT_BOARDS = 'hrivpref:marker:recentBoards:9'
+const chip = (name: string) => screen.getByRole('button', { name })
 beforeEach(() => localStorage.clear())
 async function setup(props: Partial<React.ComponentProps<typeof MarkerFormDialog>> = {}) {
   const api = services()
@@ -79,11 +81,10 @@ async function setup(props: Partial<React.ComponentProps<typeof MarkerFormDialog
     </AuthContext.Provider>,
   )
   if (!props.item || props.item.permissions.can_edit)
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'New Board' })).toBeEnabled())
   return { api, onChanged, onClose, user: userEvent.setup() }
 }
 async function openCreate(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('combobox', { name: 'Boards' }))
   await user.click(screen.getByRole('button', { name: 'New Board' }))
 }
 describe('MarkerFormDialog', () => {
@@ -111,7 +112,7 @@ describe('MarkerFormDialog', () => {
   it('lists Description before Boards', async () => {
     await setup({ item: MARKER_FIXTURE })
     const description = screen.getByRole('textbox', { name: 'Description' })
-    const boards = screen.getByRole('combobox', { name: 'Boards' })
+    const boards = screen.getByRole('group', { name: /^Boards/ })
     expect(
       description.compareDocumentPosition(boards) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
@@ -146,31 +147,34 @@ describe('MarkerFormDialog', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Delete denied')
     expect(onClose).not.toHaveBeenCalled()
   })
-  it('sorts checkbox options alphabetically, keeps chip-free selected text and creates Boards outside the menu', async () => {
+  it('orders chips selected, then recently used, then by name, ending with New Board, and creates Boards in the pane', async () => {
+    localStorage.setItem(RECENT_BOARDS, JSON.stringify([2, 4]))
     const api = services()
     api.fetchBoards.mockResolvedValue(
-      ['zeta', 'beta', 'Alpha'].map((name, index) => ({ ...BOARD_FIXTURE, id: index + 1, name })),
+      ['zeta', 'beta', 'Alpha', 'gamma'].map((name, index) => ({
+        ...BOARD_FIXTURE,
+        id: index + 1,
+        name,
+      })),
     )
     api.fetchBoard.mockImplementation(async (id: number) => ({ ...BOARD_FIXTURE, id }))
     const { user } = await setup({ services: api })
-    const field = screen.getByRole('combobox', { name: 'Boards' })
-    await user.click(field)
-    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'Alpha',
-      'beta',
-      'zeta',
-    ])
-    for (const name of ['Alpha', 'beta', 'zeta'])
-      await user.click(screen.getByRole('option', { name }))
-    expect(screen.getAllByRole('option', { selected: true })).toHaveLength(3)
-    await user.keyboard('{Escape}')
-    expect(screen.getByText('zeta, beta +1')).toBeVisible()
-    expect(field).toHaveAccessibleDescription(/zeta, beta \+1/)
-    expect(document.querySelector('.MuiAutocomplete-tag')).toBeNull()
-    await user.click(field)
-    await user.type(field, 'My new Board')
-    expect(screen.queryByRole('option')).toBeNull()
-    expect(screen.getByRole('button', { name: 'New Board' })).toBeVisible()
+    const group = screen.getByRole('group', { name: /^Boards/ })
+    const chips = () =>
+      within(group)
+        .getAllByRole('button')
+        .filter((element) => !element.hasAttribute('aria-hidden'))
+        .map((element) => element.textContent)
+    expect(chips()).toEqual(['beta', 'gamma', 'Alpha', 'zeta', 'New Board'])
+    expect(chip('beta')).toHaveAttribute('aria-pressed', 'true')
+    for (const name of ['Alpha', 'zeta']) await user.click(chip(name))
+    await user.click(chip('beta'))
+    expect(chip('Alpha')).toHaveAttribute('aria-pressed', 'true')
+    expect(chip('zeta')).toHaveAttribute('aria-pressed', 'true')
+    expect(chip('beta')).toHaveAttribute('aria-pressed', 'false')
+    // Toggling never reorders the chips.
+    expect(chips()).toEqual(['beta', 'gamma', 'Alpha', 'zeta', 'New Board'])
+    expect(screen.queryByRole('combobox')).toBeNull()
     await openCreate(user)
     await user.type(screen.getByLabelText('Name *'), 'My new Board')
     await user.click(screen.getByRole('button', { name: 'Create Board' }))
@@ -195,7 +199,7 @@ describe('MarkerFormDialog', () => {
     const { user, api } = await setup({ placement: true })
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'false')
     const title = screen.getByRole('textbox', { name: /^Title/ }) as HTMLInputElement
-    expect(title).toHaveFocus()
+    await waitFor(() => expect(title).toHaveFocus())
     expect(title.selectionStart).toBe(0)
     expect(title.selectionEnd).toBe(title.value.length)
     // The popover follows the standalone dialog's layout — Description is
@@ -250,9 +254,8 @@ describe('MarkerFormDialog', () => {
     const { api, user, onChanged, onClose } = await setup()
     await user.type(screen.getByLabelText('Title *'), '  Window detail  ')
     await user.type(screen.getByLabelText('Description'), '  A useful view  ')
-    await user.click(screen.getByRole('combobox', { name: 'Boards' }))
-    expect(screen.queryByRole('option', { name: 'Read-only Board' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('option', { name: 'Architecture inspiration' }))
+    expect(screen.queryByRole('button', { name: 'Read-only Board' })).not.toBeInTheDocument()
+    await user.click(chip('Architecture inspiration'))
     await user.click(screen.getByRole('button', { name: 'Favourite' }))
     await user.click(screen.getByRole('button', { name: 'Save to Board' }))
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
@@ -269,16 +272,13 @@ describe('MarkerFormDialog', () => {
     })
     expect(onChanged).toHaveBeenCalledOnce()
     expect(onChanged).toHaveBeenCalledWith(MARKER_FIXTURE)
-    expect(localStorage.getItem(LAST_BOARD)).toBe('1')
+    expect(localStorage.getItem(RECENT_BOARDS)).toBe('[1]')
   })
   it("defaults to the last editable Board per user and ignores stale or another user's keys", async () => {
     localStorage.setItem(LAST_BOARD, '1')
     const { api } = await setup()
     await waitFor(() => expect(api.fetchBoard).toHaveBeenCalledWith(1))
-    expect(screen.getByText('Architecture inspiration')).toBeVisible()
-    expect(screen.getByRole('combobox', { name: 'Boards' })).toHaveAccessibleDescription(
-      /Architecture inspiration/,
-    )
+    expect(chip('Architecture inspiration')).toHaveAttribute('aria-pressed', 'true')
   })
   it.each(['99', 'not-json', '500'])(
     'ignores unavailable/non-editable persisted Board %s',
@@ -315,9 +315,8 @@ describe('MarkerFormDialog', () => {
     await openCreate(user)
     await user.type(screen.getByLabelText('Name *'), 'My new Board')
     await user.click(screen.getByRole('button', { name: 'Create Board' }))
-    await waitFor(() =>
-      expect(screen.getByText('Architecture inspiration, My new Board')).toBeVisible(),
-    )
+    await waitFor(() => expect(chip('My new Board')).toHaveAttribute('aria-pressed', 'true'))
+    expect(chip('Architecture inspiration')).toHaveAttribute('aria-pressed', 'true')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() =>
       expect(api.updateMarker).toHaveBeenCalledWith(
@@ -381,19 +380,77 @@ describe('MarkerFormDialog', () => {
     expect(screen.queryByRole('button', { name: /Save|Delete/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled()
   })
-  it('pins New Board at the bottom of the Boards menu outside the scrollable listbox', async () => {
-    const { user } = await setup()
-    const field = screen.getByRole('combobox', { name: 'Boards' })
-    await user.click(field)
-    const listbox = screen.getByRole('listbox')
-    const add = screen.getByRole('button', { name: 'New Board' })
-    expect(add).toBeVisible()
-    expect(within(listbox).queryByText('New Board')).toBeNull()
-    await user.type(field, 'zzz')
-    expect(screen.queryByRole('option')).toBeNull()
-    // Emptying the options inserts a "no options" node that remounts the
-    // pinned footer, so re-query rather than reusing the earlier element.
-    expect(screen.getByRole('button', { name: 'New Board' })).toBeVisible()
+  it('caps the chips at six rows and chooses the rest from the …more dialog', async () => {
+    const ROW = 30
+    const PER_ROW = 4
+    const rect = (top: number, left: number, width: number) =>
+      ({ top, left, width, height: 24, right: left + width, bottom: top + 24 }) as DOMRect
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    const OriginalObserver = globalThis.ResizeObserver
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      const parent = this.parentElement
+      if (this.dataset.boardChip == null) {
+        if (this.querySelector('[data-board-chip]')) return rect(0, 0, PER_ROW * 100)
+        return rect(0, 0, 60)
+      }
+      const index = Array.from(parent?.querySelectorAll('[data-board-chip]') ?? []).indexOf(this)
+      return rect(Math.floor(index / PER_ROW) * ROW, (index % PER_ROW) * 100, 96)
+    }
+    globalThis.ResizeObserver = class {
+      constructor(private callback: ResizeObserverCallback) {}
+      observe(target: Element) {
+        this.callback(
+          [{ contentRect: { width: PER_ROW * 100 } } as ResizeObserverEntry],
+          this as unknown as ResizeObserver,
+        )
+        void target
+      }
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver
+    try {
+      const api = services()
+      api.fetchBoards.mockResolvedValue(
+        Array.from({ length: 30 }, (_, index) => ({
+          ...BOARD_FIXTURE,
+          id: index + 1,
+          name: `Board ${String(index + 1).padStart(2, '0')}`,
+        })),
+      )
+      api.fetchBoard.mockImplementation(async (id: number) => ({ ...BOARD_FIXTURE, id }))
+      const { user } = await setup({ services: api })
+      const more = await screen.findByRole('button', { name: 'Show all 30 Boards' })
+      const group = screen.getByRole('group', { name: /^Boards/ })
+      // 6 rows × 4 = 24 slots: 22 chips, then …more and New Board.
+      expect(group.querySelectorAll('[data-board-chip]')).toHaveLength(22)
+      expect(screen.queryByRole('button', { name: 'Board 23' })).toBeNull()
+      await user.click(more)
+      const dialog = screen.getByRole('dialog', { name: 'Choose Boards' })
+      await user.type(within(dialog).getByLabelText('Filter Boards'), '30')
+      await user.click(within(dialog).getByRole('button', { name: 'Board 30' }))
+      expect(within(dialog).getByRole('button', { name: 'Board 30' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      await user.click(within(dialog).getByRole('button', { name: 'Done' }))
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Choose Boards' })).toBeNull(),
+      )
+      // The overflow pick is promoted to the front of the visible chips.
+      const first = group.querySelector('[data-board-chip]')
+      expect(first).toHaveTextContent('Board 30')
+      expect(first).toHaveAttribute('aria-pressed', 'true')
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+      globalThis.ResizeObserver = OriginalObserver
+    }
+  })
+  it('reads the legacy last-Board key when no recent list exists', async () => {
+    localStorage.setItem(LAST_BOARD, '1')
+    await setup()
+    await waitFor(() =>
+      expect(chip('Architecture inspiration')).toHaveAttribute('aria-pressed', 'true'),
+    )
   })
   it('opens the Add Board pane over the form, returns via back or Escape, and keeps the draft', async () => {
     const { user, onClose } = await setup()
