@@ -41,7 +41,7 @@ export interface AnnouncementCardProps {
   onOpen?: () => void
   /** Home shelf: show only the title row; the body sits behind "Expand". */
   collapsed?: boolean
-  /** Adds the Collapse / Expand button at the top right, after the pin. */
+  /** Adds the Close / Expand button at the top right, after the pin. */
   onToggleCollapsed?: () => void
 }
 
@@ -81,7 +81,7 @@ export default function AnnouncementCard({
       aria-controls={collapsed ? undefined : bodyId}
       sx={{ px: 0.5, minWidth: 0 }}
     >
-      {collapsed ? 'Expand' : 'Collapse'}
+      {collapsed ? 'Expand' : 'Close'}
     </Button>
   )
 

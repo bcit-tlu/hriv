@@ -39,7 +39,7 @@ describe('NoticesShelf', () => {
     expect(onOpen).toHaveBeenLastCalledWith()
   })
 
-  it('collapses seen posts to their title; Expand / Collapse toggles the body', () => {
+  it('collapses seen posts to their title; Expand / Close toggles the body', () => {
     const seen = makeAnnouncement({
       id: 1,
       pinned: true,
@@ -54,7 +54,7 @@ describe('NoticesShelf', () => {
     expect(more).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(more)
     expect(screen.getByText('Seen body')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(screen.queryByText('Seen body')).toBeNull()
     expect(onMarkSeen).not.toHaveBeenCalled()
   })
@@ -64,7 +64,7 @@ describe('NoticesShelf', () => {
     const onMarkSeen = vi.fn()
     render(<NoticesShelf announcements={[fresh]} onMarkSeen={onMarkSeen} />)
     expect(screen.getByText('Fresh body')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(onMarkSeen).toHaveBeenCalledWith(fresh)
     expect(screen.queryByText('Fresh body')).toBeNull()
   })
@@ -86,7 +86,7 @@ describe('NoticesShelf', () => {
       notified_at: '2026-01-01T00:00:00Z',
     })
     const { rerender } = render(<NoticesShelf announcements={[post]} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(screen.queryByText('Body')).toBeNull()
     rerender(
       <NoticesShelf

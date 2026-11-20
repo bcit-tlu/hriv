@@ -95,7 +95,7 @@ specified in detail.
   be combined, but the banner never repeats a post already on screen: none on the
   Announcements page, and none on Home for posts on the Notices shelf (#1953). The Home
   **Notices** shelf shows at most three pinned posts, each in full (never
-  truncated) until the reader has seen it, then collapsed to its title (**Collapse** /
+  truncated) until the reader has seen it, then collapsed to its title (**Close** /
   **Expand** at the top right) — readers collapse, they do not dismiss; the welcome message (#1655) is a seeded pinned `everyone`
   announcement, not bespoke UI. Published pinned posts require an expiry so
   they cannot go stale; drafts are exempt (#1953).
