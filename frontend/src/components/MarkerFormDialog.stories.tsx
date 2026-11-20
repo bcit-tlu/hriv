@@ -127,7 +127,18 @@ export const ManyBoards: Story = {
   },
 }
 export const EditSavedTo: Story = {
-  args: { item: { ...MARKER_FIXTURE, board_ids: [1, 3] } },
+  args: {
+    item: { ...MARKER_FIXTURE, board_ids: [1, 3] },
+    services: {
+      ...services,
+      fetchBoards: async () => [
+        BOARD_FIXTURE,
+        { ...BOARD_FIXTURE, id: 3, name: 'Biology references', marker_count: 4 },
+        { ...BOARD_FIXTURE, id: 4, name: 'Histology', marker_count: 12 },
+      ],
+      fetchBoard: async (id: number) => ({ ...BOARD_FIXTURE, id }),
+    },
+  },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
     const savedTo = await page.findByRole('region', { name: 'Saved to' })
