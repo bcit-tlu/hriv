@@ -62,7 +62,7 @@ describe('getVisibilityColors', () => {
   it('returns light-mode visibility colours', () => {
     const c = getVisibilityColors('light')
     expect(c.active).toBe('rgba(0,0,0,0.45)')
-    expect(c.inactive).toBe('#3E3C3Ab3')
+    expect(c.inactive).toBe('#3E3C3Abf')
     expect(c.inactiveChipBg).toBe('#6B6966')
   })
 

@@ -137,7 +137,8 @@ export const Loading: Story = {
 
 export const Dirty: Story = {
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
+    // MUI Dialog renders in a portal on document.body, outside the story canvas.
+    const canvas = within(canvasElement.ownerDocument.body)
     const slider = await canvas.findByRole('slider', { name: 'Detection sensitivity' })
     slider.focus()
     await userEvent.keyboard('{ArrowRight}')
@@ -158,7 +159,8 @@ export const WithOutlines: Story = {
     }),
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
+    // MUI Dialog renders in a portal on document.body, outside the story canvas.
+    const canvas = within(canvasElement.ownerDocument.body)
     await expect(await canvas.findByText('140 cells')).toBeInTheDocument()
   },
 }
@@ -176,7 +178,8 @@ export const NoProposal: Story = {
     }),
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
+    // MUI Dialog renders in a portal on document.body, outside the story canvas.
+    const canvas = within(canvasElement.ownerDocument.body)
     const slider = await canvas.findByRole('slider', { name: 'Detection sensitivity' })
     slider.focus()
     await userEvent.keyboard('{ArrowRight}')
