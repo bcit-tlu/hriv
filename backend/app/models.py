@@ -787,6 +787,19 @@ class Board(Base):
         default=1,
         server_default="1",
     )
+    # Pinned tile cover: a member marker picked via the tile's cover picker.
+    # NULL = the tile falls back to the first member. SET NULL so deleting
+    # the marker row clears the pin; the serializer also falls back when
+    # the pinned marker is not a visible member.
+    cover_marker_id: Mapped[int | None] = mapped_column(
+        ForeignKey("markers.id", ondelete="SET NULL"), nullable=True,
+    )
+    # Explicit "no cover" state from the cover picker: the tile renders the
+    # Board-icon placeholder instead of falling back to the first member.
+    # Mutually exclusive with a pinned cover — writes to one clear the other.
+    cover_blank: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     created_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,

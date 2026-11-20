@@ -228,6 +228,10 @@ async def replace_assignments(
     for board_id, link in editable.items():
         if board_id not in requested:
             await db.delete(link)
+            # A pinned cover that is no longer a member reverts to the
+            # first-member fallback.
+            if link.board.cover_marker_id == item.id:
+                link.board.cover_marker_id = None
     for assignment in assignments:
         link = editable.get(assignment.board_id)
         if link is None:

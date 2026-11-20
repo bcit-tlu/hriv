@@ -108,7 +108,7 @@ export function PasswordChangeForm({
         </>
       )}
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-        <Button onClick={onCancel} disabled={busy}>
+        <Button size="small" onClick={onCancel} disabled={busy}>
           {cancelLabel}
         </Button>
         <Button

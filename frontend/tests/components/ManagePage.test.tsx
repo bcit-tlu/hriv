@@ -1473,7 +1473,7 @@ describe('ManagePage', () => {
     render(<ManagePage categories={categories} programs={programs} groups={groups} />)
 
     const thumbnail = await screen.findByAltText('Blood Smear')
-    expect(thumbnail).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(thumbnail).toHaveStyle({ filter: 'grayscale(1)' })
   })
 
   it('toggles visibility without refetching the image list', async () => {

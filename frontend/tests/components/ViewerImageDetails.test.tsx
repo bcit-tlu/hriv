@@ -32,7 +32,10 @@ it('renders image metadata when source information is empty', async () => {
   render(<ViewerImageDetails image={image} programNames={[]} groupNames={[]} />)
   await waitFor(() => expect(fetchImageSourceInfo).toHaveBeenCalledOnce())
   expect(screen.getByText('Educational specimen')).toBeVisible()
-  expect(screen.queryByText('Original file:')).toBeNull()
+  // The panel lists every field, marking unrecorded source values with a dash.
+  expect(screen.getByText('Original file:', { exact: true }).parentElement).toHaveTextContent(
+    'Original file: —',
+  )
 })
 it('retains metadata if source information cannot be loaded', async () => {
   vi.mocked(fetchImageSourceInfo).mockRejectedValue(new Error('offline'))

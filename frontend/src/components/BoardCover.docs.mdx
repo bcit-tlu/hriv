@@ -1,0 +1,14 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as CoverStories from './BoardCover.stories'
+
+<Meta of={CoverStories} />
+<Title />
+
+The square Board cover shared by Boards page cards, the Save to picker and the
+Marker form's Saved to rows. It shows the pinned cover (`cover_thumb`), else the
+first member Marker with a thumbnail (`GET /api/markers?board_id=…&limit=4`),
+else the Boards icon. An explicit "no cover" pick (`cover_blank`) skips the member
+fetch. `size` sets the edge in pixels and `radius` the MUI border radius.
+
+<Primary />
+<Stories />

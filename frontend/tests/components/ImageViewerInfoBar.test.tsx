@@ -119,8 +119,8 @@ describe('ImageViewerInfoBar', () => {
   })
 
   it('renders collection links and hides overflow behind "+ N more"', () => {
-    // 60 label + 2 names(40 each) + 60 suffix = 200 = cell width → k = 2 of 5.
-    stubFitWidths(200, 40)
+    // 60 label + 2 names(40 each) + 60 suffix + 2 gaps(4 each) = 208 → k = 2 of 5.
+    stubFitWidths(208, 40)
     const onShowCollections = vi.fn()
     const onOpenCollection = vi.fn()
     render(
@@ -170,8 +170,8 @@ describe('ImageViewerInfoBar', () => {
       },
     )
 
-    // Narrow row: 60 label + 2 names + 60 suffix = 200 → k = 2 of 5.
-    stubFitWidths(200, 40)
+    // Narrow row: 60 label + 2 names + 60 suffix + 2 gaps(4 each) = 208 → k = 2 of 5.
+    stubFitWidths(208, 40)
     render(
       <ImageViewerInfoBar
         {...defaultProps}

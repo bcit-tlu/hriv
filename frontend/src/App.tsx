@@ -159,6 +159,7 @@ import { getSurfaceVariant, getVisibilityColors } from './theme'
 import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
 import { parseShareableUrlParams, useShareableImageState } from './useShareableImageState'
 import BoardDialog from './components/BoardDialog'
+import BoardsPopover from './components/BoardsPopover'
 import BoardsPage from './components/BoardsPage'
 import { markerViewParams, parseBoardLocation } from './boardUtils'
 import type { ApiMarker } from './types'
@@ -169,7 +170,7 @@ import { useOverlayPersistence } from './useOverlayPersistence'
 import { useCategoryActions } from './useCategoryActions'
 import { useImageActions } from './useImageActions'
 import { useAnnouncements } from './useAnnouncements'
-import { selectBannerAnnouncements } from './announcementUtils'
+import { selectBannerAnnouncements, selectNotices } from './announcementUtils'
 import { useUserProfile } from './useUserProfile'
 import { useMostSevereScope, useTileOrdering } from './useTileOrdering'
 import { tileOrderingCoordinator } from './tileOrdering'
@@ -241,8 +242,6 @@ export default function App() {
       clearInterval(timer)
     }
   }, [currentUser])
-  const bannerCandidates = selectBannerAnnouncements(announcementsFeed.announcements)
-  const bannerPost = bannerCandidates[0]
   const [announcementsFocusId, setAnnouncementsFocusId] = useState<number | null>(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('page') !== 'announcements') return null
@@ -318,6 +317,7 @@ export default function App() {
   // Container of the viewer that opened the in-place Board dialog — the
   // dialog portals into it so it stays visible in full-page viewer mode.
   const [boardDialogContainer, setBoardDialogContainer] = useState<HTMLElement | null>(null)
+  const [boardsMenuAnchor, setBoardsMenuAnchor] = useState<HTMLElement | null>(null)
   const handleOpenBoardDialog = (id: number, container?: HTMLElement | null) => {
     setBoardDialogId(id)
     setBoardDialogContainer(container ?? null)
@@ -432,6 +432,14 @@ export default function App() {
     })
   }, [path, currentUser, page])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
+  // Leaving the Marker-focused image consumes the focus, so returning to it
+  // through Browse/Collections opens the canvas without a Marker card.
+  const focusImageId = selectedImage?.id ?? null
+  const [prevFocusImageId, setPrevFocusImageId] = useState(focusImageId)
+  if (focusImageId !== prevFocusImageId) {
+    setPrevFocusImageId(focusImageId)
+    if (markerFocus && prevFocusImageId === markerFocus.imageId) setMarkerFocus(null)
+  }
   const graphImageEpoch = useRef(0)
   // "Image details" drawer open state; closed on every image change
   // (including leave -> return to the same image) and on canvas edit entry.
@@ -730,6 +738,17 @@ export default function App() {
   const onViewerPage =
     (page === 'browse' && selectedImage != null) ||
     (page === 'collections' && (selectedCollectionId != null || collectionsListView === 'graph'))
+  // No banner where the post is already in view: the Announcements page lists every post, and
+  // Home shows pinned ones on the Notices shelf (#1953).
+  const homeShelfIds =
+    page === 'browse' && selectedImage == null && path.length === 0
+      ? new Set(selectNotices(announcementsFeed.announcements).map((a) => a.id))
+      : undefined
+  const bannerCandidates =
+    page === 'announcements'
+      ? []
+      : selectBannerAnnouncements(announcementsFeed.announcements, homeShelfIds)
+  const bannerPost = bannerCandidates[0]
   const myCollectionsTypesAtLimit =
     currentUser?.role === 'student' && myCollectionsCapState?.userId === currentUser.id
       ? myCollectionsCapState.types
@@ -2589,6 +2608,7 @@ export default function App() {
       canViewPeople={canViewPeople}
       collectionsEnabled={collectionsEnabled}
       markersEnabled={features?.markers === true}
+      onBoardsMenu={setBoardsMenuAnchor}
       currentUser={currentUser}
       bannerSlot={
         bannerPost ? (
@@ -2707,6 +2727,16 @@ export default function App() {
               collectionsEnabled={collectionsEnabled}
               categories={categories}
               onOpenCollection={handleOpenCollection}
+              onNavigateCategory={(categoryPath) => {
+                runCanvasNavigation(() => {
+                  setPath(categoryPath)
+                  setPage('browse')
+                  pushNavState(
+                    'browse',
+                    categoryPath.map((c) => c.id),
+                  )
+                })
+              }}
               onSelectBoard={(boardId) => {
                 graphImageEpoch.current++
                 setBoardLocation({ boardId })
@@ -2914,6 +2944,9 @@ export default function App() {
                   mb: 2,
                   gap: 1,
                   flexShrink: 0,
+                  // Buttons are size="small" (30.75px) — keep the row at the
+                  // historical 36.5px so content position doesn't shift.
+                  minHeight: 36.5,
                 }}
               >
                 <Box
@@ -3039,6 +3072,7 @@ export default function App() {
                         return (
                           <Button
                             variant="text"
+                            size="small"
                             startIcon={<VisibilityOff />}
                             disabled
                             aria-label="Visibility: Hidden by category"
@@ -3055,6 +3089,7 @@ export default function App() {
                         return (
                           <Button
                             variant="text"
+                            size="small"
                             startIcon={<VisibilityOff />}
                             onClick={() => {
                               toggleImageVisibility(selectedImage.id).catch(() => {})
@@ -3069,6 +3104,7 @@ export default function App() {
                       return (
                         <Button
                           variant="text"
+                          size="small"
                           startIcon={<Visibility />}
                           onClick={() => {
                             toggleImageVisibility(selectedImage.id).catch(() => {})
@@ -3091,6 +3127,7 @@ export default function App() {
                       <span>
                         <Button
                           variant="outlined"
+                          size="small"
                           startIcon={<PlaylistAddIcon />}
                           onClick={() => {
                             setAddToCollectionImageIds([selectedImage.id])
@@ -3109,6 +3146,7 @@ export default function App() {
                       <span>
                         <Button
                           variant="contained"
+                          size="small"
                           startIcon={<EditIcon />}
                           onClick={() => setImageEditOpen(true)}
                           disabled={canvasEditActive}
@@ -3123,6 +3161,7 @@ export default function App() {
                     <Tooltip title="Copy shareable link to clipboard">
                       <Button
                         variant="outlined"
+                        size="small"
                         startIcon={<LinkIcon />}
                         onClick={copyShareLink}
                         sx={inactiveViewerActionSx}
@@ -3291,6 +3330,7 @@ export default function App() {
                 <NoticesShelf
                   announcements={announcementsFeed.announcements}
                   onOpenAnnouncements={(id) => openAnnouncementsPage(id)}
+                  onMarkSeen={announcementsFeed.markSeen}
                 />
               )}
               {/* Breadcrumbs + action buttons */}
@@ -3302,6 +3342,9 @@ export default function App() {
                   flexWrap: 'wrap',
                   mb: 2,
                   gap: 1,
+                  // Buttons are size="small" (30.75px) — keep the row at the
+                  // historical 36.5px so content position doesn't shift.
+                  minHeight: 36.5,
                 }}
               >
                 <Box
@@ -3467,6 +3510,7 @@ export default function App() {
                               return (
                                 <Button
                                   variant="text"
+                                  size="small"
                                   startIcon={<VisibilityOff />}
                                   disabled
                                   aria-label="Visibility: Hidden by parent category"
@@ -3483,6 +3527,7 @@ export default function App() {
                               return (
                                 <Button
                                   variant="text"
+                                  size="small"
                                   startIcon={<VisibilityOff />}
                                   onClick={() => toggleCategoryVisibility(current.id)}
                                   aria-label="Visibility: Show category"
@@ -3495,6 +3540,7 @@ export default function App() {
                             return (
                               <Button
                                 variant="text"
+                                size="small"
                                 startIcon={<Visibility />}
                                 onClick={() => toggleCategoryVisibility(current.id)}
                                 aria-label="Visibility: Hide category"
@@ -3507,6 +3553,7 @@ export default function App() {
                         {collectionsEnabled && (
                           <Button
                             variant="outlined"
+                            size="small"
                             startIcon={<AddIcon />}
                             onClick={openBrowseCollectionCreate}
                             sx={categoryPageHiddenSx}
@@ -3518,6 +3565,7 @@ export default function App() {
                           liveCategoryPath.length < MAX_DEPTH && (
                             <Button
                               variant="outlined"
+                              size="small"
                               startIcon={<CreateNewFolderIcon />}
                               onClick={() => setAddCatOpen(true)}
                               sx={categoryPageHiddenSx}
@@ -3527,6 +3575,7 @@ export default function App() {
                           )}
                         <Button
                           variant="contained"
+                          size="small"
                           startIcon={<AddPhotoAlternateIcon />}
                           onClick={() => setUploadOpen(true)}
                           sx={categoryPageHiddenSx}
@@ -3755,6 +3804,7 @@ export default function App() {
         </DialogContent>
         <DialogActions>
           <Button
+            size="small"
             onClick={() => {
               setDiscardNavigationOpen(false)
               pendingNavigationRef.current = null
@@ -3763,7 +3813,12 @@ export default function App() {
           >
             Keep Editing
           </Button>
-          <Button color="error" onClick={confirmCanvasNavigationDiscard} disabled={canvasSaving}>
+          <Button
+            size="small"
+            color="error"
+            onClick={confirmCanvasNavigationDiscard}
+            disabled={canvasSaving}
+          >
             Discard Changes
           </Button>
         </DialogActions>
@@ -4104,7 +4159,21 @@ export default function App() {
         }}
       />
 
-      {/* Board dialog opened from a viewer drawer heading — stays on the image. */}
+      <BoardsPopover
+        anchorEl={boardsMenuAnchor}
+        currentUser={currentUser}
+        onClose={() => setBoardsMenuAnchor(null)}
+        onOpenBoard={(id) => {
+          setBoardsMenuAnchor(null)
+          handleOpenBoardDialog(id, null)
+        }}
+        onOpenBoardsPage={() => {
+          setBoardsMenuAnchor(null)
+          handleTabChange('boards')
+        }}
+      />
+      {/* Board dialog opened from a viewer drawer heading or the AppBar Boards
+          popover — stays on the current page. */}
       <BoardDialog
         boardId={boardDialogId}
         currentUser={currentUser}

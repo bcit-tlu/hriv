@@ -59,7 +59,7 @@ A box you draw stays private until you save or share it:
   there are boxes to lock, or while boxes are locked.
 - **Share View** — copies a link that opens the image with your boxes drawn.
   With Markers enabled, open the viewer's right panel and choose its middle
-  link icon (**Shared View**), then **Copy current view**, instead of the header button.
+  link icon (**Share View**), then the **Share View** button, instead of the header button.
 - **X** — clears all boxes. It only appears when there are unlocked boxes to clear.
 
 ## Annotating an image

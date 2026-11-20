@@ -87,6 +87,9 @@ export interface AppShellProps {
   /** Deployment flag (`GET /api/features`); hides the Collections tab when off. */
   collectionsEnabled: boolean
   markersEnabled?: boolean
+  /** Opens the AppBar Boards popover from the Boards & Markers button;
+   *  without it (or on the Boards page) the button navigates to the page. */
+  onBoardsMenu?: (anchor: HTMLElement) => void
   currentUser: {
     name: string
     email: string
@@ -141,6 +144,7 @@ export default function AppShell(props: AppShellProps) {
     canViewPeople,
     collectionsEnabled,
     markersEnabled = false,
+    onBoardsMenu,
     currentUser,
     bannerSlot,
     profileOpen,
@@ -516,7 +520,12 @@ export default function AppShell(props: AppShellProps) {
               <Tooltip title="Boards & Markers">
                 <IconButton
                   aria-label="Boards & Markers"
-                  onClick={() => onTabChange('boards')}
+                  aria-haspopup={onBoardsMenu && page !== 'boards' ? 'dialog' : undefined}
+                  onClick={(event) =>
+                    onBoardsMenu && page !== 'boards'
+                      ? onBoardsMenu(event.currentTarget)
+                      : onTabChange('boards')
+                  }
                   sx={{ color: 'inherit', ...appBarIconButtonSx }}
                 >
                   <SpaceDashboardOutlined />

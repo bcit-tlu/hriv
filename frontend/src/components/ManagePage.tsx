@@ -49,7 +49,7 @@ import type { ApiBulkImportJob, ApiImage, ApiImageCollectionRef } from '../api'
 import { invalidateMovedImageScopes, tileOrderingCoordinator } from '../tileOrdering'
 import type { Category, Group, Program } from '../types'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from '../categoryUtils'
-import { formatFileSize } from '../formatUtils'
+import { formatFileSize, formatRelativeTime } from '../formatUtils'
 import { getVisibilityColors } from '../theme'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
@@ -1382,6 +1382,9 @@ export default function ManagePage({
           mb: 3,
           flexWrap: 'wrap',
           gap: 1,
+          // Buttons are size="small" (30.75px) — keep the row at the
+          // historical 36.5px so the FilterBar position doesn't shift.
+          minHeight: 36.5,
         }}
       >
         <Typography variant="h5">Images</Typography>
@@ -1401,6 +1404,7 @@ export default function ManagePage({
           </Button>
           <Button
             variant="contained"
+            size="small"
             startIcon={<AddPhotoAlternateIcon />}
             onClick={() => setUploadOpen(true)}
           >
@@ -1912,12 +1916,16 @@ export default function ManagePage({
                   ),
                   updated_at: (
                     <TableCell {...dimAttr}>
-                      {new Date(img.updated_at).toLocaleDateString()}
+                      <span title={new Date(img.updated_at).toLocaleString()}>
+                        {formatRelativeTime(img.updated_at)}
+                      </span>
                     </TableCell>
                   ),
                   created_at: (
                     <TableCell {...dimAttr}>
-                      {new Date(img.created_at).toLocaleDateString()}
+                      <span title={new Date(img.created_at).toLocaleString()}>
+                        {formatRelativeTime(img.created_at)}
+                      </span>
                     </TableCell>
                   ),
                   dimensions: (
@@ -2207,6 +2215,7 @@ export default function ManagePage({
           <Divider />
           <Box>
             <Button
+              size="small"
               color="error"
               variant="contained"
               onClick={handleConfirmDeleteImage}
@@ -2225,7 +2234,7 @@ export default function ManagePage({
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseDeleteDialog} disabled={deleting}>
+          <Button size="small" onClick={handleCloseDeleteDialog} disabled={deleting}>
             Cancel
           </Button>
         </DialogActions>

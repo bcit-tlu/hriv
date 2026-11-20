@@ -147,6 +147,10 @@ export interface ApiBoardSummary {
   group_ids: number[]
   marker_count: number
   cover_thumb: string | null
+  /** Pinned cover member; `null` = first-member fallback. */
+  cover_marker_id: number | null
+  /** Explicit "no cover" pick — the tile renders the Board icon placeholder. */
+  cover_blank: boolean
   sort_order: number
   version: number
   permissions: {

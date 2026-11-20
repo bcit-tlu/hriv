@@ -31,6 +31,8 @@ export const BOARD_FIXTURE: ApiBoard = {
   group_ids: [],
   marker_count: 1,
   cover_thumb: null,
+  cover_marker_id: null,
+  cover_blank: false,
   sort_order: 0,
   version: 5,
   permissions: { can_edit: true, can_change_scope: true, can_delete: true, can_transfer: false },

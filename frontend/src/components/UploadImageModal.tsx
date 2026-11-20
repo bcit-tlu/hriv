@@ -520,6 +520,7 @@ export default function UploadImageModal({
       </DialogContent>
       <DialogActions>
         <Button
+          size="small"
           onClick={() => {
             if (uploading && abortRef.current) {
               abortRef.current.abort()

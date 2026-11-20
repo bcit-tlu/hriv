@@ -297,63 +297,69 @@ export function ImageDetailsContent({
   measurement,
   sourceInfo,
   dense = false,
+  showAll = false,
 }: Pick<
   ImageDetailsDrawerProps,
   'image' | 'programNames' | 'groupNames' | 'measurement' | 'sourceInfo'
-> & { dense?: boolean }) {
+> & {
+  dense?: boolean
+  /** List every field, marking absent values "—" instead of omitting them. */
+  showAll?: boolean
+}) {
   const instructorNote = image.instructorNote?.trim() ?? ''
   const fields: { label: string; value: string; title?: string; tooltip?: string }[] = []
-  if (image.copyright) fields.push({ label: 'Copyright:', value: image.copyright })
-  if (programNames.length > 0)
-    fields.push({
-      label: `Program${programNames.length > 1 ? 's' : ''}:`,
-      value: programNames.join(', '),
+  const add = (
+    label: string,
+    value: string | null | undefined,
+    extra: { title?: string; tooltip?: string } = {},
+  ) => {
+    if (value) fields.push({ label, value, ...extra })
+    else if (showAll) fields.push({ label, value: '—', title: `${label} not recorded` })
+  }
+  const longDate = (iso: string) =>
+    new Date(iso).toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
     })
-  if (groupNames.length > 0)
-    fields.push({
-      label: `Group${groupNames.length > 1 ? 's' : ''}:`,
-      value: groupNames.join(', '),
-    })
-  // Dates show the long-form date; the native title keeps the exact timestamp.
-  if (image.createdAt)
-    fields.push({
-      label: 'Created:',
-      value: new Date(image.createdAt).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      }),
-      tooltip: `Created: ${new Date(image.createdAt).toLocaleString()}`,
-    })
-  if (image.updatedAt)
-    fields.push({
-      label: 'Modified:',
-      value: new Date(image.updatedAt).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      }),
-      tooltip: `Modified: ${new Date(image.updatedAt).toLocaleString()}`,
-    })
-  if (image.width != null && image.height != null)
-    fields.push({ label: 'Dimensions:', value: `${image.width} × ${image.height}` })
-  if (image.fileSize != null) fields.push({ label: 'Size:', value: formatFileSize(image.fileSize) })
-  if (measurement) {
-    const value =
-      measurement.scale && measurement.unit
+  add('Copyright:', image.copyright)
+  add(
+    `Program${programNames.length > 1 ? 's' : ''}:`,
+    programNames.length > 0 ? programNames.join(', ') : null,
+  )
+  add(
+    `Group${groupNames.length > 1 ? 's' : ''}:`,
+    groupNames.length > 0 ? groupNames.join(', ') : null,
+  )
+  // Dates show the long-form date; the tooltip keeps the exact timestamp.
+  add('Created:', image.createdAt ? longDate(image.createdAt) : null, {
+    tooltip: image.createdAt ? `Created: ${new Date(image.createdAt).toLocaleString()}` : undefined,
+  })
+  add('Modified:', image.updatedAt ? longDate(image.updatedAt) : null, {
+    tooltip: image.updatedAt
+      ? `Modified: ${new Date(image.updatedAt).toLocaleString()}`
+      : undefined,
+  })
+  add(
+    'Dimensions:',
+    image.width != null && image.height != null ? `${image.width} × ${image.height}` : null,
+  )
+  add('Size:', image.fileSize != null ? formatFileSize(image.fileSize) : null)
+  add(
+    'Measurement:',
+    !measurement
+      ? null
+      : measurement.scale && measurement.unit
         ? `${measurement.scale} px/${measurement.unit}`
         : measurement.scale
           ? `${measurement.scale} px`
-          : (measurement.unit ?? '')
-    if (value) fields.push({ label: 'Measurement:', value })
-  }
+          : measurement.unit,
+  )
   const objective = objectiveFromMetadata(image.metadataExtra)
-  if (objective) fields.push({ label: 'Objective:', value: objectiveLabel(objective) })
-  if (sourceInfo?.originalFilename != null)
-    fields.push({ label: 'Original file:', value: sourceInfo.originalFilename })
-  if (sourceInfo?.fileType != null) fields.push({ label: 'File type:', value: sourceInfo.fileType })
-  if (sourceInfo?.uploadedByName != null)
-    fields.push({ label: 'Uploaded by:', value: sourceInfo.uploadedByName })
+  add('Objective:', objective ? objectiveLabel(objective) : null)
+  add('Original file:', sourceInfo?.originalFilename)
+  add('File type:', sourceInfo?.fileType)
+  add('Uploaded by:', sourceInfo?.uploadedByName)
 
   return (
     <Stack spacing={dense ? 0.5 : 0.75}>

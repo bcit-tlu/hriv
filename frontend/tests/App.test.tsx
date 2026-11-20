@@ -1392,10 +1392,10 @@ describe('App breadcrumbs', () => {
     const editButton = screen.getByRole('button', { name: 'Edit Details' })
     const shareButton = screen.getByText('Share View').closest('button')
 
-    expect(programChip).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(groupChip).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(editButton).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(shareButton).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(programChip).toHaveStyle({ filter: 'grayscale(1)' })
+    expect(groupChip).toHaveStyle({ filter: 'grayscale(1)' })
+    expect(editButton).toHaveStyle({ filter: 'grayscale(1)' })
+    expect(shareButton).toHaveStyle({ filter: 'grayscale(1)' })
   })
 
   it('collapses deep category breadcrumbs to the parent and current category', async () => {
@@ -1486,15 +1486,15 @@ describe('App breadcrumbs', () => {
     const editButton = screen.getByRole('button', { name: 'Edit Details' })
     const shareButton = screen.getByText('Share View').closest('button')
 
-    expect(programChip).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(programChip).toHaveStyle({ filter: 'grayscale(1)' })
     expectEffectiveOpacity(programChip, '1')
-    expect(groupChip).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(groupChip).toHaveStyle({ filter: 'grayscale(1)' })
     expectEffectiveOpacity(groupChip, '1')
-    expect(hiddenButton).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(hiddenButton).toHaveStyle({ filter: 'grayscale(1)' })
     expectEffectiveOpacity(hiddenButton, '1')
-    expect(editButton).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(editButton).toHaveStyle({ filter: 'grayscale(1)' })
     expectEffectiveOpacity(editButton, '1')
-    expect(shareButton).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(shareButton).toHaveStyle({ filter: 'grayscale(1)' })
     expectEffectiveOpacity(shareButton, '1')
   })
 
@@ -3460,7 +3460,7 @@ describe('App "Add to Collection" from the image view (#1415)', () => {
   it('desaturates the button when the image is inactive', async () => {
     mockImage.active = false
     const button = await openImageWithCollectionsEnabled()
-    expect(button).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(button).toHaveStyle({ filter: 'grayscale(1)' })
   })
 
   it('opens the dialog for the selected image and shows a View collection action on success', async () => {

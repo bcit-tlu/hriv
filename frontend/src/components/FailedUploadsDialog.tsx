@@ -132,12 +132,16 @@ export default function FailedUploadsDialog({
       </DialogContent>
       <DialogActions>
         {undismissed.length > 0 && (
-          <Button onClick={() => dismiss(undismissed.map((src) => src.id))}>Dismiss all</Button>
+          <Button size="small" onClick={() => dismiss(undismissed.map((src) => src.id))}>
+            Dismiss all
+          </Button>
         )}
-        <Button onClick={load} disabled={loading}>
+        <Button size="small" onClick={load} disabled={loading}>
           Refresh
         </Button>
-        <Button onClick={onClose}>Close</Button>
+        <Button size="small" onClick={onClose}>
+          Close
+        </Button>
       </DialogActions>
     </Dialog>
   )

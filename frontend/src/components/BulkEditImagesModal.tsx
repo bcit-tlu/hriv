@@ -219,6 +219,7 @@ export default function BulkEditImagesModal({
         {/* Delete */}
         <Box>
           <Button
+            size="small"
             color="error"
             variant={confirmDelete ? 'contained' : 'outlined'}
             onClick={handleDelete}
@@ -241,10 +242,10 @@ export default function BulkEditImagesModal({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} disabled={saving}>
+        <Button size="small" onClick={handleClose} disabled={saving}>
           Cancel
         </Button>
-        <Button onClick={handleSave} variant="contained" disabled={saving}>
+        <Button size="small" onClick={handleSave} variant="contained" disabled={saving}>
           {saving ? 'Saving…' : 'Save Changes'}
         </Button>
       </DialogActions>

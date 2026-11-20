@@ -1590,6 +1590,11 @@ class BoardUpdate(BaseModel):
     visibility: Literal["private", "public", "restricted"] | None = None
     program_ids: list[int] | None = None
     group_ids: list[int] | None = None
+    # Pinned tile cover member; ``null`` clears the pin (first-member
+    # fallback). Distinguished from "unset" via ``model_fields_set``.
+    cover_marker_id: int | None = None
+    # Explicit "no cover" pick — the tile renders the placeholder.
+    cover_blank: bool | None = None
     version: int | None = Field(None, ge=1)
 
     _name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
@@ -1757,6 +1762,13 @@ class BoardSummaryOut(BaseModel):
     group_ids: list[int]
     marker_count: int
     cover_thumb: str | None = None
+    # Pinned cover member (``boards.cover_marker_id``) when it resolves to
+    # a marker visible to the caller; ``None`` means the tile uses the
+    # first-member fallback.
+    cover_marker_id: int | None = None
+    # Explicit "no cover" pick: the tile renders the Board-icon placeholder
+    # and ``cover_thumb`` is ``None`` even with members present.
+    cover_blank: bool = False
     sort_order: int
     version: int
     permissions: BoardPermissionsOut

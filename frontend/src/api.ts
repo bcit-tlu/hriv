@@ -2764,7 +2764,14 @@ export function fetchMarker(id: number, init?: RequestInit): Promise<ApiMarker> 
 export function createBoard(body: BoardCreate): Promise<ApiBoard> {
   return request('/boards', { method: 'POST', body: JSON.stringify(body) })
 }
-export function updateBoard(id: number, body: Partial<BoardCreate> & Versioned): Promise<ApiBoard> {
+export interface BoardUpdate extends Partial<BoardCreate> {
+  /** Pinned cover member; `null` clears the pin (first-member fallback). */
+  cover_marker_id?: number | null
+  /** Explicit "no cover" pick — the tile renders the placeholder icon. */
+  cover_blank?: boolean
+  version?: number
+}
+export function updateBoard(id: number, body: BoardUpdate & Versioned): Promise<ApiBoard> {
   return request(`/boards/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
 }
 export function deleteBoard(id: number, version: number): Promise<void> {

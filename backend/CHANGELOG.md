@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.1.0](https://github.com/bcit-tlu/hriv/compare/backend-v1.0.0...backend-v1.1.0) (2026-11-20)
+
+
+### Features
+
+* **announcements:** show pinned posts in full and require an expiry ([#1955](https://github.com/bcit-tlu/hriv/issues/1955)) ([dc3c99a](https://github.com/bcit-tlu/hriv/commit/dc3c99aa155564690e63b0b02ca626046162e596))
+
+## [1.0.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.70.1...backend-v1.0.0) (2026-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* rename inuksuk to marker app-wide ([#1941](https://github.com/bcit-tlu/hriv/issues/1941))
+
+### Features
+
+* **boards:** redesign overview and Board dialog ([#1916](https://github.com/bcit-tlu/hriv/issues/1916)) ([e6bd961](https://github.com/bcit-tlu/hriv/commit/e6bd96119adf4a9b374485c7d38689ef7e248712))
+* **boards:** restyle tiles, surface filter chips, marker column chooser ([#1952](https://github.com/bcit-tlu/hriv/issues/1952)) ([d8001db](https://github.com/bcit-tlu/hriv/commit/d8001dbd5384dd7c20b5e81526bd1cf0e01d351e))
+* **collections:** add collection image slots and Inuksuk seeding ([#1910](https://github.com/bcit-tlu/hriv/issues/1910)) ([51c6e2a](https://github.com/bcit-tlu/hriv/commit/51c6e2a38d317db6f918117e847f742281104c20))
+* **inuksuks:** add Board and Inuksuk read API with authorization ([#1904](https://github.com/bcit-tlu/hriv/issues/1904)) ([ebf3421](https://github.com/bcit-tlu/hriv/commit/ebf34211e1c58fd51e9346c4934e0692b3e3a524))
+* **inuksuks:** add Board, Section and Inuksuk write API ([#1905](https://github.com/bcit-tlu/hriv/issues/1905)) ([8dcdab2](https://github.com/bcit-tlu/hriv/commit/8dcdab20906d35468055c0b17297542a9409c5c7))
+* **inuksuks:** add Boards and Inuksuks page ([#1909](https://github.com/bcit-tlu/hriv/issues/1909)) ([3cebbbc](https://github.com/bcit-tlu/hriv/commit/3cebbbcf0c6703b2c5b35c83d85503435d9513ab))
+* **inuksuks:** add DZI region crop thumbnails ([#1903](https://github.com/bcit-tlu/hriv/issues/1903)) ([011dd28](https://github.com/bcit-tlu/hriv/commit/011dd28c4989398d60813a5355bda0c0f85c5ab8))
+* **inuksuks:** add search, archive round-trip and docs close-out ([#1912](https://github.com/bcit-tlu/hriv/issues/1912)) ([1a6940a](https://github.com/bcit-tlu/hriv/commit/1a6940ab0e0a606c12e29bcf838bd4c1898a43f3))
+* **inuksuks:** build collections from Boards and support multi-slot viewers ([#1911](https://github.com/bcit-tlu/hriv/issues/1911)) ([5b58e11](https://github.com/bcit-tlu/hriv/commit/5b58e117a573f81b421eeac9e0756339e0d74b76))
+* **inuksuks:** schema, models and INUKSUKS_ENABLED flag ([#1901](https://github.com/bcit-tlu/hriv/issues/1901)) ([cedece4](https://github.com/bcit-tlu/hriv/commit/cedece47790f248d60dacbf5dfd41377a9ec673d))
+
+
+### Bug Fixes
+
+* **collections:** eager-load members after collection writes ([#1914](https://github.com/bcit-tlu/hriv/issues/1914)) ([b7e7618](https://github.com/bcit-tlu/hriv/commit/b7e7618f3ed971f29e12d88aee2ef52ee47274d2))
+
+
+### Code Refactoring
+
+* rename inuksuk to marker app-wide ([#1941](https://github.com/bcit-tlu/hriv/issues/1941)) ([0d48398](https://github.com/bcit-tlu/hriv/commit/0d48398ff4216bc77a88ee4089a0bb8441ee3661))
+
 ## [0.70.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.70.0...backend-v0.70.1) (2026-11-13)
 
 

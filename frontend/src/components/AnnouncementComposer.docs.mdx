@@ -15,8 +15,8 @@ import * as AnnouncementComposerStories from './AnnouncementComposer.stories'
 
 <Subtitle>
   The single authoring surface for announcements and release notes: one grouped `To:` field, a
-  controlled kind picker, Markdown with media upload and preview, and schedule / expiry / pin /
-  banner behind "More options".
+  controlled kind picker, Markdown with media upload and preview, and an always-visible "Publishing
+  options" section for schedule / expiry / pin / banner.
 </Subtitle>
 
 <Primary />
@@ -36,6 +36,9 @@ import * as AnnouncementComposerStories from './AnnouncementComposer.stories'
 - `datetime-local` values convert to ISO UTC on save (`toLocalInput` / `fromLocalInput`).
 - Edit offers **Notify readers again** (PATCH `notify_again`); clearing an expiry sends
   `clear_expires_at`. Duplicate copies everything except the schedule and appends "(copy)".
+- **Pin to top** requires an expiry before Post / Schedule (#1953): ticking it moves focus to
+  "Expires at", which turns red ("Required for pinned posts") until set. Save draft still works
+  without one; the backend returns 422 for a published pinned post with no expiry.
 - The dialog remounts on every open, so fields always re-initialise from props.
 
 <Stories includePrimary={false} />

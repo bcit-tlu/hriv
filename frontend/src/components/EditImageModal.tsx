@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Stack from '@mui/material/Stack'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -511,22 +512,28 @@ function EditImageForm({
         <Typography variant="subtitle2" sx={{ mt: 1 }}>
           Measurement Settings
         </Typography>
-        <MeasurementScaleFields
-          scaleLabel="Scale (px per unit)"
-          unitLabel="Unit"
-          scale={measurementScale}
-          unit={measurementUnit}
-          onScaleChange={setMeasurementScale}
-          onUnitChange={setMeasurementUnit}
-          scaleHelperText="Image pixels per real-world unit"
-          allowEmptyUnit
-        />
-        <MeasurementObjectiveSelect
-          label="Objective"
-          value={objective}
-          onChange={setObjective}
-          helperText="Microscope objective magnification"
-        />
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+          <Box sx={{ flex: 3, minWidth: 0 }}>
+            <MeasurementScaleFields
+              scaleLabel="Scale (px per unit)"
+              unitLabel="Unit"
+              scale={measurementScale}
+              unit={measurementUnit}
+              onScaleChange={setMeasurementScale}
+              onUnitChange={setMeasurementUnit}
+              scaleHelperText="Image pixels per real-world unit"
+              allowEmptyUnit
+            />
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 140, '& .MuiTextField-root': { width: '100%' } }}>
+            <MeasurementObjectiveSelect
+              label="Objective"
+              value={objective}
+              onChange={setObjective}
+              helperText="Microscope objective magnification"
+            />
+          </Box>
+        </Stack>
         {image && image.created_at && image.updated_at && (
           <Box sx={{ display: 'flex', gap: 4, mt: 1 }}>
             <Typography variant="caption" color="text.secondary">
@@ -543,6 +550,7 @@ function EditImageForm({
             <Divider />
             <Box>
               <Button
+                size="small"
                 color="error"
                 variant={confirmDelete ? 'contained' : 'outlined'}
                 onClick={handleDelete}
@@ -589,6 +597,7 @@ function EditImageForm({
       )}
       <DialogActions>
         <Button
+          size="small"
           onClick={() => {
             if (uploadInProgress && onCancelReplace) {
               onCancelReplace()
@@ -602,6 +611,7 @@ function EditImageForm({
         </Button>
         {replaceFile && onReplace ? (
           <Button
+            size="small"
             onClick={handleReplace}
             variant="contained"
             color={confirmReplace ? 'warning' : 'primary'}
@@ -610,7 +620,12 @@ function EditImageForm({
             {confirmReplace ? 'Confirm Replace & Save' : 'Replace & Save'}
           </Button>
         ) : (
-          <Button onClick={handleSave} variant="contained" disabled={!name.trim() || busy}>
+          <Button
+            size="small"
+            onClick={handleSave}
+            variant="contained"
+            disabled={!name.trim() || busy}
+          >
             Save
           </Button>
         )}

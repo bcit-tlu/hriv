@@ -6,11 +6,12 @@ authors = ["Devin AI"]
 license = "MPL-2.0"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.15"
 azure-storage-blob = "^12.20.0"
-croniter = ">=6.2.4,<7"
+croniter = ">=6.2.4,<8"
 opentelemetry-distro = "^0.57b0"
 opentelemetry-exporter-otlp = "^1.36.0"
+grpcio = ">=1.85.3,<2"
 
 [build-system]
 requires = ["poetry-core"]

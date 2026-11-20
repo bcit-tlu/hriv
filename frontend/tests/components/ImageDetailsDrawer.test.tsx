@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { useRef, useState } from 'react'
 import ImageDetailsDrawer, {
+  ImageDetailsContent,
   ImageDetailsTrigger,
   type ImageDetailsDrawerProps,
 } from '../../src/components/ImageDetailsDrawer'
@@ -239,6 +240,34 @@ describe('ImageDetailsDrawer', () => {
     expect(screen.queryByText('No details available.')).not.toBeInTheDocument()
   })
 
+  it('lists every field with a dash for absent values when showAll is set', () => {
+    render(
+      <ImageDetailsContent
+        showAll
+        image={{ copyright: 'BCIT' }}
+        programNames={[]}
+        groupNames={[]}
+        sourceInfo={{ originalFilename: null, fileType: null, uploadedByName: 'Mira Patel' }}
+      />,
+    )
+    const row = (label: string) => screen.getByText(label, { exact: true }).parentElement
+    expect(row('Copyright:')).toHaveTextContent('Copyright: BCIT')
+    expect(row('Uploaded by:')).toHaveTextContent('Uploaded by: Mira Patel')
+    for (const label of [
+      'Program:',
+      'Group:',
+      'Created:',
+      'Modified:',
+      'Dimensions:',
+      'Size:',
+      'Measurement:',
+      'Objective:',
+      'Original file:',
+      'File type:',
+    ])
+      expect(row(label)).toHaveTextContent(`${label} —`)
+    expect(screen.queryByText('No details available.')).not.toBeInTheDocument()
+  })
   it('uses singular and plural program labels', async () => {
     const { rerender } = render(
       <div style={{ position: 'relative' }}>
@@ -387,7 +416,7 @@ describe('ImageDetailsDrawer', () => {
     expect(trigger()).toHaveAttribute('title', 'Image details')
     expect(trigger()).toHaveAttribute('type', 'button')
     expect(trigger()).toHaveStyle({
-      backgroundImage: 'url(/openseadragon-svg-icons/info_rest.svg)',
+      backgroundImage: `url("${new URL('/openseadragon-svg-icons/info_rest.svg', document.baseURI).href}")`,
     })
     // No native ButtonFace fill behind the translucent svg.
     expect(getComputedStyle(trigger()).backgroundColor).toBe('rgba(0, 0, 0, 0)')
