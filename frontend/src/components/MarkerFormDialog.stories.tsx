@@ -53,7 +53,7 @@ export const Basic: Story = {
     await expect(page.getByRole('heading', { name: 'Add Marker' })).toBeInTheDocument()
     await waitFor(() => expect(page.getByRole('textbox', { name: 'Title' })).toHaveFocus())
     // No Board chosen yet: the split button's main action opens the picker.
-    await waitFor(() => expect(page.getByRole('button', { name: 'Save to…' })).toBeEnabled())
+    await waitFor(() => expect(page.getByRole('button', { name: 'Choose a Board' })).toBeEnabled())
   },
 }
 export const Edit: Story = {
@@ -93,8 +93,8 @@ export const SaveToPicker: Story = {
   ],
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
-    await waitFor(() => expect(page.getByRole('button', { name: 'Choose Boards' })).toBeEnabled())
-    await userEvent.click(page.getByRole('button', { name: 'Choose Boards' }))
+    await waitFor(() => expect(page.getByRole('button', { name: 'Choose a Board' })).toBeEnabled())
+    await userEvent.click(page.getByRole('button', { name: 'Choose a Board' }))
     const picker = await page.findByRole('dialog', { name: 'Save to' })
     const histology = within(picker).getByText('Histology').closest('[role="button"]')!
     await userEvent.click(histology)
@@ -117,8 +117,8 @@ export const ManyBoards: Story = {
   },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
-    await waitFor(() => expect(page.getByRole('button', { name: 'Choose Boards' })).toBeEnabled())
-    await userEvent.click(page.getByRole('button', { name: 'Choose Boards' }))
+    await waitFor(() => expect(page.getByRole('button', { name: 'Choose a Board' })).toBeEnabled())
+    await userEvent.click(page.getByRole('button', { name: 'Choose a Board' }))
     const search = await page.findByLabelText('Search Boards')
     await userEvent.type(search, 'review')
     const picker = page.getByRole('dialog', { name: 'Save to' })
@@ -148,7 +148,7 @@ export const EditSavedTo: Story = {
 export const CreatePrivateBoard: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
-    const add = /^(Choose Boards|Save to another Board)$/
+    const add = /^(Choose a Board|Save to another Board)$/
     await waitFor(() => expect(page.getByRole('button', { name: add })).toBeEnabled())
     await userEvent.click(page.getByRole('button', { name: add }))
     const picker = await page.findByRole('dialog', { name: 'Save to' })

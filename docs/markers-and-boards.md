@@ -376,14 +376,15 @@ other mutations send body versions.
 `MarkerFormDialog` requires a nonblank title and at least one editable Board.
 The multi-picker only lists `permissions.can_edit` Boards. Selected Boards retain their existing membership when editing. Other Boards' links are preserved by the backend assignment
 contract. Where the Marker is saved is part of the save action, not a field of
-the Marker: creating shows a split button naming the destination (**Save to
-{Board}**, or **Save to N Boards**; **Save to…** opens the picker when none is
-chosen). Its **▾** opens the **Save to** picker popover: each editable Board as a
+the Marker. New Markers save first, change after: **Save** uses the default
+Board (most recently used editable Board) and the viewer shows a
+**Saved to {Board} · Change** snackbar (`onSaved`) whose Change opens that
+Marker's inline editor. With no default, the button reads **Choose a Board** and
+opens the **Save to** picker popover: each editable Board as a
 row with cover, name, Marker count and a checkmark when chosen (`aria-pressed`),
 ordered selected, most recently used, then by name (case-insensitive, stable ID
 ties), with **Search Boards** above more than 8 rows, and Create Board / Done in
-its footer. Toggling does not reorder rows. Editing replaces the split button
-with **Save**/**Save changes** and shows a **Saved to** list of Board rows with a
+its footer. Toggling does not reorder rows. Editing replaces Save with **Save**/**Save changes** and shows a **Saved to** list of Board rows with a
 remove × plus **Save to another Board**, which opens the same picker; with no
 Board left, a dashed **Choose a Board** row replaces both. Create Board
 slides a **New Board** pane in from the right over the form — the same fields
