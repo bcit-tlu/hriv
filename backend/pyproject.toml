@@ -1,13 +1,13 @@
 [tool.poetry]
 name = "hriv-backend"
-version = "1.0.0"
+version = "1.1.0"
 description = "HRIV Image Library API"
 authors = ["Devin AI"]
 license = "MPL-2.0"
 package-mode = false
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = "^3.15"
 fastapi = ">=0.136,<0.142"
 uvicorn = {extras = ["standard"], version = ">=0.34,<0.55"}
 sqlalchemy = {version = "^2.0.0", extras = ["asyncio"]}
@@ -25,6 +25,7 @@ arq = ">=0.27,<0.29"
 redis = "^5.0.0"
 opentelemetry-distro = "^0.64b0"
 opentelemetry-exporter-otlp = "^1.36.0"
+grpcio = ">=1.85.3,<2"
 opentelemetry-instrumentation-fastapi = "^0.64b0"
 opentelemetry-instrumentation-httpx = "^0.64b0"
 opentelemetry-instrumentation-sqlalchemy = "^0.64b0"

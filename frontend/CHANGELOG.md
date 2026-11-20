@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/bcit-tlu/hriv/compare/frontend-v1.0.0...frontend-v1.1.0) (2026-11-20)
+
+
+### Features
+
+* **announcements:** show pinned posts in full and require an expiry ([#1955](https://github.com/bcit-tlu/hriv/issues/1955)) ([dc3c99a](https://github.com/bcit-tlu/hriv/commit/dc3c99aa155564690e63b0b02ca626046162e596))
+
 ## [1.0.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.69.2...frontend-v1.0.0) (2026-11-19)
 
 

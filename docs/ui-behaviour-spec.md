@@ -1433,6 +1433,12 @@ selection MouseTracker ignores their presses.
 
 ### Boards & Markers overview and Board dialog
 
+- The AppBar Boards & Markers button opens a My Boards popover listing the
+  viewer's editable owned Boards (page row order, cover, name, Marker count).
+  A Board opens the in-place Board dialog over the current page; the footer
+  **Open Boards & Markers** link opens the page. On the Boards page the button
+  navigates directly.
+
 - The Boards and Markers page title uses Collections' h5/h1 and unpadded flex
   header exactly, with the Cards/Table toggle in the title row immediately left
   of All Boards and the Filter by bar rendered under the title like Manage
@@ -1573,12 +1579,17 @@ selection MouseTracker ignores their presses.
   Description starts collapsed under More options even when filled. Delete opens
   a secondary confirmation dialog whose Cancel/Escape preserves the editor draft.
   Outside presses keep the editor open, including presses on other markers/rows;
-  Save/Cancel finish, and explicit Escape cancels/closes. Portalled Board menus remain usable.
+  Save/Cancel finish, and explicit Escape cancels/closes. The portalled Save to Board picker remains usable.
   OCC/error/reload behavior is shared with the existing form; BoardsPage retains its modal editor.
-- The Boards menu has checkbox options sorted case-insensitively by name with ID ties,
-  and no selection chips. Closed text shows the first two names then +N, including the
-  remembered last-used Board before opening it. A pinned + Add Board row sits at the
-  bottom of the fixed-height menu while options scroll above it. It slides a New Board
+- New Markers save first, change after: Save uses the default (most recently used)
+  Board, then a "Saved to {Board} · Change" snackbar's Change opens the inline editor;
+  with no default the button reads Choose a Board and opens a Save
+  to popover of editable Board rows (cover, name, Marker count, checkmark, aria-pressed)
+  ordered selected, then recently used (`hrivpref:marker:recentBoards:<userId>`, falling
+  back to the legacy lastBoard key), then name with ID ties; Search Boards appears above
+  8 rows. Editing shows a Saved to list with remove × and Save to another Board (a dashed
+  Choose a Board row when empty). The
+  picker's Create Board slides a New Board
   pane in from the right over the form, reusing the Boards & Markers Add Board field
   set (name, description, visibility and restricted Program/Group chips); a top-left
   back arrow or Escape returns with the draft preserved. Creation selects the new

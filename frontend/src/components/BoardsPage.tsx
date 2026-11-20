@@ -52,7 +52,6 @@ import {
   ToggleButtonGroup,
   Tooltip,
 } from '@mui/material'
-import SpaceDashboardOutlined from '@mui/icons-material/SpaceDashboardOutlined'
 import Room from '@mui/icons-material/Room'
 import SelectAll from '@mui/icons-material/SelectAll'
 import DragIndicator from '@mui/icons-material/DragIndicator'
@@ -98,7 +97,6 @@ import {
   fetchBoard,
   fetchImages,
   fetchMarker,
-  fetchMarkers,
   removeBoardMarker,
   reorderBoardMarkers,
   reorderBoards,
@@ -125,6 +123,7 @@ import BoardEditDialog from './BoardEditDialog'
 import BoardOwnersDialog from './BoardOwnersDialog'
 import MarkerFormDialog from './MarkerFormDialog'
 import RenewingThumbnail from './RenewingThumbnail'
+import BoardCover from './BoardCover'
 import BoardCoverPickerModal from './BoardCoverPickerModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
@@ -381,69 +380,6 @@ function undoItems<T>(
   const versions = new Map(saved.map((row) => [row.id, row.version]))
   if (previous.some((id) => !versions.has(id))) return null
   return previous.map((id) => item(id, versions.get(id)!))
-}
-
-function BoardCover({ board }: { board: ApiBoardSummary }) {
-  const [state, setState] = useState<{ id: number; items: ApiMarker[] } | null>(null)
-  const key = `${board.id}:${board.version}`
-  useEffect(() => {
-    // An explicit "no cover" pick renders the placeholder — no member
-    // fetch needed.
-    if (board.cover_blank) return
-    let active = true
-    void fetchMarkers({ board_id: board.id, limit: 4 }).then(
-      (items) => {
-        if (active) setState({ id: board.id, items })
-      },
-      () => {
-        if (active)
-          setState((previous) =>
-            previous?.id === board.id ? previous : { id: board.id, items: [] },
-          )
-      },
-    )
-    return () => {
-      active = false
-    }
-  }, [board.id, board.cover_blank, key])
-  const item =
-    !board.cover_blank && state?.id === board.id
-      ? state.items.find((item) => item.thumb != null)
-      : undefined
-  return (
-    <Box
-      sx={{
-        width: 70,
-        height: 70,
-        flexShrink: 0,
-        bgcolor: 'action.hover',
-        display: 'grid',
-        placeItems: 'center',
-        overflow: 'hidden',
-      }}
-    >
-      {board.cover_thumb && !board.cover_blank ? (
-        <RenewingThumbnail
-          image={{ id: board.id, thumb: board.cover_thumb }}
-          renewThumb={async (id) => {
-            const fresh = await fetchBoard(id)
-            return { id, thumb: fresh.cover_thumb }
-          }}
-          alt=""
-          sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
-        />
-      ) : item ? (
-        <RenewingThumbnail
-          image={{ id: item.id, thumb: item.thumb ?? '' }}
-          renewThumb={fetchMarker}
-          alt=""
-          sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
-        />
-      ) : (
-        <SpaceDashboardOutlined sx={{ fontSize: 32, color: 'text.secondary' }} />
-      )}
-    </Box>
-  )
 }
 
 /** Returns the Undo that restores the editable assignments held before the

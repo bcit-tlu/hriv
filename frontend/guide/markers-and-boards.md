@@ -32,14 +32,17 @@ star, Save/Cancel and permitted Delete. Description is collapsed under More opti
 even when filled; opening it reveals the saved text. Delete opens a separate
 confirmation dialog; cancelling that dialog leaves your draft untouched.
 While editing, outside presses—including other markers/rows—keep your editor open;
-finish with Save/Cancel, or explicitly Escape to cancel and close. The Boards menu
-does not dismiss it. Version conflicts retain your fields and offer Reload current.
+finish with Save/Cancel, or explicitly Escape to cancel and close. The **Save to** Board
+picker does not dismiss it. Version conflicts retain your fields and offer Reload current.
 This works in image, Sequence and Synchronized viewers; BoardsPage keeps its modal edit form.
 Saving a Marker does not modify the source image.
 The drawer/panel omits the redundant Markers total heading. Rows are grouped by
 their associated Boards: each Board name is a heading-link that opens the Board
 dialog right over the image — marker tiles inside it jump to their saved views,
-and **Open in Boards & Markers** reaches the full management page. Your own
+and **Open in Boards & Markers** reaches the full management page. The
+**Boards & Markers** button in the top bar lists your Boards too: choose one to
+open the same dialog wherever you are, or **Open Boards & Markers** for the full
+page. Your own
 Boards list first, then
 instructor-owned or program Boards; Boards shared by classmates sit under a
 collapsed **Public & Shared** section — open it to browse them, and their
