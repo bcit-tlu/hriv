@@ -62,6 +62,10 @@ async def visible_markers(
             for link in links
         ):
             continue
+        if drawer:
+            # Drawer rows group under board_ids, so others' private Boards
+            # must not appear there either.
+            boards = [b for b in boards if ctx.discoverable(b)]
         source = ctx.source(item, boards)
         if (drawer and source is None) or (scope is not None and source != scope):
             continue

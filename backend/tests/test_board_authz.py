@@ -97,12 +97,29 @@ def test_source_precedence_and_unlabelled_private_student_content():
     ctx = BoardViewerContext(caller, None)
     item = NS(owners=[])
     public = NS(visibility="public", owner_program_id=None, owners=[NS(role="student")])
-    instructor = NS(visibility="private", owner_program_id=None, owners=[NS(role="instructor")])
+    instructor = NS(visibility="public", owner_program_id=None, owners=[NS(id=2, role="instructor")])
     program = NS(visibility="private", owner_program_id=10, owners=[])
-    private = NS(visibility="private", owner_program_id=None, owners=[NS(role="student")])
+    private = NS(visibility="private", owner_program_id=None, owners=[NS(id=3, role="student")])
     assert ctx.source(item, [private]) is None
     assert ctx.source(item, [public]) == "public"
     assert ctx.source(item, [public, instructor]) == "instructor"
     assert ctx.source(item, [program]) == "instructor"
     item.owners = [caller]
     assert ctx.source(item, [public, instructor, program]) == "mine"
+
+
+def test_others_private_boards_do_not_tag_staff_sources():
+    caller = user("instructor")
+    ctx = BoardViewerContext(caller, None)
+    item = NS(owners=[])
+    admin = NS(id=99, role="admin")
+    private_admin = NS(visibility="private", owner_program_id=None, owners=[admin])
+    public = NS(visibility="public", owner_program_id=None, owners=[NS(id=98, role="student")])
+    assert ctx.source(item, [private_admin]) is None
+    assert ctx.source(item, [private_admin, public]) == "public"
+    shared = NS(visibility="private", owner_program_id=None, owners=[admin, caller])
+    assert ctx.source(item, [shared]) == "instructor"
+    program = NS(visibility="private", owner_program_id=10, owners=[])
+    assert ctx.source(item, [program]) == "instructor"
+    assert not ctx.discoverable(private_admin)
+    assert ctx.discoverable(public) and ctx.discoverable(shared) and ctx.discoverable(program)
