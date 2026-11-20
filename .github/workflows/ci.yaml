@@ -216,7 +216,7 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.14'
+          python-version: '3.15'
 
       - uses: azure/setup-helm@v5
         with:
@@ -231,8 +231,8 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: restore-validation/.venv
-          key: restore-validation-venv-py3.14-${{ hashFiles('restore-validation/poetry.lock') }}
-          restore-keys: restore-validation-venv-py3.14-
+          key: restore-validation-venv-py3.15-${{ hashFiles('restore-validation/poetry.lock') }}
+          restore-keys: restore-validation-venv-py3.15-
 
       - name: Install dependencies
         run: poetry install --with dev
