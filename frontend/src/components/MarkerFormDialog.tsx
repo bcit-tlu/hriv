@@ -18,6 +18,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Star from '@mui/icons-material/Star'
 import StarBorder from '@mui/icons-material/StarBorder'
 import Add from '@mui/icons-material/Add'
+import ArrowDropDown from '@mui/icons-material/ArrowDropDown'
 import CheckCircle from '@mui/icons-material/CheckCircle'
 import Close from '@mui/icons-material/Close'
 import RadioButtonUnchecked from '@mui/icons-material/RadioButtonUnchecked'
@@ -71,9 +72,6 @@ export interface MarkerFormDialogProps {
   placement?: boolean
   onTitleChange?: (title: string) => void
   onRemoveFromBoard?: () => void
-  /** Called after a new Marker saves, with its Board names, so the host can
-   *  offer "Saved to … · Change". */
-  onSaved?: (marker: ApiMarker, boardNames: string[]) => void
   onViewMarker?: () => void
   inline?: boolean
   onEscape?: () => void
@@ -300,7 +298,6 @@ export function MarkerDeleteDialog({
 
 export default function MarkerFormDialog({
   onRemoveFromBoard,
-  onSaved,
   onViewMarker,
   imageId,
   view,
@@ -511,11 +508,6 @@ export default function MarkerFormDialog({
         if (userId != null && assignments.length)
           rememberBoards(userId, assignments.map((link) => link.board_id).reverse())
       }
-      if (created)
-        onSaved?.(
-          created,
-          selectedBoards.map((board) => board.name),
-        )
       await onChanged(created)
       onClose()
     } catch (err) {
@@ -608,8 +600,46 @@ export default function MarkerFormDialog({
                 ? editable
                   ? 'Edit Marker'
                   : 'Marker details'
-                : 'Add Marker'}
+                : 'Add Marker to'}
           </Typography>
+          {editable && !baseline && (
+            // The destination lives in the header, next to the Marker it
+            // receives; Save stays a plain action.
+            <Button
+              ref={boardsButtonRef}
+              size="small"
+              color="inherit"
+              endIcon={<ArrowDropDown />}
+              aria-haspopup="dialog"
+              disabled={busy || loading}
+              onClick={openPicker}
+              sx={{
+                minWidth: 0,
+                px: 1,
+                textTransform: 'none',
+                typography: inline ? 'subtitle1' : 'h6',
+                fontWeight: 600,
+                bgcolor: 'action.hover',
+                '& .MuiButton-endIcon': { ml: 0 },
+              }}
+            >
+              <Box
+                component="span"
+                sx={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  maxWidth: 180,
+                }}
+              >
+                {selectedBoards.length === 1
+                  ? selectedBoards[0].name
+                  : selectedBoards.length > 1
+                    ? `${selectedBoards.length} Boards`
+                    : 'Choose a Board'}
+              </Box>
+            </Button>
+          )}
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
           {editable && (
@@ -799,17 +829,13 @@ export default function MarkerFormDialog({
           </Button>
         )}
         {editable && !baseline && (
-          // Save first, change after: new Markers go to the default Board and
-          // the host's "Saved to … · Change" toast reopens the choice.
           <Button
-            ref={boardsButtonRef}
             size="small"
             variant="contained"
-            aria-haspopup={assignments.length ? undefined : 'dialog'}
-            disabled={assignments.length ? !canSave : busy || loading}
-            onClick={() => (assignments.length ? void persist() : openPicker())}
+            disabled={!canSave}
+            onClick={() => void persist()}
           >
-            {busy ? 'Saving…' : assignments.length ? 'Save' : 'Choose a Board'}
+            {busy ? 'Saving…' : 'Save'}
           </Button>
         )}
       </DialogActions>

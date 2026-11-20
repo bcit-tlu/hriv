@@ -1575,9 +1575,9 @@ selection MouseTracker ignores their presses.
   Outside presses keep the editor open, including presses on other markers/rows;
   Save/Cancel finish, and explicit Escape cancels/closes. The portalled Save to Board picker remains usable.
   OCC/error/reload behavior is shared with the existing form; BoardsPage retains its modal editor.
-- New Markers save first, change after: Save uses the default (most recently used)
-  Board, then a "Saved to {Board} · Change" snackbar's Change opens the inline editor;
-  with no default the button reads Choose a Board and opens a Save
+- New Markers show the destination as a header token, "Add Marker to {Board} ▾"
+  (N Boards / Choose a Board), defaulting to the most recently used Board; Save is
+  plain. The token opens a Save
   to popover of editable Board rows (cover, name, Marker count, checkmark, aria-pressed)
   ordered selected, then recently used (`hrivpref:marker:recentBoards:<userId>`, falling
   back to the legacy lastBoard key), then name with ID ties; Search Boards appears above

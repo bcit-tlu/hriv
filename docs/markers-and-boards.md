@@ -376,10 +376,9 @@ other mutations send body versions.
 `MarkerFormDialog` requires a nonblank title and at least one editable Board.
 The multi-picker only lists `permissions.can_edit` Boards. Selected Boards retain their existing membership when editing. Other Boards' links are preserved by the backend assignment
 contract. Where the Marker is saved is part of the save action, not a field of
-the Marker. New Markers save first, change after: **Save** uses the default
-Board (most recently used editable Board) and the viewer shows a
-**Saved to {Board} · Change** snackbar (`onSaved`) whose Change opens that
-Marker's inline editor. With no default, the button reads **Choose a Board** and
+the Marker. New Markers name the destination as a header token, **Add Marker to
+{Board} ▾** (**N Boards** for several, **Choose a Board** for none), defaulting
+to the most recently used editable Board; **Save** is a plain action. The token
 opens the **Save to** picker popover: each editable Board as a
 row with cover, name, Marker count and a checkmark when chosen (`aria-pressed`),
 ordered selected, most recently used, then by name (case-insensitive, stable ID

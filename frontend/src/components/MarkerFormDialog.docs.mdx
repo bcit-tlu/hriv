@@ -7,11 +7,11 @@ import * as MarkerFormDialogStories from './MarkerFormDialog.stories'
 **Add Marker** saves an exact image position, zoom and rotation to one or more editable Boards.
 Title and at least one Board are required.
 The form separates the Marker (title, description, favourite) from where it is
-saved. New Markers save first and change after: **Save** files the Marker on the
-most recently used editable Board in one click, and the viewer then shows a
-**Saved to Histology · Change** toast whose Change opens the Marker's inline
-editor. With no default Board the button reads **Choose a Board** and opens the
-**Save to** picker: every editable Board as a
+saved. A new Marker names its destination in the header, **Add Marker to
+Histology ▾**, preselecting the most recently used editable Board so a typical
+save is one click on the plain **Save**. The token reads **2 Boards** when
+several are ticked or **Choose a Board** when none are, and opens the **Save to**
+picker: every editable Board as a
 row with cover, name and Marker count and a checkmark when chosen, ordered
 selected, recently used, then by name, with a search field once there are more
 than 8. Editing shows a **Saved to** list of Board rows with a remove × and

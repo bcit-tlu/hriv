@@ -328,9 +328,7 @@ describe('MarkerFormDialog', () => {
     expect(api.createBoard).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'My new Board', visibility: 'private' }),
     )
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Save', exact: true })).toHaveFocus(),
-    )
+    await waitFor(() => expect(screen.getByRole('button', { name: 'My new Board' })).toHaveFocus())
     await user.click(save)
     await waitFor(() =>
       expect(api.createMarker).toHaveBeenCalledWith(

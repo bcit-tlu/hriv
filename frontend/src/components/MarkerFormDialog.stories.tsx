@@ -50,9 +50,9 @@ type Story = StoryObj<typeof meta>
 export const Basic: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
-    await expect(page.getByRole('heading', { name: 'Add Marker' })).toBeInTheDocument()
+    await expect(page.getByRole('heading', { name: 'Add Marker to' })).toBeInTheDocument()
     await waitFor(() => expect(page.getByRole('textbox', { name: 'Title' })).toHaveFocus())
-    // No Board chosen yet: the split button's main action opens the picker.
+    // No Board chosen yet: the header token opens the picker.
     await waitFor(() => expect(page.getByRole('button', { name: 'Choose a Board' })).toBeEnabled())
   },
 }
