@@ -294,6 +294,7 @@ export default function ImageViewer({
     setSelectedMarkerId(item.id)
     setFocusMarkerId(focus ? item.id : null)
   }
+  const [savedToast, setSavedToast] = useState<{ marker: ApiMarker; names: string[] } | null>(null)
   const beginMarkerEdit = (item: ApiMarker) => {
     if (!viewerInstance || (editingMarker && editingMarker.id !== item.id)) return
     navigateToMarker(viewerInstance, item)
@@ -2124,6 +2125,37 @@ export default function ImageViewer({
           registerCancelHandler={registerCanvasCancel}
         />
       )}
+      {/* Portalled into the viewer so it stays visible in OSD full-page mode. */}
+      {viewerInstance &&
+        createPortal(
+          <Snackbar
+            data-hriv-canvas-ui
+            open={savedToast != null}
+            autoHideDuration={6000}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            onClose={(_, reason) => {
+              if (reason !== 'clickaway') setSavedToast(null)
+            }}
+            message={
+              savedToast &&
+              `Saved to ${savedToast.names.length === 1 ? savedToast.names[0] : `${savedToast.names.length} Boards`}`
+            }
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => {
+                  const marker = savedToast?.marker
+                  setSavedToast(null)
+                  if (marker) beginMarkerEdit(marker)
+                }}
+              >
+                Change
+              </Button>
+            }
+          />,
+          viewerInstance.container,
+        )}
       <Snackbar
         open={shareCopied}
         autoHideDuration={3000}
@@ -2299,6 +2331,7 @@ export default function ImageViewer({
               placement
               onTitleChange={setDraftTitle}
               container={viewerInstance.container}
+              onSaved={(marker, names) => setSavedToast({ marker, names })}
               onChanged={async (created) => {
                 await markers.reload()
                 if (!created) return

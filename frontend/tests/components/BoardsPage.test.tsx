@@ -638,7 +638,8 @@ describe('BoardsPage', () => {
     expect(card.isConnected).toBe(true)
     expect(cover.isConnected).toBe(true)
     expect(api.fetchBoards).toHaveBeenCalledTimes(2) // overview and the form's Board picker
-    expect(api.fetchMarkers).toHaveBeenCalledTimes(3) // overview and two owned Board covers
+    // Overview, two owned Board covers and the form's Saved to cover.
+    expect(api.fetchMarkers).toHaveBeenCalledTimes(4)
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     fireEvent.click(screen.getByRole('button', { name: 'New Board' }))
     expect(card.isConnected).toBe(true)
@@ -664,7 +665,7 @@ describe('BoardsPage', () => {
     expect(cover.isConnected).toBe(true)
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
     expect(api.fetchBoards).toHaveBeenCalledTimes(2)
-    expect(api.fetchMarkers).toHaveBeenCalledTimes(3)
+    expect(api.fetchMarkers).toHaveBeenCalledTimes(4)
   })
   it('filters both surfaces by title and restores them with Clear filters', async () => {
     vi.mocked(api.fetchBoards).mockResolvedValue([
