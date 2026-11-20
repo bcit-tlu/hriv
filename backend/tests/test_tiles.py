@@ -23,8 +23,10 @@ from app.tile_tokens import (
     TileTokenError,
     append_tile_token,
     append_thumb_token,
+    append_marker_thumb_token,
     issue_tile_token,
     issue_thumb_token,
+    issue_marker_thumb_token,
     source_image_id_from_tile_url,
     validate_tile_token,
 )
@@ -340,6 +342,8 @@ def tiles_app(tmp_path, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     (image_dir / "image_files" / "0").mkdir(parents=True)
     (image_dir / "image.dzi").write_text("<?xml version='1.0'?><Image/>")
     (image_dir / "thumbnail.jpeg").write_bytes(b"\xff\xd8jpegdata")
+    (image_dir / "markers").mkdir()
+    (image_dir / "markers" / "7.jpg").write_bytes(b"\xff\xd8marker")
     (image_dir / "image_files" / "0" / "0_0.jpeg").write_bytes(b"\xff\xd8tile")
     # A file outside the image directory that traversal must not reach.
     (tiles_dir / "secret.txt").write_text("secret")
@@ -547,6 +551,91 @@ async def test_tiles_auth_non_tile_uri_returns_403(auth_app: FastAPI) -> None:
     assert resp.status_code == 403
 
 
+@pytest.mark.parametrize(
+    ("original_uri", "expected"),
+    [
+        ("/api/tiles/42/image.dzi?tile_token=x", (42, "image.dzi")),
+        ("/api/tiles/42/image_files/0/0_0.jpeg", (42, "image_files/0/0_0.jpeg")),
+        ("/api/tiles/42/thumbnail.jpeg", (42, "thumbnail.jpeg")),
+        ("/api/tiles/42", (42, "")),
+        ("/api/tiles/%34%32/image%5Ffiles/0/0_0.jpeg", (42, "image_files/0/0_0.jpeg")),
+        ("/api/tiles/42/%252e%252e/image.dzi", (42, "%2e%2e/image.dzi")),
+        ("/api/tiles/42/../43/image.dzi", None),
+        ("/api/tiles/42/%2e%2e/43/image.dzi", None),
+        ("/api/tiles/42/./image.dzi", None),
+        ("/api/tiles/42/", None),
+        ("/api/tiles/42//image.dzi", None),
+        ("/api/tiles/42/a\\b", None),
+        ("/api/tiles/42/a%00b", None),
+        ("/api/tiles/abc/image.dzi", None),
+        ("/api/tiles/%D9%A4%D9%A2/image.dzi", None),
+        ("/api/admin/export", None),
+    ],
+)
+def test_tile_target_from_original_uri(
+    original_uri: str, expected: tuple[int, str] | None
+) -> None:
+    assert tiles_router._tile_target_from_original_uri(original_uri) == expected
+
+
+@pytest.mark.parametrize(
+    "uri_path",
+    [
+        "/api/tiles/42/../43/image.dzi",
+        "/api/tiles/42/%2e%2e/43/image.dzi",
+        "/api/tiles/42/%2E%2e/43/image.dzi",
+        "/api/tiles/42/.%2e/43/image.dzi",
+        "/api/tiles/42%2f..%2f43/image.dzi",
+        "/api/tiles/42/image_files/../../43/image.dzi",
+        "/api/tiles/42/./image.dzi",
+        "/api/tiles/42//image.dzi",
+        "/api/tiles//42/image.dzi",
+        "/api/tiles/42/image_files\\..\\..\\43/image.dzi",
+        "/api/tiles/42/image%5c..%5c..%5c43/image.dzi",
+        "/api/tiles/42/image.dzi%00",
+        "/api/tiles/%D9%A4%D9%A2/image.dzi",
+    ],
+)
+async def test_tiles_auth_rejects_dot_segment_and_suspicious_paths(
+    auth_app: FastAPI, uri_path: str
+) -> None:
+    # nginx serves the decoded, dot-segment-resolved path, so a token for
+    # image 42 must never authorize a raw URI that resolves elsewhere.
+    token = issue_tile_token(42)
+    async with _client(auth_app) as client:
+        resp = await client.get(
+            "/api/tiles-auth",
+            headers={"X-Original-URI": f"{uri_path}?tile_token={token}"},
+        )
+    assert resp.status_code == 403
+
+
+async def test_tiles_auth_decodes_percent_encoded_path_like_nginx(
+    auth_app: FastAPI,
+) -> None:
+    # nginx decodes ``%34%33`` to ``43`` before serving, so the validator
+    # must bind the token to 43, not accept a token for another image.
+    async with _client(auth_app) as client:
+        allowed = await client.get(
+            "/api/tiles-auth",
+            headers={
+                "X-Original-URI": (
+                    f"/api/tiles/%34%33/image.dzi?tile_token={issue_tile_token(43)}"
+                )
+            },
+        )
+        denied = await client.get(
+            "/api/tiles-auth",
+            headers={
+                "X-Original-URI": (
+                    f"/api/tiles/%34%33/image.dzi?tile_token={issue_tile_token(42)}"
+                )
+            },
+        )
+    assert allowed.status_code == 204
+    assert denied.status_code == 403
+
+
 # ── Thumbnail-only tokens (issue #1609) ───────────────────
 #
 # ``purpose="thumb"`` tokens are issued for category card covers so the
@@ -560,6 +649,67 @@ def test_thumb_token_validates_thumbnail_path() -> None:
     validate_tile_token(token, 42, "thumbnail.jpeg")
 
 
+def test_thumb_token_validates_marker_and_serializes_thumb_purpose() -> None:
+    url = append_marker_thumb_token("/api/tiles/42/markers/7.jpg?tile_token=stale")
+    assert "?tile_token=" in url
+    token = url.split("tile_token=")[1]
+    payload = jwt.decode(token, auth.auth_settings.jwt_secret, algorithms=[auth.auth_settings.jwt_algorithm])
+    assert payload["purpose"] == "thumb" and payload["mid"] == 7
+    validate_tile_token(token, 42, "markers/7.jpg")
+    with pytest.raises(TileTokenError) as exc:
+        validate_tile_token(token, 43, "markers/7.jpg")
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.parametrize("path", [
+    "markers/8.jpg", "thumbnail.jpeg", "image_files/0/0_0.jpeg",
+    "markers/../thumbnail.jpeg", "markers/07.jpg",
+])
+def test_marker_token_rejects_other_paths(path: str) -> None:
+    with pytest.raises(TileTokenError) as exc:
+        validate_tile_token(issue_marker_thumb_token(42, 7), 42, path)
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.parametrize("mid", [None, True, "7", 7.0, 0, -1])
+def test_marker_token_rejects_malformed_claim(mid) -> None:
+    token = jwt.encode(
+        {"purpose": "thumb", "sid": 42, "mid": mid,
+         "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
+        auth.auth_settings.jwt_secret, algorithm=auth.auth_settings.jwt_algorithm,
+    )
+    for path in ("markers/7.jpg", "thumbnail.jpeg"):
+        with pytest.raises(TileTokenError) as exc:
+            validate_tile_token(token, 42, path)
+        assert exc.value.status_code == 403
+
+
+@pytest.mark.parametrize("mid", [True, "7", 0, -1])
+def test_marker_token_mint_rejects_invalid_id(mid) -> None:
+    with pytest.raises(ValueError):
+        issue_marker_thumb_token(42, mid)
+
+
+def test_legacy_iid_marker_token_keeps_crop_scope() -> None:
+    # Tokens minted before the Marker rename carry ``iid``; they stay bound
+    # to their single JPEG rather than widening to the whole-image thumb.
+    token = jwt.encode(
+        {"purpose": "thumb", "sid": 42, "iid": 7,
+         "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
+        auth.auth_settings.jwt_secret, algorithm=auth.auth_settings.jwt_algorithm,
+    )
+    validate_tile_token(token, 42, "markers/7.jpg")
+    for denied in ("thumbnail.jpeg", "markers/8.jpg", "image_files/0/0_0.jpeg"):
+        with pytest.raises(TileTokenError) as exc:
+            validate_tile_token(token, 42, denied)
+        assert exc.value.status_code == 403
+
+
+@pytest.mark.parametrize("url", ["", "/thumb.jpg", "/api/tiles/42/thumbnail.jpeg", "/api/tiles/42/markers/../7.jpg"])
+def test_marker_tokenize_nonmatching_urls_unchanged(url: str) -> None:
+    assert append_marker_thumb_token(url) == url
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -571,6 +721,13 @@ def test_thumb_token_validates_thumbnail_path() -> None:
         # paths, not the thumbnail.
         "foo/thumbnail.jpeg",
         "image_files/0/thumbnail.jpeg",
+        "markers/../x",
+        "markers/../thumbnail.jpeg",
+        "markers/%2e%2e/thumbnail.jpeg",
+        "markers/7.jpg/extra",
+        "markers/-1.jpg",
+        "markers/name.jpg",
+        "markers/7.jpg",
     ],
 )
 def test_thumb_token_rejects_tile_paths_with_403(path: str) -> None:
@@ -640,6 +797,15 @@ async def test_tile_route_thumb_token_rejects_dzi(tiles_app: FastAPI) -> None:
     assert resp.status_code == 403
 
 
+async def test_tile_route_thumb_token_serves_marker(tiles_app: FastAPI) -> None:
+    token = issue_marker_thumb_token(42, 7)
+    async with _client(tiles_app) as client:
+        response = await client.get(f"/api/tiles/42/markers/7.jpg?tile_token={token}")
+    assert response.status_code == 200
+    assert response.content == b"\xff\xd8marker"
+    assert response.headers["content-type"] == "image/jpeg"
+
+
 async def test_tile_route_thumb_token_rejects_image_files(
     tiles_app: FastAPI,
 ) -> None:
@@ -679,12 +845,32 @@ async def test_tiles_auth_thumb_token_allows_thumbnail(
     assert resp.status_code == 204
 
 
+@pytest.mark.parametrize("path,status", [
+    ("markers/7.jpg", 204),
+    ("markers/8.jpg", 403),
+    ("thumbnail.jpeg", 403),
+    ("image_files/0/0_0.jpeg", 403),
+    ("markers/../thumbnail.jpeg", 403),
+    ("markers/%2e%2e/thumbnail.jpeg", 403),
+    ("markers/../image_files/0/0_0.jpeg", 403),
+])
+async def test_tiles_auth_marker_paths(auth_app: FastAPI, path: str, status: int) -> None:
+    token = issue_marker_thumb_token(42, 7)
+    async with _client(auth_app) as client:
+        response = await client.get(
+            "/api/tiles-auth",
+            headers={"X-Original-URI": f"/api/tiles/42/{path}?tile_token={token}"},
+        )
+    assert response.status_code == status
+
+
 @pytest.mark.parametrize(
     "uri_path",
     [
         "/api/tiles/42/image.dzi",
         "/api/tiles/42/image_files/0/0_0.jpeg",
         "/api/tiles/42/image_files/0/thumbnail.jpeg",
+        "/api/tiles/42/markers/7.jpg",
     ],
 )
 async def test_tiles_auth_thumb_token_rejects_tile_paths(

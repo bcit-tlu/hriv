@@ -24,7 +24,7 @@ def test_required_mode_call_site_matrix_has_terminal_rejection_guards() -> None:
     call_sites = (
         (upload.upload_source_image, "TaskQueueUnavailableError"),
         (images.replace_image, "TaskQueueUnavailableError"),
-        (bulk_import._process_bulk_import_impl, "TaskQueueUnavailableError"),
+        (bulk_import._track_bulk_import_item, "TaskQueueUnavailableError"),
         (admin._kick_off, "TaskQueueUnavailableError"),
     )
 
@@ -161,12 +161,36 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
         patch.object(settings, "task_execution_mode", "required"),
         patch("app.routers.bulk_import.async_session", session_factory),
         patch(
+            "app.routers.bulk_import._get_or_create_bulk_source_image",
+            new_callable=AsyncMock,
+            return_value=persisted_source,
+        ),
+        patch(
             "app.routers.bulk_import.enqueue_process_source_image",
             new_callable=AsyncMock,
             side_effect=queue_error,
         ),
+        patch(
+            "app.routers.bulk_import._finalize_bulk_import_item",
+            new_callable=AsyncMock,
+        ),
     ):
-        await bulk_import._process_bulk_import(4, [("per-file.jpg", str(staged))])
+        await bulk_import._track_bulk_import_item(
+            bulk_import_job_id=4,
+            supervisor_job_id=9,
+            item_id=3,
+            claim_token="tok",
+            original_filename="per-file.jpg",
+            stored_path=str(staged),
+            category_id=None,
+            copyright=None,
+            note=None,
+            active=True,
+            requested_by=1,
+            batch_progress=bulk_import._BulkImportProgress(
+                last_child_advanced_at=0.0
+            ),
+        )
     assert persisted_source.status == "failed"
     assert persisted_source.error_message == (
         "Task queue unavailable; image processing was not started."

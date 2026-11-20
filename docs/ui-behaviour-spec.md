@@ -45,19 +45,23 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 
 ### Tab / navigation visibility (`AppShell.tsx` — `AppShell.test.tsx`)
 
-| Surface                     | Student | Staff | Instructor | Admin |
-| --------------------------- | ------- | ----- | ---------- | ----- |
-| Home                        | ✓       | ✓     | ✓          | ✓     |
-| Collections tab             | ✓       | ✓     | ✓          | ✓     |
-| Images tab                  | —       | —     | ✓          | ✓     |
-| Manage dropdown             | —       | —     | ✓          | ✓     |
-| Manage → Categories         | —       | —     | ✓          | ✓     |
-| Manage → Programs           | —       | —     | —          | ✓     |
-| Manage → Groups             | —       | —     | ✓          | ✓     |
-| Manage → Announcement       | —       | —     | ✓          | ✓     |
-| Manage → Measurement review | —       | —     | ✓          | ✓     |
-| People tab                  | —       | ✓     | —          | ✓     |
-| Admin tab                   | —       | —     | —          | ✓     |
+| Surface                        | Student | Staff | Instructor | Admin |
+| ------------------------------ | ------- | ----- | ---------- | ----- |
+| Home                           | ✓       | ✓     | ✓          | ✓     |
+| Collections tab                | ✓       | ✓     | ✓          | ✓     |
+| Images tab                     | —       | —     | ✓          | ✓     |
+| Manage dropdown                | —       | —     | ✓          | ✓     |
+| Manage → Categories            | —       | —     | ✓          | ✓     |
+| Manage → Programs              | —       | —     | —          | ✓     |
+| Manage → Groups                | —       | —     | ✓          | ✓     |
+| Manage → Announcement          | —       | —     | ✓          | ✓     |
+| Announcements bell / page¹     | ✓       | ✓     | ✓          | ✓     |
+| Announcements → filters / New¹ | —       | —     | ✓          | ✓     |
+| Manage → Measurement review    | —       | —     | ✓          | ✓     |
+| People tab                     | —       | ✓     | —          | ✓     |
+| Admin tab                      | —       | —     | —          | ✓     |
+
+¹ Epic #1832; the filter chips / New announcement follow `canEditContent`.
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
   Home and **Collections** are shown (no Images, Manage, People, or Admin).
@@ -245,9 +249,10 @@ images> / Empty` format used on category tiles.
   `useDraggablePosition.ts`) and resets on page reload. Starting a drag closes
   any open tool submenu.
 - The whole `CanvasOverlay` (view canvas, fabric edit canvas, toolbar, status
-  label) is portaled into `viewer.container`, so annotation viewing and
-  editing work in OSD full-page mode — previously the overlay stayed under
-  `#root`, which full-page hides (#1311). MUI submenus/dialogs portal to
+  label) is portaled into `viewer.container`, so an annotation session
+  survives an OSD full-page transition — previously the overlay stayed under
+  `#root`, which full-page hides (#1311). The pencil toggle itself hides in
+  full-page, though: entering edit mode is a normal-view action. MUI submenus/dialogs portal to
   `document.body`, so they close on `full-page` transitions rather than
   ending up hidden or detached. Every top-level portaled child is tagged
   `data-hriv-canvas-ui` so the selection `MouseTracker` on `viewer.element`
@@ -261,7 +266,9 @@ images> / Empty` format used on category tiles.
 - The OSD bottom-left control strip and the bottom-right minimap sit flush
   with the bottom edge of the frame: `ImageViewer` applies
   `vertical-align: bottom` to bottom-dock descendants to counter the
-  inline-block baseline strut that otherwise lifts them a few px.
+  inline-block baseline strut that otherwise lifts them a few px. The
+  strip's button order is select, lock, clear, laser, ink, then the canvas
+  pencil-edit toggle last (admin/instructor only).
 - Active and pressed toolbar buttons show a solid `primary.main` red icon
   instead of a pressed tint or outline: every `*_pressed` background is solid
   `primary.main` (#A74A4A), and the selection and canvas-edit toggles swap to
@@ -285,6 +292,65 @@ images> / Empty` format used on category tiles.
   rotation is suppressed. A gap greater than `PINCH_GESTURE_GAP_MS` resets
   arbitration for the next gesture. Covered by `measurement.test.ts`
   (`pinchRotationDeltaDegrees`, `createPinchRotationTracker`).
+
+### Viewer: presentation pointer tools (`ImageViewer.test.tsx`, `presentationTools.test.ts`)
+
+Epic #1876 (user-testing feedback): tools for presenting an image to a room,
+armed only while the viewer is in OSD full-page mode. Everything here is
+ephemeral — nothing is persisted to metadata, share links, or exports.
+
+- **Given** full-page mode is entered (OSD button or the browser-fullscreen
+  handoff), **Then** the laser pointer auto-arms and two buttons — **Laser
+  pointer** and **Freehand ink** — appear in the bottom-left dock, and the
+  zoom +/-, rotate-left/right, and canvas-edit (pencil) buttons hide —
+  full-page is presenter mode; editing happens in normal view (they stay
+  in normal view).
+  Exiting full-page disarms the active tool, clears all ink, and restores
+  the hidden buttons.
+- The laser is a glowing green dot (`#00CC00`, ~20–24px halo; green because red vanishes into H&E tissue) with a short fading trail
+  (~450ms); the native cursor hides (`cursor: none`) while armed, and the
+  dot stays hidden until the first pointer move and again on pointer-leave.
+  Mouse navigation stays enabled so the presenter can pan/zoom while
+  pointing.
+- The ink tool draws solid cyan (`#00E5FF`) ~4.6px round-capped strokes while
+  armed (`crosshair` cursor, mouse nav disabled like selection mode).
+  Strokes are stored in viewport coordinates and reprojected every frame, so
+  they track structures across pan/zoom. Each stroke holds full opacity for
+  ~8s, fades linearly to gone at ~10s, and at most ~100 strokes are kept
+  (oldest dropped). A press with no drag renders a round-capped dot.
+- Laser / ink / selection / canvas-edit are mutually exclusive; a single
+  `setMouseNavEnabled` arbiter computes navigation from the active modes. A
+  pointer tool never arms over an active canvas edit — it queues behind the
+  draft's discard flow and arms when edit mode exits (a "Keep editing"
+  answer leaves everything as it was); entering full-page while editing
+  queues the laser the same way rather than arming over the Fabric canvas.
+- Tracker gestures only start inside `viewer.canvas`: **pointerdown** on the
+  OSD control dock or navigator (and any `data-hriv-canvas-ui` element) is
+  preprocessed away so a toolbar press can't drop a stray ink dot. The check
+  is pointerdown-only on purpose — after pointer capture, move/up events
+  retarget to `viewer.element` outside the canvas and must flow through or
+  in-flight drags cancel.
+- Laser and ink colours are theme tokens (`getPresentationColors`), not
+  hard-coded hex; the overlay re-themes on palette switches.
+- Mouse click-to-zoom is disabled everywhere
+  (`gestureSettingsMouse.clickToZoom: false`); scroll, pinch and touch
+  double-tap zoom are unchanged (#1877).
+- Both tools are available to every role — presenting is a student activity
+  too. Toggle telemetry rides `ui.toolbar_action`
+  (`laser_pointer_on|off`, `ink_on|off`).
+- Keyboard shortcuts mirror the toolbar: **H** = home, **B** = selection
+  box, **L** = laser, **I** = ink — chosen to dodge OSD's own bindings
+  (WASD/arrows pan, F flips, R rotates, 0 homes, J/K page). Laser/ink keys
+  only respond in full-page (like their buttons); all keys are ignored
+  while typing in a field, inside a dialog, or when focus/hover belongs to
+  a different viewer on the page.
+- The layer is a single `<svg>` appended to `viewer.canvas` at `z-index: 11`
+  (above the measurement-label container, `pointer-events: none`), holding
+  the ink paths, a pooled set of trail circles, and the laser dot; a
+  `requestAnimationFrame` loop runs only while trail points or actively
+  fading strokes remain, and opaque strokes wake it with a one-shot
+  `setTimeout` at their fade start. Full detail:
+  [docs/presentation-tools.md](presentation-tools.md).
 
 ### Collections pages + manage table (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `CollectionOwnersDialog.test.tsx`, `CollectionsTable.test.tsx`, `App.test.tsx`)
 
@@ -670,6 +736,10 @@ always read-only (`canEditContent={false}`).
   pane pattern), the edge-overlay
   **Previous** button disabled, and the member's canvas annotations /
   locked overlays / measurement shown read-only.
+- **Given** a sequence filmstrip, **Then** thumbnails show images only, with no
+  visible per-thumbnail captions. Each button retains its `Go to {slot label or
+image name}` accessible name, including for multiple saved views of one image;
+  the caption below the main viewport is unchanged.
 - **Given** `?collection={id}&item={image_id}`, **Then** the viewer opens on
   that image; a non-member `item` id falls back to the first image and
   `?item=` without `?collection=` is ignored.
@@ -753,7 +823,8 @@ collection description rather than a blocking band above the panes (#1683).
   `userMessage` on the snackbar. Non-editors never see **Set as default view**.
 - **Given** the **Restore default view** button (everyone), **Then** it stays
   disabled until a view has been saved (#1567); **When** clicked, **Then**
-  each pane re-applies its saved position and the link baselines re-arm.
+  every unlinked pane is re-linked (#1684), each pane re-applies its saved
+  position and the link baselines re-arm.
 - **Given** each pane's **link** button at the top-right of its viewport
   (#1564 — a link icon when linked, link-off when unlinked), **Then**
   panes start linked; **When** a pane is
@@ -1128,6 +1199,14 @@ committed on Save) in the edit modals.
   status tabs narrows the list. Image, Category, Detected objective, Proposed
   and Confidence headers sort server-side across all pages (ties by image
   name); Scale, Evidence and Actions are not sortable.
+- A pending row's thumbnail opens `DetectionReviewDialog` — a bare
+  OpenSeadragon view (no navigation or toolbars) plus the three tuning
+  controls; debounced `POST …/preview` gives live feedback and **Apply**
+  PATCHes `params`, updating the row in place. The preview's outline mask
+  paints detected components over the image (green = counted toward the
+  estimate, vermillion = counted but rejected) and a live **N cells** chip
+  sits at the image's top-right, matching the object-count report. Reviewed
+  rows keep the old thumbnail → viewer navigation.
 - The `Collections` column is available in the column chooser but is off by
   default (and only offered while `COLLECTIONS_ENABLED` is on); it lists the
   caller-visible collections each image belongs to as clickable chips —
@@ -1165,25 +1244,47 @@ M images> / Empty` format used on category tiles.
   the app bumps `imagesVersion`, **Then** the table re-fetches so newly imported
   images appear without a manual reload.
 
-### Changelog notifications (`NotificationMenu.tsx`, `ChangelogAdmin.tsx`)
+### Announcements (`AnnouncementsBell.tsx`, `AnnouncementsPage.tsx`, `AnnouncementComposer.tsx`)
 
-- Changelog entries render in reverse chronological order (most recent first)
-  in both the app bar feed and the admin changelog table, even if the API
-  response arrives unsorted.
-- The admin changelog table's `new` chip is time-bound: it appears only for
-  entries published within the last 7 days, then disappears automatically.
-- The app bar changelog feed uses the same local version-bump pattern as other
-  refreshable surfaces. **Given** an admin creates, republishes, or deletes a
-  changelog entry in the Admin tab, **When** that mutation succeeds, **Then**
-  the app bumps a shared `changelogVersion` counter and `NotificationMenu`
-  re-fetches entries in the same session without a full page reload.
+Epic #1832, always on; see [announcements.md](announcements.md) for the model
+and API.
+
+- **Given** any signed-in role, **Then** the AppBar bell is visible; its badge
+  is an amber dot while unseen _live_ Inbox posts exist. Opening it peeks the newest ≤5
+  unseen titles with kind icon and relative time; **See all** navigates to
+  `?page=announcements`; clicking a title opens the page focused on that card
+  (`?id=`).
+- **Given** the Inbox is on screen, **When** a live post is unseen, **Then** it
+  is marked seen once per `(id, notified_at)` and remains listed, rendered
+  quieter. Nothing is dismissed; the Inbox is the record.
+- **Given** an admin or instructor (`canEditContent`), **Then** the page shows
+  one stream (Inbox merged with their own drafts/scheduled/expired posts),
+  filter chips All / My announcements / Draft / Scheduled / Live / Expired and
+  **New announcement**; staff and students get the stream only. Rows with
+  `can_edit` (admins: every post; instructors: their own) get Edit / Duplicate /
+  Delete (delete confirms); other rows show the author and no
+  actions. "Seen by N of M" shows counts only — never names.
+- **Given** the composer, **Then** `To:` is one grouped multi-select. Admins
+  also see an Audience group — **Everyone**, **Admins, Instructors, and Staff**,
+  **Admins**, **Instructors**, **Staff** — and reserved programs (Administration,
+  Synthetic Monitoring) are not listed; choosing an audience clears any program/group
+  targets and vice versa. Instructors must pick at least one target. The kind
+  picker is the controlled icon set; **Release** and **Warning** are hidden
+  from instructors. Emoji are reactions only, never kinds.
+- **Given** media is uploaded from the composer, **Then** an image inserts
+  `![name](/api/media/{id})` and a video a bare `/api/media/{id}` line, each
+  on its own paragraph; Preview renders with the upload's fresh token.
+- **Given** the flag is on, **Then** Documentation and About live in the
+  profile popover, and the legacy Manage → Announcement / View Announcement
+  links are hidden. Groups → row menu gains **Post to group**, which opens the
+  composer pre-targeted at that group.
 
 ### Admin tab layout (`AdminPage.tsx`)
 
 - **Given** an admin opens the `Admin` tab, **When** the page renders,
-  **Then** the `Changelog` sub-tab is selected by default so changelog
-  management appears without scrolling.
-- **Given** the admin switches to the `Backups` sub-tab, **Then** the page
+  **Then** the `Backups` sub-tab is the only section and is selected by
+  default (release notes are authored from the Announcements page).
+- **Given** the admin is on the `Backups` sub-tab, **Then** the page
   groups backup tools in this order: a data-transfer card grid first (export
   cards, then the destructive import cards, then Rebuild Tiles), a
   `Parallel tile rebuilds` section listing durable rebuild jobs, the
@@ -1327,3 +1428,269 @@ selection MouseTracker ignores their presses.
   account-exists paragraph or dialog mint-retry action. Failed automatic minting
   after create directs the admin back to Edit Person. Credentials remain local
   to the mounted dialog and same-user mint serialization is retained.
+
+## Board and Marker search (#1775)
+
+### Boards & Markers overview and Board dialog
+
+- The Boards and Markers page title uses Collections' h5/h1 and unpadded flex
+  header exactly, with the Cards/Table toggle in the title row immediately left
+  of All Boards and the Filter by bar rendered under the title like Manage
+  Images. The Boards & Markers navigation/tab label is unchanged.
+- One short horizontally scrolling owned-Board row begins with New Board (a
+  compact ~136px tile split evenly between its icon block and a regular-weight
+  name). Elevated tiles fixed at 260px (matching Images, Collections and
+  Categories) carry a thick 2px accent-blue border (#4A78A7 light / #2196F3
+  dark, the Marker blue), a flush-left square cover/placeholder, a larger
+  single-line h6 name in the Image-tile title colour that truncates with an
+  ellipsis, and a metadata row showing the Marker count left-aligned with
+  the shared scope pill right-aligned; the row hugs the marker grid closely
+  below.
+  Editable chips reorder by surface drag without grip icons; clicking still opens a Board. Read-only
+  owned/program Boards are discoverable through the All Boards dialog's Public & Shared
+  filter, not the chip row, for every role.
+  The chip row requires edit permission as well as ownership, with no instructor/admin exemption.
+- All Boards is an outlined, right-aligned button in the title row for admins,
+  instructors and staff; students never see it. Its large dialog lists every
+  API-returned Board, including others' private and already-chipped Boards.
+  A horizontal row of filter chips sits directly beneath the dialog title, above
+  the content: Public & Shared keeps API-returned public,
+  program/group-restricted or co-owned/program-member Boards outside the chip
+  row (other users' private Boards stay excluded for every role), and Instructor
+  Boards keeps program-owned Boards or Boards owned by admin/instructor users.
+  Chips toggle independently and combine; no active chip restores the full
+  list, a filter that excludes everything reports “No matching Boards.”, and an
+  empty list reports “No Boards available.”.
+  Tiles carry title, shared scope pill and Collections-style Managed by
+  owner/program names (No owner for orphans). The list is independent of overview filters;
+  choosing a tile closes discovery and opens the existing Board dialog. UX filtering
+  does not change backend visibility or establish a security boundary.
+- There is no My Markers heading or overview Multi-select; Marker selection
+  lives in the Board dialog's header toolbar (no Saved views heading or divider),
+  where every selection action — including the Multi-select toggle, contained
+  while active — renders on the same row so starting selection never pushes it
+  downward. Selectable tiles show their checkbox on a white disc, and a selected
+  tile gets a Marker-blue outline.
+  The Board-level Create Collection button hides while Multi-select is on, so
+  only the selection's Create Collection shows.
+  The row's collection actions are exactly two concise buttons: a contained
+  Create Collection (the Board dialog's flow, seeding CollectionEditDialog with
+  the selected Markers) and an outlined Add to Collection that lists every
+  editable collection and disables full ones; the pair renders only once at
+  least one Marker is selected. In select mode each Marker card carries a
+  top-left checkbox overlay on its thumbnail and a primary outline when
+  checked, matching the Collection Manage Images tiles.
+  The fully paginated overview keeps the saved Marker order (`sort_order`, then numeric ID),
+  which drag-reorder and its Undo change; favourite/membership updates and renames do not
+  affect order. Filled stars use the primary accent.
+  Both views show only personally owned Markers, fetched in pages of 200. Cards
+  show the image's parent category below the title, or Uncategorized when absent.
+  Cards are 234px wide with proportionally scaled 96px covers, including in Board dialogs.
+  Marker cards carry no scope pill — the reused Collections scope pill lives on
+  Board tiles instead, leaving Marker tiles correspondingly shorter.
+  Pin and title-row edit pencil follow Collection cards; the pin and the h6
+  title render in the Marker accent blue (#4A78A7 light / #2196F3 dark) and the
+  category line's tooltip reads In category {name}.
+  Top-right Star/StarBorder favourite takes Collections' cover-picker position, beside Move/Save.
+  The pencil opens the existing editor; Delete and Remove from this Board remain there.
+  The editor mimics Edit Image/Edit Collection chrome: a View Marker button sits
+  at the top right of the dialog heading and Delete is a wide destructive button
+  whose press opens the standard "Delete Marker?" confirmation dialog.
+  Card click opens the saved view; no card overflow or drag-handle icon remains.
+  Table columns are Select, Thumbnail, Title, Image, Description, Category,
+  Boards, Favourite, Owner, Created, Modified and a fixed trailing Actions.
+  Labelled headers sort via TableSortLabel, rows paginate with a per-user
+  rows-per-page preference, and the Select column's checkboxes (with a
+  Select-all header cell for the page) feed the same Create/Add Collection
+  actions. Row clicks — and Enter/Space on the focused row — open the Marker
+  edit dialog; the Thumbnail cell's button navigates to the saved view.
+  Board names navigate; actions and filters work in both views. A Choose columns button on
+  the filter row (Table view only) opens the shared reorderable visibility
+  dialog; visibility and order persist per user
+  (`hrivpref:table-columns:markers:user:<id>` /
+  `hrivpref:table-column-order:markers:user:<id>`) and Actions stays a fixed
+  trailing column.
+  Program-owned Boards retain program-membership ownership semantics in the main row.
+- The Collections filter bar components provide title/description search and
+  owner/Mine popovers plus visible toggle chips for Private/Restricted/Public
+  scope (multi-select) and Favourites — styled like the Search dialog's chips,
+  outlined by default and filled/primary with `aria-pressed` when active — on
+  both the Board row and overview collage. Scope uses any visible Board
+  membership; Favourite Boards are those holding a favourite Marker. Active chips
+  can be removed, and Clear filters resets all facets.
+- Dragging editable overview Marker cards saves onto editable Board chips,
+  preserving existing memberships. The dragged tile dims and gains a 3px solid
+  primary outline; a valid target carries the shared Category/Image drop-zone
+  treatment — a 3px dashed outline with a 3px offset, a slight scale-up, and an
+  opaque "Add here" overlay that swaps the tile face while hovering. Success
+  shows a snackbar. A Board the Marker already belongs to shows a muted dashed
+  outline with a "not allowed" Block icon and an "Already saved" caption, so
+  the denied target explains itself rather than staying silent.
+  Rejected drops stay unhighlighted but show a snackbar: Already in {Board name},
+  or You can't add Markers to {Board name}; no mutation is sent.
+  The bottom-centre Snackbar contains the app's filled Alert, using success for
+  saves, info for duplicates and warning for other refusals.
+  Filled favourite stars are white in Cards and Table, with contrasting backgrounds
+  for editable toggles and read-only indicators alike.
+  Failures retain data and show the error. Browse collision logic is unchanged.
+- A Board opens in a large dialog, full-screen below the small breakpoint. Its
+  fixed heading holds title, authorized edit pencil, count and Select. The exact
+  Collections scope pill sits beside Managed by and the permitted owner-management
+  transfer icon. The title uses Collections-style h6 typography; its count uses
+  smaller secondary body2 text. Create Collection is a right-aligned outlined button
+  immediately left of Close, disabled for empty Boards. There is no Board overflow.
+  Delete is in Edit Board, with a second confirmation and orphan-Marker warning;
+  version conflicts block mutations until an explicit reload. Its ordered collage
+  scrolls independently and does not inherit overview filters. Editable Boards
+  retain member reorder. Multi-select sits at the right of each collage toolbar
+  and keeps every selection action, including the toggle itself, on the same row.
+- Board URL/history state is retained: Back closes the Board dialog; opening an
+  image at its saved view and returning restores that dialog. Flag-off behavior
+  makes no Board/Marker requests.
+- Mutations refresh silently without unmounting the collage or flashing a page
+  loader. Refresh failures retain loaded cards. Board dialog navigation preserves
+  the overview and fetches only Board detail; opening editors does not reload it.
+
+### Viewer saved-view interactions
+
+- Add Marker is a persistent mode, with normal drag/scroll/pinch navigation;
+  only quick clicks/taps place. Save does not disarm it. Escape cancels an open
+  draft first, then disarms placement on the next press; the toolbar also disarms it.
+- Placement uses a compact non-modal top-right panel: selected Title, required
+  remembered Board picker and a slide-in Add Board pane, titled Add Marker.
+  Description starts under collapsed More options. Favourite is a tooltip-labelled
+  outlined/filled title-row star with aria-pressed, not a checkbox. Cancel removes the draft marker;
+  the draft also appears in a leading Unsaved drawer group. One draft is edited at a time.
+- Marker clicks open a top-right information card showing title, optional description,
+  visible Board names and favourite state, without a close X. Outside pointer presses
+  deselect/close it; another marker selects instead. Escape also closes it. The authorized-only
+  pencil replaces its contents with the shared inline edit form, not a central dialog;
+  drawer Edit selects/focuses/pans to the same Marker and opens this editor.
+  Both modes keep the Marker icon left of the title, with the view-mode pencil
+  immediately beside the title. Authorized users can toggle the view-mode star
+  through the versioned API; conflicts require Reload current before retrying.
+  The inline form includes title, Boards, star, Save/Cancel and permitted Delete.
+  Description starts collapsed under More options even when filled. Delete opens
+  a secondary confirmation dialog whose Cancel/Escape preserves the editor draft.
+  Outside presses keep the editor open, including presses on other markers/rows;
+  Save/Cancel finish, and explicit Escape cancels/closes. Portalled Board menus remain usable.
+  OCC/error/reload behavior is shared with the existing form; BoardsPage retains its modal editor.
+- The Boards menu has checkbox options sorted case-insensitively by name with ID ties,
+  and no selection chips. Closed text shows the first two names then +N, including the
+  remembered last-used Board before opening it. A pinned + Add Board row sits at the
+  bottom of the fixed-height menu while options scroll above it. It slides a New Board
+  pane in from the right over the form, reusing the Boards & Markers Add Board field
+  set (name, description, visibility and restricted Program/Group chips); a top-left
+  back arrow or Escape returns with the draft preserved. Creation selects the new
+  Board; empty names and incomplete restricted scopes disable creation.
+- The title-only drawer leaves the bottom toolbar visible. Drawer and panel lists
+  omit the redundant Markers total heading. Rows group under their associated
+  Boards — a Marker on several Boards lists under each — resolved from the
+  Board summaries the markers hook now fetches. The viewer's own Boards head
+  the list, then instructor- or program-owned Boards; every other visible
+  Board sits inside a collapsed Public & Shared section that expands on click
+  or when a shared row is focused, its header carrying the same batch eye/label
+  icons. Markers with no visible Board fall under a trailing Other group and a
+  draft sits in a leading Unsaved
+  group. Group headings are body2 titles, never collapsible and carry no
+  counts; Board headings render as a link that opens the Board dialog in place
+  over the viewer — the viewer and its URL stay on the image — with an
+  “Open in Boards & Markers” action reaching the full management surface.
+  Group headings carry inline eye and label icon buttons (aria-pressed, Mixed
+  states included) instead of an ellipsis menu; the label icon disables while
+  every group marker is hidden. Row menus put Show/Hide marker first, then the
+  label action (disabled while its marker is hidden), then Edit/Delete only when
+  permitted. Hide/Show label(s) use LabelOff/Label icons. A hidden marker always
+  hides its label; a shown marker's label toggles independently. Public-source
+  markers default to canvas-hidden (labels enabled but inert while hidden);
+  other default/override/Mixed and localStorage
+  semantics remain unchanged.
+- Selecting a marker — a drawer row, canvas glyph, edit/delete intent, or an
+  external `?marker=` navigation from Boards & Markers or search — writes a
+  `markerVisible` override when the marker is canvas-hidden, so selection
+  never lands on an invisible marker. Marker navigation serializes
+  `?image=&marker=&x=&y=&zoom=&rotation=`; refresh and Browser Back/Forward
+  restore the focused marker alongside the viewport.
+- Hidden-marker row titles use text.disabled (text.secondary in light mode for
+  AA contrast on the still-navigable row) and an accessible “marker hidden”
+  suffix; group Mixed → Show markers writes a shown override on every row in
+  that group in one batched update.
+- Drawer row hover backgrounds span the full width, including the separate
+  options button; it does not nest inside the row action.
+- Pin/Unpin matches My collections (filled selected pin, no pinned close action,
+  unpin does not close). The shared state hook persists
+  `hrivpref:markers-drawer:pinned:user:<id>`; pinning survives image/sequence
+  navigation and new viewer pages. Unpinned drawers close on outside presses/clicks,
+  including OSD, without consuming placement. Menu portal content is inside;
+  its stable container prevents leftover modal backdrops. Pinned drawers ignore
+  outside presses and Escape.
+- Markers are upright constant-size 27px white discs with blue glyphs and a subtle
+  contrast ring/shadow, rendered as MUI `Room` icons. Labels retain
+  their existing styling. The top-left pin has no badge and matches the adjacent
+  white-on-dark OSD controls; the placement tool shares all normal toolbar states.
+
+- With `features.markers`, Search adds Boards (dashboard icon) and Markers
+  (pin icon) chips and title/description matches. Saved-view requests are
+  debounced, cancellable and visibility-filtered by the API; an older query's
+  results must not replace a newer query. Other search kinds remain local.
+- Choosing a Board opens `?page=boards&board=<id>`. Choosing a Marker uses the
+  existing source-image/saved-coordinate navigation, preserving x/y/zoom/rotation.
+- In Manage Collection's picker, these results instead stage saved-view slots.
+  Board expansion follows the displayed member order.
+  Choosing a saved-view result immediately hands its draft members to Manage;
+  the existing image/category checkbox footer remains for whole-image selections.
+  A request failure or an empty Board keeps the picker open with a visible error.
+- The flag-off search UI and collection write payloads remain unchanged.
+
+## Permanent image/Sequence side panel (Markers flag)
+
+- With `features.markers`, image and Sequence viewers replace the old Details
+  and top-left Markers controls with one top-right Open/Close viewer panel toggle.
+  Flag-off and Synchronized per-pane interfaces retain their previous behavior.
+- The panel starts closed with Markers selected; open state and selected content
+  persist per signed-in user across images, Sequence steps and reloads. Corrupt or
+  blocked storage falls back safely; anonymous previews never write user preferences.
+- The open header places exclusive Markers/Share View/Details content buttons left and the
+  close toggle right. Selection uses MUI rounded-square action states and exposes
+  `aria-pressed`; toggle controls expose expanded state and their panel id.
+- At sm+ the 256px permanent panel narrows OSD's image container; navigator, toolbar
+  and Sequence edge arrows remain in that area. At xs it overlays the full frame.
+- Only the toggle closes the panel: outside presses, selecting the current tab and
+  Escape leave it open. Menus, draft cancellation and placement keep their Escape
+  semantics. Canvas edit mode leaves an already-open panel in place. Its closed
+  trigger retains the existing canvas-edit disabled state; the stored preference
+  is unchanged.
+- Existing grouped row/visibility menus, dimmed hidden titles and stable menu portal
+  behavior are reused without per-item metadata. Placement floats beside the image
+  and switches an open Details panel to Markers. Closed-panel floating cards leave
+  room for the toggle. Details retains its metadata and Viewer controls help text.
+  The panel's Details lists every metadata field (copyright, programs, groups,
+  dates, dimensions, size, measurement scale, objective power, original file,
+  file type, uploader), showing “—” for values not recorded.
+  An empty Markers list shows a small Add Marker toolbar icon inline and says
+  the button is in the image toolbar.
+- Edit Image details lays out Scale, Unit and Objective on one row (stacked at xs).
+- Single-image, Sequence and Synchronized viewers show only My and Instructor
+  Markers in lists and markers, using the endpoint's existing ownership grouping.
+  Other users' public/shared views remain discoverable through the All Boards
+  dialog's Public & Shared filter;
+  this display scope does not change backend visibility.
+- The link icon between pin and info selects Share View. Its centred outlined
+  Share View button reuses the image page clipboard action; the old header Share View is hidden only
+  with the panel enabled. Sequence copies a standalone image view with live viewport
+  and selection rectangles. Flag-off and Synchronized sharing controls are unchanged.
+  The tab's footer briefly explains why to share a view.
+
+### Viewer Marker polish
+
+- Successful creation selects the returned Marker, re-orients the viewport onto
+  it (matching row Edit and marker-click navigation), opens its info card and moves
+  keyboard focus to its list row, expanding and scrolling the group as necessary.
+  Drawer Delete opens the shared confirmation dialog alone — never the
+  information card or editor.
+  Saving opens Markers if the panel was closed or on Details. Later reloads do
+  not steal focus. Failed saves preserve the draft and previous selection.
+- The card's favourite star is a named, tooltip-equipped read-only indicator
+  immediately left of Close, without a visible status sentence.
+- Dense caption-sized list, metadata and help text follow the page footer scale;
+  body2/subtitle2 titles and small form controls preserve the visual hierarchy.

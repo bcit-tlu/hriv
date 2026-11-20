@@ -18,9 +18,10 @@ implemented.
 
 ## User flow
 
-1. In the image viewer, the existing OSD **selection** toolbar button draws
-   a rectangle; a **Count objects** button appears above its top-right
-   corner and opens a small menu: **Cells** · **Nuclei**
+1. In the image viewer — or any collection-detail viewer pane while
+   counting is enabled (#1855) — the existing OSD **selection** toolbar
+   button draws a rectangle; a **Count objects** button appears above its
+   top-right corner and opens a small menu: **Cells** · **Nuclei**
    (`components/CountObjectsButton.tsx`).
 2. The frontend `POST`s `{mode, selection}` (level-0 image pixels) and polls
    with backoff (`useSelectionCounts.ts`), showing a progress snackbar with
@@ -33,6 +34,26 @@ CountReportDialog.tsx`): the stitched preview with outlines clipped to
 
 Every selection is its own job — overlapping selections each get discrete
 outlines and a discrete legend; jobs never share or merge results.
+
+### Manual adjustment (#1746)
+
+The report opens in **adjust** mode so the user can correct an imperfect
+result client-side (**Done** leaves a view-only report; **Adjust count**
+re-enters):
+
+- **Click an outline** to remove it — it stays visible dashed and dimmed,
+  and a second click restores it. Removing the last object of a group
+  drops its legend row.
+- **Click a missed object** to drop an outline there (sized to the median
+  of the current objects), or **drag** to draw a circle of any size.
+- Added outlines join the **nearest-size group** (closest mean polygon
+  area), since groups are unnamed appearance clusters. **Reset** restores
+  the original result.
+
+The chip, legend and the outlines on the viewer update live. Adjustments
+are React state only — nothing is written back to Redis or the database,
+and they die with the ephemeral result (`countAdjust.ts` holds the pure
+helpers; `useSelectionCounts` tracks `removed`/`added` per entry).
 
 ## How it works
 
@@ -112,11 +133,8 @@ the extension point for a future opt-in plugin, not a shipped cyto3 option.
 
 ## API
 
-All endpoints require a valid JWT (any role) and are gated by
-`COUNTING_ENABLED` — while off, the middleware answers the same
-`404 {"detail": "Not Found"}` as an unknown route before the body is even
-parsed, and `require_counting_enabled` is a router-level second layer.
-Image access uses the standard visibility gate
+All endpoints require a valid JWT (any role). Image access uses the
+standard visibility gate
 (`routers/images.py::_get_visible_image`), so an image a student cannot
 view is indistinguishable from a missing one.
 
@@ -183,15 +201,14 @@ best-effort), then deletes record + result keys and the owner-set entry.
 Missing records also answer `204` (idempotent); another user's job answers 404. The frontend calls this with a keepalive `fetch` (auth header)
 instead of `sendBeacon` when a selection is destroyed.
 
-## Feature flag and settings
+## Settings
 
-`GET /api/features` returns `{"counting": <bool>}`; the frontend hides the
-Count affordance while off. Flags are UX hints only — the backend enforces
-independently.
+Counting is always on (#1859 removed the `COUNTING_ENABLED` dark-launch
+flag). `GET /api/features` still reports `{"counting": true}` for one
+release so SPAs built before the gate's removal keep rendering it.
 
 | Setting                         | Default            | Purpose                                                              |
 | ------------------------------- | ------------------ | -------------------------------------------------------------------- |
-| `COUNTING_ENABLED`              | `false`            | Dark-launch flag: 404s the whole surface when off.                   |
 | `COUNTING_QUEUE_NAME`           | `arq:counting`     | Dedicated arq queue (distinct from the tile worker's `arq:queue`).   |
 | `COUNTING_MAX_PIXELS`           | `750_000`          | Pre-flight budget: stitched level pixels per job. ≥ 65 536.          |
 | `COUNTING_CLASSICAL_MAX_PIXELS` | `2_000_000`        | Larger stitched-pixel budget for classical/stub outliners; ≥ 65 536. |
@@ -217,7 +234,7 @@ result TTL; worker status writes use `SET … XX KEEPTTL`.
 ## Local development
 
 ```bash
-COUNTING_ENABLED=true docker compose --profile counting up --build
+docker compose --profile counting up --build
 ```
 
 The `counting-worker` compose service (profile `counting`) runs
@@ -258,6 +275,16 @@ This fixture exercises the workflow, not blood-smear counting accuracy.
   counting gauges, Grafana "Object counting" panels, flux-fleet alerts.
 - **#1670** — lab-burst load test (done — see Capacity); **#1671** —
   docs/user validation.
+- **#1746** — manual report adjustment (landed): click-to-remove/restore
+  outlines, click/drag to add, nearest-area group assignment,
+  `countAdjust.ts` + `removed`/`added` entry state.
+- **#1855** — counting in collection detail viewers (landed): the shared
+  `ImageViewer` mounts `SelectionCountLayer`, so sequence and synchronized
+  collection panes count the same way.
+- **#1859** — `COUNTING_ENABLED` dark-launch gate retired (landed): the
+  setting, `CountingFeatureMiddleware`, router dependency and the
+  `countingEnabled` prop chain removed; `/api/features` keeps reporting
+  `counting: true` for one release for older SPAs.
 
 ## Models and pipeline (#1665)
 
@@ -283,6 +310,34 @@ data) — the `Outliner` protocol remains the plugin point.
   field collapsed into blobs, so d stays 1 — and a large box over such a
   field can be rejected `too_large` rather than silently counting nothing.
   Never upscale; over budget at that `d` → `too_large`.
+- **Pixel size (mpp)** comes from image metadata at enqueue
+  (`app/counting/mpp.py`): `mpp_x` (pyramidal/TIFF calibration) wins;
+  otherwise `unit / measurement_scale` (#1868). That key is written by
+  an approved measurement review _or_ entered directly under Edit image —
+  the counter trusts the metadata either way, so measurement review and
+  hand-entered scales both calibrate counting. Without either, nuclei
+  assumes InstanSeg's native 0.5 µm/px.
+- **Detection params** come from `metadata.detection_params` (#1869,
+  sanitized by `detection_params_from_metadata` — malformed fields are
+  dropped field-wise, `advanced` never crosses, and **fields still at
+  their DetectionTuning default are dropped too** so an approval of
+  untouched values behaves identically to no tuning). They ride the job
+  record into the worker and map onto the classical mask: `sensitivity`
+  applies an additive offset to the Otsu threshold scaled by the
+  signal's own p99–median spread (0 → stricter, default 0.6 → ±0, 1 →
+  permissive; additive because a multiplier inverts ordering when the
+  threshold goes negative on dense fields), and `min_cell_size` scales
+  the `remove_small_objects` floor quadratically (radius 3.0 ↔ shipped
+  30-px area). `exclude_nuclei` has no counting-side effect — counting
+  never excluded purple objects. They apply to the probe that picks the
+  level too — the level rule sees the same signal as the segmenter.
+- **Preprocessing**: `_mask_and_signal` applies a subtractive flat-field
+  (`signal − gaussian(signal, σ=25)`) before Otsu, removing low-frequency
+  staining/illumination drift that buries faint cells (#1870). A division
+  flat-field was evaluated and rejected — it amplifies background noise
+  into speckle — and a percentile stretch is Otsu-invariant, so neither
+  ships. `counting_preprocess` (default on) is the single ops-level
+  kill-switch; there are deliberately no per-parameter env knobs.
 - **Stain filter** (nuclei only): objects with mean CIELAB `b* > -5` are
   dropped after the centroid edge rule.
 - **Grouping**: GaussianMixture+BIC in `[log(area)/ln(2.5), a*/10, b*/10]`,
@@ -303,7 +358,7 @@ data) — the `Outliner` protocol remains the plugin point.
   NetworkPolicy (`countingWorker.networkPolicy`, egress to Redis + DNS +
   the OTel collector only).
 - **Capacity**: see [Capacity (#1670)](#capacity-1670).
-- **flux-fleet overlay** (`latest` first): `counting.enabled: true`,
+- **flux-fleet overlay** (`latest` first):
   `countingWorker.enabled: true`, plus `countingWorker.networkPolicy`
   peers pointed at the in-cluster Redis, kube-dns and the OTel collector.
 
@@ -339,21 +394,21 @@ selections and returned wrong counts.
   (≈ 180 s of work) — needs 3–4 replicas to keep p95 ≤ 60 s.
 - **Recommendations**: `latest` — 1 replica (staging). `stable` (4
   worker nodes, ~35 CPU unrequested; namespace quota `limits.memory`
-  52 Gi with ~11.5 Gi used) — `countingWorker.replicaCount: 2` when
-  counting is enabled there (halves burst wait and keeps counting
+  52 Gi with ~11.5 Gi used) — `countingWorker.replicaCount: 2`
+  (halves burst wait and keeps counting
   available while one pod restarts); raise to 4 for labs where everyone counts Nuclei at full
   selection size. Each replica costs 2 CPU / 1.5 Gi request / 3 Gi
   limit. Keep `torchThreads: 2`, one job per process, and the 750 k (ML)
   / 2 M (classical) pixel budgets. CPU HPA is not useful for
   minute-long bursts and flux-fleet has no KEDA, so size replicas up
-  front; enabling `stable` waits on the #1671 instructor feel-test.
+  front.
 
 ## Observability (#1669)
 
 - **OTel** (`app/counting/metrics.py`): `hriv.count_jobs{mode,outcome[,reason]}`,
   `hriv.count.wait`, `hriv.count.run{mode,step}`, `hriv.count.objects`,
   `hriv.count.pixels`.
-- **`/api/metrics`** (only when `counting_enabled`):
+- **`/api/metrics`**:
   `hriv_count_queue_depth`, `hriv_count_queue_oldest_pending_age_seconds`,
   `hriv_count_worker_up`, `hriv_count_worker_heartbeat_age_seconds`.
 - **Tracing**: `count.<step>` child spans under `count_objects_task` with
@@ -379,15 +434,16 @@ selections and returned wrong counts.
 
 ## Troubleshooting
 
-| Symptom                                                  | Check / action                                                                                                                                                                                                                                                                                                            |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Count button hidden; count endpoints return 404          | Check `GET /api/features` for `counting: true`. Enable `COUNTING_ENABLED` on the API (Helm `counting.enabled`) and reload the viewer. Disabled routes deliberately return 404 even before authentication/body validation. A 404 while enabled can also mean an invisible image, another user's job, or an expired result. |
-| POST returns 503 `counting_unavailable`                  | Start the dedicated counting worker, not just the tile worker: `COUNTING_ENABLED=true docker compose --profile counting up -d --build`. Check Redis connectivity and worker startup/model-loading logs. The metric outcome is `queue_unavailable`; the HTTP detail is `counting_unavailable`.                             |
-| Job stays queued                                         | Check the queue and heartbeat below. A worker can disappear after enqueue. Confirm the API and worker use the same Redis and `COUNTING_QUEUE_NAME`, and that the worker can read the tiles volume. Scale replicas before a lab burst; do not raise per-process concurrency.                                               |
-| `selection_too_large` (422), or worker error `too_large` | Draw a smaller box. The API uses the configured outliner's pixel budget; the worker's size-driven level choice may still reject it to preserve object detail. Do not increase budgets without checking latency/memory and the hard stitching guard.                                                                       |
-| 429 `too_many_active_counts`                             | This user already has `COUNTING_MAX_ACTIVE_PER_USER` queued/running jobs (default 3). Cancel or wait for a job to finish, then retry; API responses include `Retry-After: 10`. Clearing finished results is not an active-job cancellation.                                                                               |
-| Result disappears / polling returns 404                  | Redis records/results expire after `COUNTING_RESULT_TTL_SECONDS` (default 600 seconds from enqueue, not completion). Cancelling a count, or clearing all selection rectangles, also deletes the job. Draw a new selection to count again; results are not saved in image metadata.                                        |
-| 409 `tiles_not_ready`, or worker error `no_tiles`        | Counting needs a readable local DZI pyramid; external/catalogued DZI URLs are not sufficient. Wait for image processing and check the worker's read-only tiles mount. For compose, confirm `seed-media` completed and try Synthetic Monitoring Image (fresh-seed ID 5).                                                   |
+| Symptom                                                  | Check / action                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Count button hidden                                      | Hard-reload the viewer (stale SPA). The count button mounts on every selection once a viewer is open; it hides only while a rectangle is being drawn or the canvas is in edit mode.                                                                                                |
+| POST/GET/DELETE return 404                               | An invisible image (same gate as `GET /api/images/{id}`), another user's job, or an expired result.                                                                                                                                                                                |
+| POST returns 503 `counting_unavailable`                  | Start the dedicated counting worker, not just the tile worker: `docker compose --profile counting up -d --build`. Check Redis connectivity and worker startup/model-loading logs. The metric outcome is `queue_unavailable`; the HTTP detail is `counting_unavailable`.            |
+| Job stays queued                                         | Check the queue and heartbeat below. A worker can disappear after enqueue. Confirm the API and worker use the same Redis and `COUNTING_QUEUE_NAME`, and that the worker can read the tiles volume. Scale replicas before a lab burst; do not raise per-process concurrency.        |
+| `selection_too_large` (422), or worker error `too_large` | Draw a smaller box. The API uses the configured outliner's pixel budget; the worker's size-driven level choice may still reject it to preserve object detail. Do not increase budgets without checking latency/memory and the hard stitching guard.                                |
+| 429 `too_many_active_counts`                             | This user already has `COUNTING_MAX_ACTIVE_PER_USER` queued/running jobs (default 3). Cancel or wait for a job to finish, then retry; API responses include `Retry-After: 10`. Clearing finished results is not an active-job cancellation.                                        |
+| Result disappears / polling returns 404                  | Redis records/results expire after `COUNTING_RESULT_TTL_SECONDS` (default 600 seconds from enqueue, not completion). Cancelling a count, or clearing all selection rectangles, also deletes the job. Draw a new selection to count again; results are not saved in image metadata. |
+| 409 `tiles_not_ready`, or worker error `no_tiles`        | Counting needs a readable local DZI pyramid; external/catalogued DZI URLs are not sufficient. Wait for image processing and check the worker's read-only tiles mount. For compose, confirm `seed-media` completed and try Synthetic Monitoring Image (fresh-seed ID 5).            |
 
 For a local diagnosis:
 

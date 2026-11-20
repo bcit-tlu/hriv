@@ -32,11 +32,12 @@ from .authz import (
 from .database import settings
 from .models import Collection, CollectionImage, Image, User
 from .schemas import (
+    CollectionMemberOut,
     CollectionOut,
     CollectionOwnerOut,
     CollectionPermissionsOut,
+    CollectionSlotOut,
     CollectionSummaryOut,
-    ImageOut,
 )
 from .visibility import get_student_excluded_category_ids
 
@@ -111,11 +112,14 @@ class _ViewerContext:
         )
 
     def visible_images(self, collection: Collection) -> list[Image]:
-        return [
+        images = [
             link.image
             for link in collection.image_links
             if link.image is not None and self.can_view_image(link.image)
         ]
+        if not settings.markers_enabled:
+            return list({image.id: image for image in images}.values())
+        return images
 
 
 def _owners_out(collection: Collection) -> list[CollectionOwnerOut]:
@@ -241,9 +245,23 @@ def collection_summary_out(
 
 def collection_out(ctx: _ViewerContext, collection: Collection) -> CollectionOut:
     images = ctx.visible_images(collection)
+    members = [CollectionMemberOut.model_validate(img) for img in images]
+    if settings.markers_enabled:
+        links = [
+            link for link in collection.image_links
+            if link.image is not None and ctx.can_view_image(link.image)
+        ]
+        for member, link in zip(members, links):
+            member.slot = CollectionSlotOut(
+                id=link.id, viewport_state=link.viewport_state,
+                thumb=link.thumb, label=link.label,
+            )
+    legacy_member_count = len({link.image_id for link in collection.image_links})
+    if ctx.excluded_category_ids is not None:
+        legacy_member_count = min(legacy_member_count, len(images) + 1)
     return CollectionOut(
         **_summary_fields(ctx, collection, images),
-        images=[ImageOut.model_validate(img) for img in images],
+        images=members,
         viewport_state=dict(collection.viewport_state or {}),
         # Nominal membership for unfiltered viewers (non-students). For
         # students the true total would disclose how many images are
@@ -251,9 +269,7 @@ def collection_out(ctx: _ViewerContext, collection: Collection) -> CollectionOut
         # enough to signal "hidden members exist" (the restricted-members
         # message deliberately reveals that much) without leaking the total.
         member_count=(
-            len(collection.image_links)
-            if ctx.excluded_category_ids is None
-            else min(len(collection.image_links), len(images) + 1)
+            len(images) if settings.markers_enabled else legacy_member_count
         ),
     )
 

@@ -1,5 +1,6 @@
 """Measurement review: RBC detector, objective calibration, service and router."""
 
+import base64
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -16,9 +17,11 @@ from app.measurement.calibration import (
     CAMERA_PROFILES,
     DETECTOR_VERSION,
     RBC_APPARENT_DIAMETER_UM,
+    ScaleEstimate,
     estimate_scale,
 )
 from app.measurement.detector import (
+    DetectorParams,
     RbcMeasurement,
     load_work_image,
     measure_rbc_diameter,
@@ -26,8 +29,11 @@ from app.measurement.detector import (
 from app.models import MeasurementFinding
 from app.routers import measurements as router
 from app.schemas import (
+    DetectionTuning,
     MeasurementApprove,
     MeasurementBulkApprove,
+    MeasurementFindingUpdate,
+    MeasurementPreviewRequest,
     MeasurementScanRequest,
 )
 from app.worker import EnqueueResult, TaskQueueUnavailableError
@@ -89,6 +95,244 @@ def test_detector_returns_none_when_few_cells_dominate(tmp_path) -> None:
     path = tmp_path / "blobs.png"
     canvas.write_to_file(str(path))
     assert measure_rbc_diameter(load_work_image(str(path)), 600) is None
+
+
+# ── detector params (#1866) ──────────────────────────────
+
+
+def _faint_film(
+    radius: int = 10, cols: int = 8, rows: int = 4
+) -> pyvips.Image:
+    """Discs only ~6 sat points above the background — below the default
+    threshold, so default params see nothing."""
+    pitch = radius * 3
+    img = pyvips.Image.black(
+        cols * pitch, rows * pitch, bands=3
+    ).new_from_image([240, 236, 236]).copy_memory()
+    for r in range(rows):
+        for c in range(cols):
+            cx, cy = c * pitch + pitch // 2, r * pitch + pitch // 2
+            img = img.draw_circle([238, 228, 230], cx, cy, radius, fill=True)
+    return img
+
+
+def _film_with_nuclei(radius: int = 10) -> pyvips.Image:
+    """Pink RBC film with two purple (leukocyte) cells drawn over pink
+    lattice positions — exclusion removes exactly those components
+    without merging neighbours."""
+    img = _blood_film(radius=radius)
+    pitch = radius * 3
+    for cx, cy in ((pitch + pitch // 2, pitch // 2),
+                   (3 * pitch + pitch // 2, 2 * pitch + pitch // 2)):
+        img = img.draw_circle([90, 60, 160], cx, cy, radius, fill=True)
+    return img
+
+
+def test_default_params_reproduce_unparametrized_call(tmp_path) -> None:
+    path = tmp_path / "film.png"
+    _blood_film(radius=10).write_to_file(str(path))
+    work = load_work_image(str(path))
+    a = measure_rbc_diameter(work, work.width)
+    b = measure_rbc_diameter(work, work.width, DetectorParams())
+    assert (a.diameter_px, a.component_count, a.selected_count) == (
+        b.diameter_px, b.component_count, b.selected_count)
+
+
+def test_detector_higher_sensitivity_finds_faint_cells(tmp_path) -> None:
+    path = tmp_path / "faint.png"
+    _faint_film().write_to_file(str(path))
+    work = load_work_image(str(path))
+    assert measure_rbc_diameter(work, work.width) is None
+    m = measure_rbc_diameter(
+        work, work.width, DetectorParams(sat_above_background=5)
+    )
+    assert m is not None
+    assert m.selected_count >= 20
+
+
+def test_detector_min_radius_filters_small_cells(tmp_path) -> None:
+    path = tmp_path / "film.png"
+    _blood_film(radius=10).write_to_file(str(path))
+    work = load_work_image(str(path))
+    # A floor above the real radius drops every component -> no population.
+    m = measure_rbc_diameter(
+        work, work.width, DetectorParams(min_radius_px=15.0)
+    )
+    assert m is None
+
+
+# ── detection outlines (#1872) ──────────────────────────
+
+
+def _category_count(png: bytes, value: int) -> int:
+    """Connected components of ``png == value``.
+
+    ``labelregions`` gives the background a label too, so max() is one
+    more than the blob count.
+    """
+    mask = (pyvips.Image.new_from_buffer(png, "") == value).ifthenelse(255, 0)
+    return int(mask.cast("uchar").labelregions().max()) - 1
+
+
+def test_detector_outline_matches_component_counts(tmp_path) -> None:
+    path = tmp_path / "film.png"
+    _blood_film(radius=10).write_to_file(str(path))
+    work = load_work_image(str(path))
+    m = measure_rbc_diameter(work, work.width, with_outline=True)
+    assert m is not None and m.outline_png is not None
+    raster = pyvips.Image.new_from_buffer(m.outline_png, "")
+    # Geometry sits in work-image space, aligned with the source.
+    assert (raster.width, raster.height) == (work.width, work.height)
+    assert set(raster.tolist()[0]) <= {0, 1, 2}
+    # Selected rings ↔ selected_count, rejected rings ↔ the rest.
+    assert _category_count(m.outline_png, 2) == m.selected_count
+    assert _category_count(m.outline_png, 1) == (
+        m.component_count - m.selected_count
+    )
+
+
+def test_detector_outline_marks_rejected_clumps(tmp_path) -> None:
+    """Components outside the dominant window show as rejected rings."""
+    img = _blood_film(radius=10, cols=6, rows=4)
+    canvas = pyvips.Image.black(600, 300, bands=3).new_from_image([240, 236, 236])
+    canvas = canvas.insert(img, 0, 0).copy_memory()
+    canvas = canvas.draw_circle([215, 120, 140], 450, 200, 45, fill=True)
+    path = tmp_path / "clump.png"
+    canvas.write_to_file(str(path))
+    work = load_work_image(str(path))
+    m = measure_rbc_diameter(work, work.width, with_outline=True)
+    assert m is not None and m.selected_count < m.component_count
+    assert _category_count(m.outline_png, 1) == (
+        m.component_count - m.selected_count
+    )
+
+
+def test_detector_outline_absent_unless_requested(tmp_path) -> None:
+    path = tmp_path / "film.png"
+    _blood_film(radius=10).write_to_file(str(path))
+    work = load_work_image(str(path))
+    m = measure_rbc_diameter(work, work.width)
+    assert m is not None and m.outline_png is None
+
+
+def test_detector_outline_none_without_population(tmp_path) -> None:
+    path = tmp_path / "blank.png"
+    pyvips.Image.black(400, 300, bands=3).new_from_image([240, 236, 236]).write_to_file(
+        str(path)
+    )
+    assert measure_rbc_diameter(
+        load_work_image(str(path)), 400, with_outline=True
+    ) is None
+
+
+def test_dominant_clump_survives_split_background(tmp_path) -> None:
+    """A foreground region bigger than each background pocket still counts
+    as a component: background labels always have radius 0, so identifying
+    background by area would drop the clump and flip the verdict."""
+    canvas = pyvips.Image.black(
+        300, 300, bands=3
+    ).new_from_image([240, 236, 236]).copy_memory()
+    # Thick pink cross spanning edge to edge splits the background into
+    # four ~120x120 pockets, each smaller than the cross itself.
+    canvas = canvas.draw_rect([215, 120, 140], 0, 120, 300, 60, fill=True)
+    canvas = canvas.draw_rect([215, 120, 140], 120, 0, 60, 300, fill=True)
+    # Twelve small cells packed into the top-left pocket.
+    for x in (15, 45, 75, 105):
+        for y in (15, 45, 75):
+            canvas = canvas.draw_circle([215, 120, 140], x, y, 6, fill=True)
+    path = tmp_path / "cross.png"
+    canvas.write_to_file(str(path))
+    work = load_work_image(str(path))
+    # The cross's mass dominates the log-mode, so no RBC population is
+    # proposed — exactly the pre-outline behaviour. Were it mistaken for
+    # background, the 12 cells would form a population instead.
+    assert measure_rbc_diameter(work, work.width) is None
+    assert measure_rbc_diameter(work, work.width, with_outline=True) is None
+
+
+def test_detector_purple_sat_disables_nuclei_exclusion(tmp_path) -> None:
+    path = tmp_path / "nuclei.png"
+    _film_with_nuclei().write_to_file(str(path))
+    work = load_work_image(str(path))
+    excluded = measure_rbc_diameter(work, work.width)
+    included = measure_rbc_diameter(
+        work, work.width, DetectorParams(purple_sat_min=255)
+    )
+    assert excluded is not None and included is not None
+    assert included.component_count > excluded.component_count
+
+
+def test_detector_params_range_validation() -> None:
+    for kw in (
+        {"sat_above_background": 0},
+        {"sat_above_background": 256},
+        {"purple_hue_min": 200, "purple_hue_max": 200},
+        {"purple_sat_min": -1},
+        {"min_radius_px": 0},
+        {"min_radius_px": 200},
+        {"mode_window_lo": 1.5, "mode_window_hi": 1.0},
+        {"mode_window_lo": 0},
+    ):
+        with pytest.raises(ValueError):
+            DetectorParams(**kw)
+
+
+# ── DetectionTuning schema (#1866) ───────────────────────
+
+
+def test_tuning_defaults_translate_to_shipped_params() -> None:
+    """The semantic defaults must map onto the frozen raw defaults —
+    an untouched tuning changes nothing."""
+    assert DetectionTuning().to_detector_params() == DetectorParams()
+
+
+def test_tuning_sensitivity_maps_inverse_threshold() -> None:
+    assert (
+        DetectionTuning(sensitivity=0.0)
+        .to_detector_params().sat_above_background == 30
+    )
+    assert (
+        DetectionTuning(sensitivity=1.0)
+        .to_detector_params().sat_above_background == 5
+    )
+
+
+def test_tuning_min_cell_size_and_exclude_nuclei() -> None:
+    p = DetectionTuning(
+        min_cell_size=8.0, exclude_nuclei=False
+    ).to_detector_params()
+    assert p.min_radius_px == 8.0
+    # Purple mask made unsatisfiable -> nuclei kept.
+    assert p.purple_sat_min == 255
+
+
+def test_tuning_advanced_overrides_and_coerces() -> None:
+    p = DetectionTuning(
+        sensitivity=1.0,
+        advanced={"sat_above_background": 20.7, "mode_window_lo": 0.7},
+    ).to_detector_params()
+    # advanced wins over the sensitivity-derived value; int fields round.
+    assert p.sat_above_background == 21
+    assert p.mode_window_lo == 0.7
+
+
+def test_tuning_rejects_unknown_advanced_keys() -> None:
+    with pytest.raises(ValidationError):
+        DetectionTuning(advanced={"nonsense": 1.0})
+
+
+def test_tuning_field_bounds() -> None:
+    with pytest.raises(ValidationError):
+        DetectionTuning(sensitivity=1.5)
+    with pytest.raises(ValidationError):
+        DetectionTuning(sensitivity=-0.1)
+    with pytest.raises(ValidationError):
+        DetectionTuning(min_cell_size=0)
+
+
+def test_tuning_out_of_range_advanced_raises() -> None:
+    with pytest.raises(ValueError):
+        DetectionTuning(advanced={"min_radius_px": 0}).to_detector_params()
 
 
 # ── calibration ───────────────────────────────────────────
@@ -171,6 +415,7 @@ def _finding(**kw) -> SimpleNamespace:
         objective="40",
         confidence=0.8,
         evidence={},
+        params=None,
         detector_version=DETECTOR_VERSION,
         approved_scale=None,
         approved_unit=None,
@@ -227,6 +472,115 @@ async def test_approve_with_unit_correction_is_manual() -> None:
 def test_approve_schema_rejects_unknown_unit() -> None:
     with pytest.raises(ValidationError):
         MeasurementApprove(unit="in")
+
+
+# ── detection_params promotion (#1869) ──────────────────
+
+_PARAMS = {"sensitivity": 0.9, "min_cell_size": 5.0, "exclude_nuclei": True}
+
+
+async def test_approve_promotes_detection_params() -> None:
+    finding, image = _finding(params=dict(_PARAMS)), _image()
+    await service.approve_finding(AsyncMock(), finding, image, 3)
+    assert image.metadata_["detection_params"] == _PARAMS
+    assert image.metadata_["canvas_annotations"] == [{"id": "x"}]
+    assert image.version == 5
+
+
+async def test_approve_without_params_leaves_metadata_untouched() -> None:
+    finding, image = _finding(params=None), _image()
+    await service.approve_finding(AsyncMock(), finding, image, 3)
+    assert "detection_params" not in image.metadata_
+
+
+async def test_approve_params_promote_with_corrected_scale() -> None:
+    """Tuning describes detection, not the value — a reviewer correction
+    does not hold the params back (#1869)."""
+    finding, image = _finding(params=dict(_PARAMS)), _image()
+    await service.approve_finding(
+        AsyncMock(), finding, image, 3, scale=18.7
+    )
+    assert image.metadata_["detection_params"] == _PARAMS
+    assert image.metadata_["measurement_scale_source"] == "manual"
+
+
+def test_reset_strips_detection_params_it_promoted() -> None:
+    params = dict(_PARAMS)
+    finding = _finding(
+        status="approved",
+        params=params,
+        approved_scale=7.3,
+        approved_unit="um",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": finding.id,
+            "detection_params": dict(params),
+            "canvas_annotations": [{"id": "x"}],
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert "detection_params" not in image.metadata_
+    assert image.metadata_["canvas_annotations"] == [{"id": "x"}]
+
+
+def test_reset_keeps_detection_params_changed_since() -> None:
+    params = dict(_PARAMS)
+    finding = _finding(
+        status="approved",
+        params=params,
+        approved_scale=7.3,
+        approved_unit="um",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": finding.id,
+            # Someone re-tuned since approval — authoritative, not ours.
+            "detection_params": dict(params, sensitivity=0.4),
+        }
+    )
+    service.reset_finding(finding, image)
+    assert image.metadata_["detection_params"]["sensitivity"] == 0.4
+
+
+def test_reset_approved_without_params_is_unaffected() -> None:
+    finding = _finding(
+        status="approved",
+        params=None,
+        approved_scale=7.3,
+        approved_unit="um",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": finding.id,
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert "detection_params" not in image.metadata_
+
+
+async def test_bulk_approve_promotes_detection_params(monkeypatch) -> None:
+    finding = _finding(id=1, image_id=11, params=dict(_PARAMS))
+    image = _image(id=11)
+    monkeypatch.setattr(router, "bump_browse_revision", AsyncMock())
+    db = AsyncMock()
+    db.get.side_effect = lambda model, i, **_kw: (
+        finding if model is MeasurementFinding else image
+    )
+    out = await router.bulk_approve(
+        MeasurementBulkApprove(ids=[1]), _user("admin"), db
+    )
+    assert out.approved == [1]
+    assert image.metadata_["detection_params"] == _PARAMS
 
 
 async def test_approve_without_scale_raises() -> None:
@@ -349,6 +703,8 @@ def test_reject_finding() -> None:
 
 def test_model_shape() -> None:
     cols = MeasurementFinding.__table__.c
+    assert cols.params.nullable
+    assert type(cols.params.type).__name__ == "JSONB"
     assert next(iter(cols.image_id.foreign_keys)).ondelete == "CASCADE"
     assert next(iter(cols.reviewed_by.foreign_keys)).ondelete == "SET NULL"
     idx = {i.name: i for i in MeasurementFinding.__table__.indexes}
@@ -443,6 +799,30 @@ async def test_list_findings_serializes_and_tokenizes_thumb() -> None:
     assert "tile_token=" in item["image_thumb"]
     assert item["objective"] == "40"
     assert item["category_path"] == "Hematology › Blood films"
+    assert item["params"] is None
+
+
+async def test_list_findings_serializes_tuned_params() -> None:
+    """Saved params ride the finding response as the semantic shape."""
+    db = AsyncMock()
+    db.scalar.return_value = 1
+    rows = MagicMock()
+    rows.all.return_value = [
+        (
+            _finding(params={"sensitivity": 0.9, "min_cell_size": 5.0}),
+            _image(),
+            "Hematology › Blood films",
+        )
+    ]
+    db.execute.return_value = rows
+    page = await router.list_findings(
+        _user(), db, "pending", None, 0.0, "confidence_desc", 50, 0
+    )
+    params = page.items[0].params
+    assert params is not None
+    assert params.sensitivity == 0.9
+    assert params.min_cell_size == 5.0
+    assert params.exclude_nuclei is True  # untouched field -> default
 
 
 def _db_with(finding, image) -> AsyncMock:
@@ -1093,6 +1473,80 @@ async def test_scan_image_rescan_repoints_scale_ownership() -> None:
     assert "measurement_scale" not in image.metadata_
 
 
+async def test_scan_image_rescan_repoints_detection_params() -> None:
+    """The re-recorded finding inherits params ownership too, so a later
+    reset still strips the tuning the superseded approval promoted."""
+    params = {"sensitivity": 0.9, "min_cell_size": 5.0}
+    owner = _finding(
+        id=9,
+        status="approved",
+        source="rbc",
+        proposed_scale=4.0,
+        approved_scale=4.0,
+        approved_unit="um",
+        params=dict(params),
+    )
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=42)
+    db.add = MagicMock()
+    db.get = AsyncMock(return_value=owner)
+
+    async def _flush() -> None:
+        for call in db.add.call_args_list:
+            if call.args[0].id is None:
+                call.args[0].id = 77
+
+    db.flush = AsyncMock(side_effect=_flush)
+    meta = {
+        "measurement_scale": 4.0,
+        "measurement_unit": "um",
+        "measurement_scale_source": "rbc",
+        "measurement_finding_id": 9,
+        "detection_params": dict(params),
+    }
+    image = _image(metadata_=meta)
+    finding = await service.scan_image(db, image, rescan=True)
+    assert finding is not None and finding.params == params
+    # Full undo: resetting the new owner removes the promoted tuning.
+    assert service.reset_finding(finding, image) is True
+    assert "detection_params" not in image.metadata_
+
+
+async def test_scan_image_rescan_keeps_retuned_params_unowned() -> None:
+    """A `detection_params` changed since approval stays externally owned —
+    the replacement must not claim it, so reset leaves it in place."""
+    params = {"sensitivity": 0.9}
+    owner = _finding(
+        id=9,
+        status="approved",
+        source="rbc",
+        proposed_scale=4.0,
+        approved_scale=4.0,
+        approved_unit="um",
+        params=dict(params),
+    )
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=42)
+    db.add = MagicMock()
+    db.get = AsyncMock(return_value=owner)
+    db.flush = AsyncMock()
+    meta = {
+        "measurement_scale": 4.0,
+        "measurement_unit": "um",
+        "measurement_scale_source": "rbc",
+        "measurement_finding_id": 9,
+        # Retuned after approval — authoritative, not owned by the finding.
+        "detection_params": {"sensitivity": 0.4},
+    }
+    image = _image(metadata_=meta)
+    finding = await service.scan_image(db, image, rescan=True)
+    assert finding is not None and finding.params is None
+    service.reset_finding(finding, image)
+    assert image.metadata_["detection_params"] == {"sensitivity": 0.4}
+
+
 async def test_scan_image_rescan_keeps_edited_scale_unowned() -> None:
     """A scale edited after approval is not handed to the re-recorded
     finding — resetting that finding must leave the edit alone."""
@@ -1350,3 +1804,288 @@ async def test_approved_objective_sort_uses_approved_objective() -> None:
     sql = str(db.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
     order = sql.split("ORDER BY", 1)[1].strip()
     assert order.startswith("CAST(measurement_findings.approved_objective AS FLOAT) DESC")
+
+
+# ── detection preview + params persistence (#1867) ──────
+
+_MEAS = RbcMeasurement(
+    diameter_px=12.5,
+    component_count=48,
+    selected_count=31,
+    peak_fraction=0.64,
+    work_scale=0.5,
+)
+_EST = ScaleEstimate(scale=1.67, confidence=0.85, objective="20", evidence={})
+
+
+async def test_preview_recalculates_and_writes_nothing(monkeypatch) -> None:
+    finding, image = _finding(), _image()
+    db = _db_with(finding, image)
+    preview = AsyncMock(return_value=(_MEAS, _EST, None))
+    monkeypatch.setattr(router, "preview_detection", preview)
+    out = await router.preview(
+        5,
+        _user(),
+        MeasurementPreviewRequest(tuning=DetectionTuning(sensitivity=0.9)),
+        db,
+    )
+    assert out.diameter_px == 12.5 and out.selected_count == 31
+    assert out.proposed_scale == 1.67 and out.objective == "20"
+    assert out.confidence == 0.85 and out.reason is None
+    db.commit.assert_not_awaited()
+    # The semantic tuning became raw DetectorParams for the service.
+    passed = preview.await_args.args[2]
+    assert isinstance(passed, DetectorParams)
+    assert passed.sat_above_background == 8  # round(30 − 25·0.9)
+
+
+async def test_preview_default_body_uses_shipped_params(monkeypatch) -> None:
+    preview = AsyncMock(return_value=(None, None, "no_rbc_population"))
+    monkeypatch.setattr(router, "preview_detection", preview)
+    out = await router.preview(5, _user(), None, _db_with(_finding(), _image()))
+    assert out.reason == "no_rbc_population" and out.confidence == 0.0
+    assert out.proposed_scale is None and out.diameter_px is None
+    assert preview.await_args.args[2] == DetectorParams()
+
+
+@pytest.mark.parametrize("status", ["pending", "approved", "rejected"])
+async def test_preview_allowed_on_any_non_superseded_finding(
+    monkeypatch, status
+) -> None:
+    finding, image = _finding(status=status), _image()
+    monkeypatch.setattr(
+        router, "preview_detection", AsyncMock(return_value=(None, None, "x"))
+    )
+    out = await router.preview(5, _user(), None, _db_with(finding, image))
+    assert out.reason == "x"
+
+
+async def test_preview_superseded_is_409() -> None:
+    db = _db_with(_finding(status="superseded"), _image())
+    with pytest.raises(HTTPException) as exc:
+        await router.preview(5, _user(), None, db)
+    assert exc.value.status_code == 409
+
+
+async def test_preview_missing_finding_is_404() -> None:
+    db = AsyncMock()
+    db.get.return_value = None
+    with pytest.raises(HTTPException) as exc:
+        await router.preview(9, _user(), None, db)
+    assert exc.value.status_code == 404
+
+
+async def test_preview_missing_image_is_404() -> None:
+    db = _db_with(_finding(), None)
+    with pytest.raises(HTTPException) as exc:
+        await router.preview(5, _user(), None, db)
+    assert exc.value.status_code == 404
+
+
+async def test_preview_detection_missing_source() -> None:
+    db = AsyncMock()
+    db.scalar.return_value = None  # _latest_source_path finds nothing
+    out = await service.preview_detection(db, _image(), None)
+    assert out == (None, None, "source_missing")
+
+
+async def test_preview_detection_skips_huge_slide() -> None:
+    db = AsyncMock()
+    db.scalar.return_value = __file__
+    out = await service.preview_detection(
+        db, _image(width=9000, height=9000), None
+    )
+    assert out == (None, None, "slide_too_large_for_rbc")
+
+
+async def test_preview_detection_no_population(monkeypatch) -> None:
+    db = AsyncMock()
+    db.scalar.return_value = __file__
+    monkeypatch.setattr(
+        service, "_detect_measurement", MagicMock(return_value=(None, None))
+    )
+    out = await service.preview_detection(db, _image(), None)
+    assert out == (None, None, "no_rbc_population")
+
+
+async def test_preview_detection_reports_detector_failure(monkeypatch) -> None:
+    db = AsyncMock()
+    db.scalar.return_value = __file__
+    boom = MagicMock(side_effect=RuntimeError("vips"))
+    monkeypatch.setattr(service, "_detect_measurement", boom)
+    out = await service.preview_detection(db, _image(), None)
+    assert out == (None, None, "detect_failed")
+
+
+async def test_preview_detection_threads_params(monkeypatch) -> None:
+    db = AsyncMock()
+    db.scalar.return_value = __file__
+    detect = MagicMock(return_value=(_MEAS, _EST))
+    monkeypatch.setattr(service, "_detect_measurement", detect)
+    params = DetectorParams(min_radius_px=8.0)
+    out = await service.preview_detection(db, _image(), params)
+    assert out == (_MEAS, _EST, None)
+    assert detect.call_args.args[3] is params
+
+
+async def test_preview_detection_threads_outline_flag(monkeypatch) -> None:
+    db = AsyncMock()
+    db.scalar.return_value = __file__
+    detect = MagicMock(return_value=(_MEAS, _EST))
+    monkeypatch.setattr(service, "_detect_measurement", detect)
+    await service.preview_detection(db, _image(), None, with_outline=True)
+    assert detect.call_args.args[4] is True
+
+
+async def test_preview_include_outline_returns_geometry(monkeypatch) -> None:
+    png = pyvips.Image.black(4, 4).draw_rect(2, 1, 1, 2, 2, fill=True)
+    meas = RbcMeasurement(
+        diameter_px=12.5,
+        component_count=48,
+        selected_count=31,
+        peak_fraction=0.64,
+        work_scale=0.5,
+        outline_png=png.write_to_buffer(".png"),
+    )
+    monkeypatch.setattr(
+        router, "preview_detection", AsyncMock(return_value=(meas, _EST, None))
+    )
+    out = await router.preview(
+        5,
+        _user(),
+        MeasurementPreviewRequest(include=["outline"]),
+        _db_with(_finding(), _image()),
+    )
+    assert out.work_scale == 0.5 and out.outline is not None
+    decoded = pyvips.Image.new_from_buffer(base64.b64decode(out.outline), "")
+    assert (decoded.width, decoded.height) == (4, 4)
+
+
+async def test_preview_omits_outline_unless_requested(monkeypatch) -> None:
+    preview = AsyncMock(return_value=(_MEAS, _EST, None))
+    monkeypatch.setattr(router, "preview_detection", preview)
+    out = await router.preview(5, _user(), None, _db_with(_finding(), _image()))
+    assert out.outline is None and out.work_scale == 0.5
+    assert preview.await_args.kwargs.get("with_outline") is not True
+
+
+async def test_update_finding_persists_params(monkeypatch) -> None:
+    finding, image = _finding(), _image()
+    db = _db_with(finding, image)
+    preview = AsyncMock(return_value=(_MEAS, _EST, None))
+    monkeypatch.setattr(router, "preview_detection", preview)
+    tuning = DetectionTuning(sensitivity=0.9, min_cell_size=5.0)
+    out = await router.update_finding(
+        5, MeasurementFindingUpdate(params=tuning), _user(), db
+    )
+    assert finding.params == tuning.model_dump()
+    assert out.params == tuning
+    db.commit.assert_awaited_once()
+
+
+async def test_update_finding_reproposes_under_saved_tuning(monkeypatch) -> None:
+    """The stored proposal must reflect the saved params — otherwise
+    approval would promote a scale the reviewer never previewed (#1871)."""
+    finding, image = _finding(proposed_scale=7.3, confidence=0.4), _image()
+    db = _db_with(finding, image)
+    monkeypatch.setattr(
+        router, "preview_detection", AsyncMock(return_value=(_MEAS, _EST, None))
+    )
+    out = await router.update_finding(
+        5,
+        MeasurementFindingUpdate(params=DetectionTuning(sensitivity=0.9)),
+        _user(),
+        db,
+    )
+    assert out.proposed_scale == 1.67 and out.objective == "20"
+    assert out.confidence == 0.85
+
+
+async def test_update_finding_marks_current_detector_version(monkeypatch) -> None:
+    """A retuned finding's proposal comes from the current detector — keep
+    the version in step or Re-scan outdated would supersede it (#1890)."""
+    finding, image = _finding(detector_version="rbc-0"), _image()
+    db = _db_with(finding, image)
+    monkeypatch.setattr(
+        router, "preview_detection", AsyncMock(return_value=(_MEAS, _EST, None))
+    )
+    await router.update_finding(
+        5, MeasurementFindingUpdate(params=None), _user(), db
+    )
+    assert finding.detector_version == DETECTOR_VERSION
+
+
+async def test_update_finding_reproposes_reason(monkeypatch) -> None:
+    finding, image = _finding(proposed_scale=7.3), _image()
+    db = _db_with(finding, image)
+    monkeypatch.setattr(
+        router,
+        "preview_detection",
+        AsyncMock(return_value=(None, None, "no_rbc_population")),
+    )
+    out = await router.update_finding(
+        5, MeasurementFindingUpdate(params=None), _user(), db
+    )
+    assert out.proposed_scale is None and out.confidence == 0.0
+    assert out.evidence == {"reason": "no_rbc_population"}
+
+
+async def test_update_finding_null_clears_params(monkeypatch) -> None:
+    finding = _finding(params={"sensitivity": 0.9})
+    db = _db_with(finding, _image())
+    preview = AsyncMock(return_value=(_MEAS, _EST, None))
+    monkeypatch.setattr(router, "preview_detection", preview)
+    out = await router.update_finding(
+        5, MeasurementFindingUpdate(params=None), _user(), db
+    )
+    assert finding.params is None and out.params is None
+    # Cleared tuning re-detects with shipped defaults.
+    assert preview.await_args.args[2] is None
+
+
+@pytest.mark.parametrize("status", ["approved", "rejected", "superseded"])
+async def test_update_finding_reviewed_is_409(status) -> None:
+    db = _db_with(_finding(status=status), _image())
+    with pytest.raises(HTTPException) as exc:
+        await router.update_finding(
+            5, MeasurementFindingUpdate(params=DetectionTuning()), _user(), db
+        )
+    assert exc.value.status_code == 409
+
+
+async def test_update_finding_missing_image_is_404() -> None:
+    db = _db_with(_finding(), None)
+    with pytest.raises(HTTPException) as exc:
+        await router.update_finding(
+            5, MeasurementFindingUpdate(params=None), _user(), db
+        )
+    assert exc.value.status_code == 404
+
+
+def test_parameterized_routes_never_shadow_literals() -> None:
+    """``/{finding_id}`` routes must be declared after same-method literals —
+    FastAPI resolves in declaration order (#1867)."""
+    for method in ("GET", "POST", "PATCH", "DELETE", "PUT"):
+        seen_param = False
+        for route in router.router.routes:
+            if method not in (route.methods or ()):
+                continue
+            if "{" in route.path:
+                seen_param = True
+            elif seen_param:
+                pytest.fail(f"{method} literal {route.path} declared after /{{id}}")
+
+
+def test_detection_tuning_rejects_untranslatable_advanced() -> None:
+    """`advanced` values failing DetectorParams' range checks must fail
+    request validation (422), not blow up inside preview/PATCH (#1867
+    review)."""
+    for bad in (
+        {"min_radius_px": 0.0},
+        {"sat_above_background": 0.0},
+        {"purple_hue_min": 200.0, "purple_hue_max": 100.0},
+    ):
+        with pytest.raises(ValidationError):
+            MeasurementPreviewRequest(tuning=DetectionTuning(advanced=dict(bad)))
+        with pytest.raises(ValidationError):
+            MeasurementFindingUpdate(params=DetectionTuning(advanced=dict(bad)))

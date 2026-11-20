@@ -40,6 +40,8 @@ import type {
   User,
 } from './types'
 import { useBackgroundRefresh } from './useBackgroundRefresh'
+import { memberKey, memberSlotInput } from './collectionMembers'
+import type { CollectionMember, SlotViewport } from './types'
 
 /** Owner facet of the Collections list filter bar. */
 export type CollectionOwnerFilter = 'any' | 'orphaned' | CollectionOwner
@@ -285,6 +287,7 @@ export function matchesCollectionFilters(
 }
 
 export interface UseCollectionsDataOptions {
+  markersEnabled?: boolean
   /** Only fetch while the Collections tab is active. */
   enabled: boolean
   currentUser: User | null
@@ -313,6 +316,7 @@ export interface UseCollectionsDataOptions {
 }
 
 export function useCollectionsData({
+  markersEnabled = false,
   enabled,
   currentUser,
   selectedCollectionId,
@@ -827,18 +831,18 @@ export function useCollectionsData({
     return queued.version > detail.version ? queued : detail
   }
   const reorderImages = useCallback(
-    (id: number, imageIds: number[]): Promise<Collection> => {
+    (id: number, imageIds: number[], members?: CollectionMember[]): Promise<Collection> => {
       const run = async (prior: Collection | null): Promise<Collection> => {
         const baseline = baselineFor(id, prior)
         if (!baseline || baseline.id !== id) {
           throw new Error('The collection is not loaded.')
         }
-        const byId = new Map(baseline.images.map((img) => [img.id, img] as const))
-        const optimisticImages = [
+        const byId = new Map(baseline.images.map((img) => [memberKey(img), img] as const))
+        const optimisticImages = members ?? [
           ...imageIds
             .map((imageId) => byId.get(imageId))
             .filter((img): img is NonNullable<typeof img> => img != null),
-          ...baseline.images.filter((img) => !imageIds.includes(img.id)),
+          ...baseline.images.filter((img) => !imageIds.includes(memberKey(img))),
         ]
         // Only paint the optimistic order when this collection is still open —
         // a queued drop can run after the user opened another collection, and
@@ -847,7 +851,13 @@ export function useCollectionsData({
         try {
           const updated = apiCollectionToCollection(
             await replaceCollectionImages(id, {
-              image_ids: imageIds,
+              ...(markersEnabled
+                ? {
+                    slots: (members ?? imageIds.map((key) => byId.get(key) ?? { id: key })).map(
+                      memberSlotInput,
+                    ),
+                  }
+                : { image_ids: imageIds }),
               version: baseline.version,
             }),
           )
@@ -868,7 +878,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [writeCurrentRows, placeRow],
+    [writeCurrentRows, placeRow, markersEnabled],
   )
 
   /**
@@ -878,7 +888,11 @@ export function useCollectionsData({
    * save cannot send a version an in-flight reorder has already consumed.
    */
   const saveViewport = useCallback(
-    (id: number, viewportState: Record<string, unknown>): Promise<Collection> => {
+    (
+      id: number,
+      viewportState: Record<string, unknown>,
+      slotViewports?: Record<string, SlotViewport | null>,
+    ): Promise<Collection> => {
       const run = async (prior: Collection | null): Promise<Collection> => {
         const baseline = baselineFor(id, prior)
         if (!baseline || baseline.id !== id) {
@@ -887,6 +901,7 @@ export function useCollectionsData({
         const updated = apiCollectionToCollection(
           await saveCollectionViewport(id, {
             viewport_state: viewportState,
+            ...(markersEnabled && slotViewports ? { slot_viewports: slotViewports } : {}),
             version: baseline.version,
           }),
         )
@@ -901,7 +916,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [writeCurrentRows, placeRow],
+    [writeCurrentRows, placeRow, markersEnabled],
   )
 
   /**
@@ -1167,7 +1182,7 @@ export function useCollectionsData({
   const addImages = useCallback(
     (id: number, imageIds: number[], requestRole = role): Promise<AddToCollectionResult> => {
       const run = async (): Promise<AddToCollectionResult> => {
-        const result = await addImagesToCollection(id, imageIds, requestRole)
+        const result = await addImagesToCollection(id, imageIds, requestRole, markersEnabled)
         mergeUpdated(result.collection)
         return result
       }
@@ -1178,7 +1193,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [mergeUpdated, role],
+    [mergeUpdated, role, markersEnabled],
   )
 
   /**
@@ -1191,7 +1206,7 @@ export function useCollectionsData({
   const removeImages = useCallback(
     (id: number, imageIds: number[], base?: Collection): Promise<Collection> => {
       const run = async (): Promise<Collection> => {
-        const updated = await removeImagesFromCollection(id, imageIds, base)
+        const updated = await removeImagesFromCollection(id, imageIds, base, markersEnabled)
         mergeUpdated(updated)
         return updated
       }
@@ -1202,7 +1217,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [mergeUpdated],
+    [mergeUpdated, markersEnabled],
   )
 
   /**
@@ -1214,7 +1229,10 @@ export function useCollectionsData({
     const fresh = apiImageToItem(image)
     setDetail((prev) =>
       prev?.id === collectionId
-        ? { ...prev, images: prev.images.map((img) => (img.id === fresh.id ? fresh : img)) }
+        ? {
+            ...prev,
+            images: prev.images.map((img) => (img.id === fresh.id ? { ...img, ...fresh } : img)),
+          }
         : prev,
     )
   }, [])

@@ -1,7 +1,12 @@
-from datetime import datetime
-from typing import Annotated, Literal
+from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Annotated, Literal
+
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_serializer, model_validator
+
+if TYPE_CHECKING:
+    from .measurement.detector import DetectorParams
 
 MAX_NOTE_LENGTH = 500
 
@@ -168,54 +173,150 @@ class GroupMembersBulk(BaseModel):
 
 # ── Announcement ─────────────────────────────────────────
 
-class AnnouncementOut(BaseModel):
-    id: int
-    message: str
-    enabled: bool
-    created_at: datetime
-    updated_at: datetime
+ANNOUNCEMENT_MESSAGE_MAX_CHARS = 10_000
 
-    model_config = {"from_attributes": True}
+
+def _assume_utc(v: datetime | None) -> datetime | None:
+    """Naive timestamps are taken as UTC so comparisons with ``now()`` never raise."""
+    if isinstance(v, datetime) and v.tzinfo is None:
+        return v.replace(tzinfo=timezone.utc)
+    return v
+
+
+AnnouncementAudience = Literal[
+    "everyone", "staff", "admins", "instructors", "staff_only", "targeted"
+]
+
+
+class AnnouncementCreate(BaseModel):
+    """``POST /api/announcements``.
+
+    ``publish_at`` omitted → published now unless ``draft`` is true.
+    ``audience='targeted'`` needs at least one program or group id.
+    """
+
+    title: str = Field(min_length=1, max_length=255)
+    message: str = Field(default="", max_length=ANNOUNCEMENT_MESSAGE_MAX_CHARS)
+    kind: Literal["notice", "event", "reminder", "celebration", "release", "warning"] = "notice"
+    audience: AnnouncementAudience = "targeted"
+    program_ids: list[int] = Field(default_factory=list)
+    group_ids: list[int] = Field(default_factory=list)
+    publish_at: datetime | None = None
+    expires_at: datetime | None = None
+    draft: bool = False
+    pinned: bool = False
+    banner: bool = False
+
+    _validate_title = field_validator("title", mode="before")(normalize_nonblank_value)
+    _utc_dates = field_validator("publish_at", "expires_at", mode="after")(_assume_utc)
+
+    @model_validator(mode="after")
+    def _check_targets_and_window(self) -> "AnnouncementCreate":
+        if self.audience == "targeted" and not (self.program_ids or self.group_ids):
+            raise ValueError("A targeted announcement needs at least one program or group")
+        if self.audience != "targeted" and (self.program_ids or self.group_ids):
+            raise ValueError("program_ids/group_ids are only valid with audience='targeted'")
+        if self.publish_at and self.expires_at and self.expires_at <= self.publish_at:
+            raise ValueError("expires_at must be after publish_at")
+        return self
 
 
 class AnnouncementUpdate(BaseModel):
-    message: str | None = None
-    enabled: bool | None = None
+    """``PATCH /api/announcements/{id}``.
 
-    _validate_message = field_validator("message", mode="before")(normalize_optional_nonblank_value)
+    Only supplied fields change. ``draft=true`` unpublishes; ``draft=false``
+    publishes now when no ``publish_at`` is given. ``notify_again`` bumps
+    ``notified_at`` so every reader sees the announcement as new again.
+    """
+
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    message: str | None = Field(default=None, max_length=ANNOUNCEMENT_MESSAGE_MAX_CHARS)
+    kind: Literal["notice", "event", "reminder", "celebration", "release", "warning"] | None = None
+    audience: AnnouncementAudience | None = None
+    program_ids: list[int] | None = None
+    group_ids: list[int] | None = None
+    publish_at: datetime | None = None
+    expires_at: datetime | None = None
+    clear_expires_at: bool = False
+    draft: bool | None = None
+    pinned: bool | None = None
+    banner: bool | None = None
+    notify_again: bool = False
+
+    _validate_title = field_validator("title", mode="before")(normalize_optional_nonblank_value)
+    _utc_dates = field_validator("publish_at", "expires_at", mode="after")(_assume_utc)
+
+    def touches_targeting(self) -> bool:
+        return (
+            self.audience is not None
+            or self.program_ids is not None
+            or self.group_ids is not None
+        )
 
 
-# ── Changelog ────────────────────────────────────────────
+class AnnouncementOut(BaseModel):
+    """One card in ``inbox`` / ``mine``. ``seen_count`` / ``audience_size`` are
+    only populated for admin, instructor and staff callers."""
 
-class ChangelogEntryOut(BaseModel):
     id: int
     title: str
-    body: str
-    published_at: datetime
+    message: str
+    kind: str
+    icon: str
+    severity: str
+    audience: str
+    author_id: int | None
+    author_name: str
+    program_ids: list[int]
+    program_names: list[str]
+    group_ids: list[int]
+    group_names: list[str]
+    publish_at: datetime | None
+    expires_at: datetime | None
+    notified_at: datetime | None
+    pinned: bool
+    banner: bool
+    status: Literal["draft", "scheduled", "live", "expired"]
+    seen: bool
+    reactions: dict[str, int]
+    my_reactions: list[str]
+    media_tokens: dict[str, str]
+    can_edit: bool
+    seen_count: int | None = None
+    audience_size: int | None = None
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
 
+class AnnouncementBroadcastOut(BaseModel):
+    """Minimal public shape for the login screen (``GET /api/announcements/broadcast``)."""
 
-class ChangelogEntryCreate(BaseModel):
+    id: int
     title: str
-    body: str
-
-    _validate_title = field_validator("title", mode="before")(normalize_nonblank_value)
-    _validate_body = field_validator("body", mode="before")(normalize_nonblank_value)
-
-
-class ChangelogEntryUpdate(BaseModel):
-    title: str | None = None
-    body: str | None = None
-
-    _validate_title = field_validator("title", mode="before")(normalize_optional_nonblank_value)
-    _validate_body = field_validator("body", mode="before")(normalize_optional_nonblank_value)
+    message: str
+    kind: str
+    icon: str
+    severity: str
+    publish_at: datetime | None
+    expires_at: datetime | None
+    updated_at: datetime
+    media_tokens: dict[str, str]
 
 
-class ChangelogMarkReadResponse(BaseModel):
-    changelog_last_read_at: str
+class ReactionsOut(BaseModel):
+    reactions: dict[str, int]
+    my_reactions: list[str]
+
+
+class MediaUploadOut(BaseModel):
+    """``POST /api/media/``: ``tokenized_url`` is ready to paste into Markdown."""
+
+    id: int
+    url: str
+    tokenized_url: str
+    content_type: str
+    size_bytes: int
+    original_name: str
 
 
 # ── Long-running Job ─────────────────────────────────────
@@ -847,8 +948,45 @@ class CollectionSummaryOut(BaseModel):
         return append_tile_token(value)
 
 
+class SlotViewport(BaseModel):
+    x: Annotated[float, Field(strict=True, allow_inf_nan=False)]
+    y: Annotated[float, Field(strict=True, allow_inf_nan=False)]
+    zoom: Annotated[float, Field(strict=True, gt=0, allow_inf_nan=False)]
+    rotation: Annotated[float, Field(strict=True, allow_inf_nan=False)] | None = None
+
+    @model_serializer
+    def _viewport_fields(self) -> dict[str, float]:
+        result = {"x": self.x, "y": self.y, "zoom": self.zoom}
+        if self.rotation is not None:
+            result["rotation"] = self.rotation
+        return result
+
+
+class CollectionSlotOut(BaseModel):
+    id: int
+    viewport_state: SlotViewport | None = None
+    thumb: str | None = None
+    label: str | None = None
+
+    @field_serializer("thumb")
+    def _tokenize_thumb(self, value: str | None) -> str | None:
+        from .tile_tokens import append_slot_thumb_token
+        return append_slot_thumb_token(value) if value else None
+
+
+class CollectionMemberOut(ImageOut):
+    slot: CollectionSlotOut | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_empty_slot(self, handler):
+        result = handler(self)
+        if self.slot is None:
+            result.pop("slot", None)
+        return result
+
+
 class CollectionOut(CollectionSummaryOut):
-    images: list[ImageOut] = []
+    images: list[CollectionMemberOut] = []
     viewport_state: dict = {}
     # Nominal member count for unfiltered viewers (non-students), so the
     # detail view can distinguish "empty collection" from "all members are
@@ -966,7 +1104,8 @@ def validate_collection_image_ids(
     Existence and per-caller visibility of each id are checked by the router
     against the database; this is the request-shape half of the contract.
     """
-    if len(set(image_ids)) != len(image_ids):
+    from .database import settings
+    if not settings.markers_enabled and len(set(image_ids)) != len(image_ids):
         raise ValueError("image_ids must not contain duplicates")
     if (
         collection_type == "synchronized"
@@ -979,7 +1118,29 @@ def validate_collection_image_ids(
     return image_ids
 
 
-class CollectionCreate(BaseModel):
+class CollectionSlotInput(BaseModel):
+    id: int | None = Field(default=None, gt=0)
+    image_id: int = Field(gt=0)
+    marker_id: int | None = Field(default=None, gt=0)
+    viewport_state: SlotViewport | None = None
+    label: str | None = Field(default=None, max_length=255)
+
+
+class CollectionSlotSources(BaseModel):
+    slots: list[CollectionSlotInput] | None = None
+    source_board_id: int | None = Field(default=None, gt=0)
+    marker_ids: list[int] | None = None
+
+    @model_validator(mode="after")
+    def _gate_slots(self):
+        from .database import settings
+        fields = {"slots", "source_board_id", "marker_ids"}
+        if not settings.markers_enabled and self.model_fields_set & fields:
+            raise ValueError("Collection slots require Markers to be enabled")
+        return self
+
+
+class CollectionCreate(CollectionSlotSources):
     name: str = Field(max_length=COLLECTION_NAME_MAX_LENGTH)
     description: str | None = None
     type: CollectionType
@@ -1045,15 +1206,22 @@ class CollectionMove(BaseModel):
     version: int
 
 
-class CollectionImagesUpdate(BaseModel):
+class CollectionImagesUpdate(CollectionSlotSources):
     """PUT body replacing the whole ordered image list (add/remove/reorder).
 
     The synchronized cap is enforced by the router, which knows the
     collection's type; duplicates are rejected here.
     """
 
-    image_ids: list[int]
+    image_ids: list[int] = []
     version: int
+
+    @model_validator(mode="after")
+    def _require_legacy_images(self):
+        from .database import settings
+        if not settings.markers_enabled and "image_ids" not in self.model_fields_set:
+            raise ValueError("image_ids is required")
+        return self
 
     @field_validator("image_ids")
     @classmethod
@@ -1064,8 +1232,19 @@ class CollectionImagesUpdate(BaseModel):
 class CollectionViewportUpdate(BaseModel):
     """PUT body replacing ``viewport_state`` wholesale (never a partial merge)."""
 
-    viewport_state: dict
+    viewport_state: dict = Field(default_factory=dict)
     version: int
+    slot_viewports: dict[int, SlotViewport | None] | None = None
+
+    @model_validator(mode="after")
+    def _gate_slot_viewports(self):
+        from .database import settings
+        if not settings.markers_enabled:
+            if "slot_viewports" in self.model_fields_set:
+                raise ValueError("Slot viewports require Markers to be enabled")
+            if "viewport_state" not in self.model_fields_set:
+                raise ValueError("viewport_state is required")
+        return self
 
 
 class CollectionOwnersUpdate(BaseModel):
@@ -1209,6 +1388,84 @@ class MeasurementScanRemainingOut(BaseModel):
     remaining: int
 
 
+# Int-typed DetectorParams fields (``advanced`` values are rounded into them).
+_DETECTOR_INT_FIELDS = frozenset({
+    "sat_above_background",
+    "purple_hue_min",
+    "purple_hue_max",
+    "purple_sat_min",
+})
+
+
+class DetectionTuning(BaseModel):
+    """Instructor-facing detection tuning (epic #1865, #1866).
+
+    The small semantic set the review dialog exposes — raw detector
+    constants never leave the backend. ``advanced`` may override any
+    ``DetectorParams`` field by name for API callers but is not surfaced
+    in the UI.
+    """
+
+    # 0 → strict (only obvious cells), 1 → permissive (fainter cells).
+    sensitivity: float = Field(default=0.6, ge=0.0, le=1.0)
+    # Smallest component radius (work-image px) that counts as a cell.
+    min_cell_size: float = Field(default=3.0, gt=0.0, le=100.0)
+    # Exclude dark purple-stained objects (leukocyte nuclei).
+    exclude_nuclei: bool = True
+    # Optional raw DetectorParams field overrides, kept out of the UI.
+    advanced: dict[str, float] | None = None
+
+    @field_validator("advanced")
+    @classmethod
+    def _advanced_keys_known(
+        cls, value: dict[str, float] | None
+    ) -> dict[str, float] | None:
+        if value is None:
+            return value
+        from .measurement.detector import DetectorParams
+
+        unknown = set(value) - set(DetectorParams.__dataclass_fields__)
+        if unknown:
+            raise ValueError(f"unknown detector params: {sorted(unknown)}")
+        return value
+
+    @model_validator(mode="after")
+    def _translatable(self) -> "DetectionTuning":
+        """Reject tuning that cannot become a valid ``DetectorParams``.
+
+        ``__post_init__`` range checks (e.g. ``advanced.min_radius_px=0``)
+        raise ``ValueError`` — catching it here turns what would be a 500 in
+        the preview/PATCH handlers into a 422 at request validation.
+        """
+        try:
+            self.to_detector_params()
+        except ValueError as exc:
+            raise ValueError(f"invalid detector params: {exc}") from exc
+        return self
+
+    def to_detector_params(self) -> DetectorParams:
+        """Translate the semantic set into raw ``DetectorParams``."""
+        from .measurement.detector import DetectorParams
+
+        # Sensitivity is the inverse of the background threshold:
+        # 0 → 30 (strict), ~0.6 → 15 (shipped default), 1 → 5 (faint).
+        overrides: dict = {
+            "sat_above_background": round(30 - 25 * self.sensitivity),
+            "min_radius_px": self.min_cell_size,
+        }
+        if not self.exclude_nuclei:
+            # ``sat > 255`` is never true — the purple mask comes out
+            # empty and every foreground component is kept, nuclei too.
+            overrides["purple_sat_min"] = 255
+        if self.advanced:
+            overrides.update(self.advanced)
+        overrides = {
+            k: int(round(v)) if k in _DETECTOR_INT_FIELDS else v
+            for k, v in overrides.items()
+        }
+        return DetectorParams(**overrides)
+
+
 class MeasurementFindingOut(BaseModel):
     id: int
     image_id: int
@@ -1231,6 +1488,8 @@ class MeasurementFindingOut(BaseModel):
     approved_objective: str | None
     # Calibrated px/µm per objective for this camera; None for unknown cameras.
     objective_scales: dict[str, float] | None
+    # Instructor-tuned detection values saved on the finding; None = defaults.
+    params: DetectionTuning | None
     reviewed_by: int | None
     reviewed_at: datetime | None
     created_at: datetime
@@ -1267,9 +1526,254 @@ class MeasurementBulkApprove(BaseModel):
     ids: list[int] = Field(min_length=1, max_length=200)
 
 
+class MeasurementPreviewRequest(BaseModel):
+    # Candidate tuning to preview; the default maps to shipped constants.
+    tuning: DetectionTuning = DetectionTuning()
+    # Extra payload opt-ins; "outline" adds the component-outline raster.
+    include: list[Literal["outline"]] | None = None
+
+
+class DetectionPreviewOut(BaseModel):
+    """Read-only detection + calibration preview under candidate tuning."""
+
+    diameter_px: float | None
+    component_count: int | None
+    selected_count: int | None
+    peak_fraction: float | None
+    proposed_scale: float | None
+    proposed_unit: str
+    objective: str | None
+    confidence: float
+    # Why no proposal was produced: source_missing, slide_too_large_for_rbc,
+    # detect_failed or no_rbc_population; None on success.
+    reason: str | None
+    # work-image px per source px — divide mask coords by it for level-0.
+    work_scale: float | None = None
+    # Base64 PNG (include=outline only): 0 none, 1 rejected fill, 2 selected fill.
+    outline: str | None = None
+
+
+class MeasurementFindingUpdate(BaseModel):
+    # Tuned detection values persisted on a pending finding; null clears.
+    params: DetectionTuning | None
+
+
 class MeasurementBulkApproveOut(BaseModel):
     approved: list[int]
     skipped: list[int]
+
+
+class BoardCreate(BaseModel):
+    name: str = Field(max_length=255)
+    description: str | None = None
+    visibility: Literal["private", "public", "restricted"] = "private"
+    program_ids: list[int] = []
+    group_ids: list[int] = []
+
+    _name = field_validator("name", mode="before")(normalize_nonblank_value)
+    _description = field_validator("description", mode="before")(normalize_collection_description)
+
+    @model_validator(mode="after")
+    def _scope(self) -> "BoardCreate":
+        if self.visibility != "restricted" and (self.program_ids or self.group_ids):
+            raise ValueError("program_ids/group_ids require restricted visibility")
+        return self
+
+
+class BoardUpdate(BaseModel):
+    name: str | None = Field(None, max_length=255)
+    description: str | None = None
+    visibility: Literal["private", "public", "restricted"] | None = None
+    program_ids: list[int] | None = None
+    group_ids: list[int] | None = None
+    # Pinned tile cover member; ``null`` clears the pin (first-member
+    # fallback). Distinguished from "unset" via ``model_fields_set``.
+    cover_marker_id: int | None = None
+    # Explicit "no cover" pick — the tile renders the placeholder.
+    cover_blank: bool | None = None
+    version: int | None = Field(None, ge=1)
+
+    _name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
+    _description = field_validator("description", mode="before")(normalize_collection_description)
+
+
+class BoardOwnersUpdate(BaseModel):
+    user_ids: list[int]
+    version: int | None = Field(None, ge=1)
+
+    @field_validator("user_ids")
+    @classmethod
+    def _dedupe(cls, value: list[int]) -> list[int]:
+        return list(dict.fromkeys(value))
+
+
+class BoardTransfer(BaseModel):
+    program_id: int | None
+    version: int | None = Field(None, ge=1)
+
+
+class BoardOrderItem(BaseModel):
+    board_id: int
+    version: int | None = Field(None, ge=1)
+
+
+class BoardOrderUpdate(BaseModel):
+    items: list[BoardOrderItem]
+
+    @model_validator(mode="after")
+    def _unique(self) -> "BoardOrderUpdate":
+        if len({item.board_id for item in self.items}) != len(self.items):
+            raise ValueError("Duplicate Board IDs")
+        return self
+
+
+class BoardAssignment(BaseModel):
+    board_id: int = Field(gt=0)
+    sort_order: int | None = None
+
+
+def validate_board_assignments(value: list[BoardAssignment]) -> list[BoardAssignment]:
+    if len({item.board_id for item in value}) != len(value):
+        raise ValueError("Duplicate Board assignments")
+    return value
+
+
+class MarkerCreate(BaseModel):
+    image_id: int
+    title: str = Field(max_length=255)
+    description: str | None = None
+    x: float = Field(allow_inf_nan=False)
+    y: float = Field(allow_inf_nan=False)
+    zoom: float = Field(gt=0, allow_inf_nan=False)
+    rotation: float = Field(0, allow_inf_nan=False)
+    favourite: bool = False
+    board_assignments: list[BoardAssignment] = Field(min_length=1)
+
+    _title = field_validator("title", mode="before")(normalize_nonblank_value)
+    _description = field_validator("description", mode="before")(normalize_collection_description)
+    _assignments = field_validator("board_assignments")(validate_board_assignments)
+
+
+class MarkerUpdate(BaseModel):
+    title: str | None = Field(None, max_length=255)
+    description: str | None = None
+    x: float | None = Field(None, allow_inf_nan=False)
+    y: float | None = Field(None, allow_inf_nan=False)
+    zoom: float | None = Field(None, gt=0, allow_inf_nan=False)
+    rotation: float | None = Field(None, allow_inf_nan=False)
+    favourite: bool | None = None
+    board_assignments: list[BoardAssignment] | None = None
+    version: int | None = Field(None, ge=1)
+
+    _title = field_validator("title", mode="before")(normalize_optional_nonblank_value)
+    _description = field_validator("description", mode="before")(normalize_collection_description)
+
+    @field_validator("x", "y", "zoom", "rotation", "favourite", "board_assignments")
+    @classmethod
+    def _not_null(
+        cls, value: float | bool | list[BoardAssignment] | None,
+    ) -> float | bool | list[BoardAssignment]:
+        if value is None:
+            raise ValueError("Field may not be null")
+        return value
+
+    @field_validator("board_assignments")
+    @classmethod
+    def _assignments(cls, value: list[BoardAssignment] | None) -> list[BoardAssignment] | None:
+        return validate_board_assignments(value) if value is not None else value
+
+
+class MarkerOrderItem(BaseModel):
+    marker_id: int
+    version: int | None = Field(None, ge=1)
+
+
+class MarkerOrderUpdate(BaseModel):
+    items: list[MarkerOrderItem]
+
+    @model_validator(mode="after")
+    def _unique(self) -> "MarkerOrderUpdate":
+        if len({item.marker_id for item in self.items}) != len(self.items):
+            raise ValueError("Duplicate Marker IDs")
+        return self
+
+
+class BoardMarkerOrderItem(BaseModel):
+    marker_id: int
+
+
+class BoardMarkersOrder(BaseModel):
+    items: list[BoardMarkerOrderItem]
+    version: int | None = Field(None, ge=1)
+
+    @model_validator(mode="after")
+    def _unique(self) -> "BoardMarkersOrder":
+        if len({item.marker_id for item in self.items}) != len(self.items):
+            raise ValueError("Duplicate Marker IDs")
+        return self
+
+
+class BoardPermissionsOut(BaseModel):
+    can_edit: bool
+    can_change_scope: bool
+    can_delete: bool
+    can_transfer: bool
+
+
+class MarkerPermissionsOut(BaseModel):
+    can_edit: bool
+    can_delete: bool
+
+
+class MarkerOut(BaseModel):
+    id: int
+    image_id: int
+    category_name: str | None = None
+    title: str
+    description: str | None = None
+    x: float
+    y: float
+    zoom: float
+    rotation: float
+    thumb: str | None = None
+    favourite: bool
+    sort_order: int
+    version: int
+    owners: list[CollectionOwnerOut]
+    board_ids: list[int]
+    source: Literal["mine", "instructor", "public"] | None = None
+    permissions: MarkerPermissionsOut
+    created_at: datetime
+    updated_at: datetime
+
+
+class BoardSummaryOut(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    visibility: Literal["private", "public", "restricted"]
+    owners: list[CollectionOwnerOut]
+    owner_program_id: int | None = None
+    program_ids: list[int]
+    group_ids: list[int]
+    marker_count: int
+    cover_thumb: str | None = None
+    # Pinned cover member (``boards.cover_marker_id``) when it resolves to
+    # a marker visible to the caller; ``None`` means the tile uses the
+    # first-member fallback.
+    cover_marker_id: int | None = None
+    # Explicit "no cover" pick: the tile renders the Board-icon placeholder
+    # and ``cover_thumb`` is ``None`` even with members present.
+    cover_blank: bool = False
+    sort_order: int
+    version: int
+    permissions: BoardPermissionsOut
+    created_at: datetime
+    updated_at: datetime
+
+
+class BoardOut(BoardSummaryOut):
+    markers: list[MarkerOut]
 
 
 class FeaturesOut(BaseModel):
@@ -1279,9 +1783,16 @@ class FeaturesOut(BaseModel):
     """
 
     collections: bool
+    markers: bool
     collections_student_access: bool
     collections_home_shelf: bool
-    counting: bool
+    # Always true; kept for one release so SPAs built before the gate's
+    # removal (which hide the counting UI unless this is true) keep rendering
+    # it. Object counting is now always on (#1859).
+    counting: bool = True
+    # Always true; kept for one release so SPAs built before the gate's removal
+    # (which hide the announcement UI unless this is true) keep rendering it.
+    announcements: bool = True
 
 
 # Rebuild forward refs for nested models (``CategoryTree`` embeds

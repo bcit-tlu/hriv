@@ -22,6 +22,27 @@ describe('buildNavHistoryState', () => {
 })
 
 describe('useNavigationHistory', () => {
+  it('preserves Board history behind an existing saved-image URL', () => {
+    const onPopState = vi.fn()
+    const { result } = renderHook(() => useNavigationHistory(onPopState))
+    act(() => result.current.pushNavState('boards', [], null, { board: '2', section: '11' }))
+    expect(window.location.search).toBe('?page=boards&board=2&section=11')
+    const boardState = window.history.state
+    expect(boardState).toMatchObject({ page: 'boards', boardId: 2 })
+    act(() =>
+      result.current.pushNavState('browse', [], 42, {
+        zoom: '3',
+        x: '0.4',
+        y: '0.2',
+        rotation: '90',
+      }),
+    )
+    expect(window.location.search).toContain('image=42')
+    expect(window.location.search).toContain('rotation=90')
+    window.history.replaceState(boardState, '', '/?page=boards&board=2&section=11')
+    act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: boardState })))
+    expect(onPopState).toHaveBeenCalledWith('boards', [], null, expect.any(Object))
+  })
   let pushStateSpy: ReturnType<typeof vi.spyOn>
   let addEventSpy: ReturnType<typeof vi.spyOn>
   let removeEventSpy: ReturnType<typeof vi.spyOn>

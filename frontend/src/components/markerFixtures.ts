@@ -1,0 +1,43 @@
+import type { ApiBoard, ApiMarker } from '../types'
+
+export const MARKER_FIXTURE: ApiMarker = {
+  id: 7,
+  image_id: 42,
+  title: 'Rose window',
+  description: 'Look closely at the tracery.',
+  x: 0.46,
+  y: 0.29,
+  zoom: 2.5,
+  rotation: 0,
+  thumb: null,
+  favourite: true,
+  sort_order: 0,
+  version: 3,
+  owners: [{ user_id: 9, program_id: null, name: 'Alex', role: 'student' }],
+  board_ids: [1],
+  source: 'mine',
+  permissions: { can_edit: true, can_delete: true },
+  created_at: '2026-01-02T03:04:05Z',
+  updated_at: '2026-01-02T03:04:05Z',
+}
+export const BOARD_FIXTURE: ApiBoard = {
+  id: 1,
+  name: 'Architecture inspiration',
+  description: null,
+  visibility: 'private',
+  owners: MARKER_FIXTURE.owners,
+  owner_program_id: null,
+  program_ids: [],
+  group_ids: [],
+  marker_count: 1,
+  cover_thumb: null,
+  cover_marker_id: null,
+  cover_blank: false,
+  sort_order: 0,
+  version: 5,
+  permissions: { can_edit: true, can_change_scope: true, can_delete: true, can_transfer: false },
+  created_at: MARKER_FIXTURE.created_at,
+  updated_at: MARKER_FIXTURE.updated_at,
+
+  markers: [{ ...MARKER_FIXTURE }],
+}

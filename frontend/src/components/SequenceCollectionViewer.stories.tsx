@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Box from '@mui/material/Box'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import { AuthContext, type AuthContextValue } from '../authContextValue'
@@ -114,29 +115,37 @@ const EMPTY = makeCollection([], true)
 const EMPTY_READ_ONLY = makeCollection([], false)
 
 interface StoryArgs {
+  markersEnabled?: boolean
   collection: Collection
   itemId: number | null
-  onSelectItem: (id: number) => void
+  onSelectItem: (id: number, slotId?: number) => void
   onOpenImage: (image: ImageItem) => void
   onImageRenewed: (image: ApiImage) => void
   onError: (message: string) => void
+  canEditContent?: boolean
 }
 
 function SequenceViewerExample(args: StoryArgs) {
   const [itemId, setItemId] = useState<number | null>(args.itemId)
+  const [slotId, setSlotId] = useState<number | null>(null)
   const user = makeUser()
   return (
     <AuthContext.Provider value={makeAuth(user)}>
       <SequenceCollectionViewer
+        markersEnabled={args.markersEnabled}
+        slotId={slotId}
         collection={args.collection}
         itemId={itemId}
-        onSelectItem={(id) => {
+        onSelectItem={(id, slot) => {
           setItemId(id)
-          args.onSelectItem(id)
+          setSlotId(slot ?? null)
+          if (slot != null) args.onSelectItem(id, slot)
+          else args.onSelectItem(id)
         }}
         onOpenImage={args.onOpenImage}
         onImageRenewed={args.onImageRenewed}
         onError={args.onError}
+        canEditContent={args.canEditContent}
       />
     </AuthContext.Provider>
   )
@@ -153,7 +162,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Read-only one-image-at-a-time viewer for sequence collections: a filmstrip above the image, lightbox-style Previous/Next edge buttons that appear on pointer activity, a caption row with the member name, position readout and Open image button, and autofocused arrow-key support. Member management (reorder/add/remove) lives in the Manage dialog on the collection page (#1566).',
+          'One-image-at-a-time viewer for sequence collections: a filmstrip above the image, lightbox-style Previous/Next edge buttons that appear on pointer activity, a caption row with the member name, position readout and Open image button, and autofocused arrow-key support. Member management (reorder/add/remove) lives in the Manage dialog on the collection page (#1566). With canEditContent (admin/instructor) the viewer also offers canvas annotation editing and overlay locking on the active member (#1863).',
       },
     },
   },
@@ -204,6 +213,17 @@ export const ReadOnlyMember: Story = {
   },
 }
 
+// #1863 — admins/instructors annotate the active member and lock overlays
+// in place; the toolbar gains the canvas-edit affordance versus `Basic`.
+export const Annotatable: Story = {
+  name: 'Annotatable (admin/instructor)',
+  args: { collection: MANY_IMAGES, canEditContent: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByTestId('sequence-position')).toHaveTextContent('1 of 6')
+  },
+}
+
 export const EmptySequence: Story = {
   name: 'Empty Sequence',
   args: { collection: EMPTY },
@@ -216,4 +236,64 @@ export const EmptySequence: Story = {
 export const EmptySequenceReadOnly: Story = {
   name: 'Empty Sequence Read Only',
   args: { collection: EMPTY_READ_ONLY },
+}
+
+export const SameImageSlots: Story = {
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'Two saved views of one image. The filmstrip is image-only; each button keeps its slot label as an accessible name, and the active view caption remains below the viewport.',
+      },
+    },
+  },
+  decorators: [
+    (Story) => (
+      <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <Story />
+      </Box>
+    ),
+  ],
+  beforeEach: () => {
+    const original = globalThis.fetch
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+        window.location.href,
+      )
+      if (/^\/api\/images\/\d+\/markers$/.test(url.pathname)) return Response.json([])
+      return original(input, init)
+    }
+    return () => {
+      globalThis.fetch = original
+    }
+  },
+  args: {
+    markersEnabled: true,
+    collection: makeCollection(
+      [0.3, 0.7].map((x, index) => ({
+        ...makeImage(101, 'Architectural study'),
+        tileSources: '/marker-image.json',
+        slot: {
+          id: 501 + index,
+          label: index ? 'Right study' : 'Left study',
+          thumb: '/hriv-splash2.jpg',
+          viewport_state: { x, y: 0.4, zoom: 2, rotation: index * 15 },
+        },
+      })),
+      true,
+    ),
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByTestId('sequence-thumbnail-strip').textContent).toBe('')
+    await userEvent.click(canvas.getByRole('button', { name: 'Go to Right study' }))
+    await expect(canvas.getByRole('button', { name: 'Go to Right study' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    )
+    await expect(canvas.getByTestId('sequence-position')).toHaveTextContent('2 of 2')
+    await expect(args.onSelectItem).toHaveBeenCalledWith(101, 502)
+    await expect(canvas.getByRole('heading', { name: 'Right study' })).toBeVisible()
+  },
 }

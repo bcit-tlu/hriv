@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import type { Collection, ImageItem } from '../types'
 import CollectionManageDialog from './CollectionManageDialog'
 
@@ -134,5 +134,28 @@ export const Synchronized: Story = {
     await expect(await body.findByTestId('manage-position-map')).toBeInTheDocument()
     await expect(body.getAllByTestId(/^manage-slot-/)).toHaveLength(4)
     await expect(body.getByText('Empty')).toBeInTheDocument()
+  },
+}
+
+export const SavedViewSlots: Story = {
+  args: {
+    markersEnabled: true,
+    collection: makeCollection(
+      [1, 2].map((id) => ({
+        ...makeImage(101, 'Architectural study'),
+        slot: {
+          id: 500 + id,
+          label: id === 1 ? 'Left study' : 'Right study',
+          thumb: '/hriv-splash2.jpg',
+          viewport_state: { x: id / 3, y: 0.4, zoom: 2 },
+        },
+      })),
+    ),
+  },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await waitFor(() => expect(body.getByTestId('manage-tile-501')).toBeVisible())
+    await expect(body.getByTestId('manage-tile-502')).toBeVisible()
+    await expect(body.getByRole('button', { name: 'Add from Board' })).toBeVisible()
   },
 }

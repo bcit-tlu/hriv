@@ -16,8 +16,7 @@ const mockUpdateImage = vi.mocked(api.updateImage)
 function makeDeps(overrides: Partial<UseCanvasAnnotationsDeps> = {}): UseCanvasAnnotationsDeps {
   return {
     selectedImage: makeImage({ id: 1 }),
-    loadCategories: vi.fn().mockResolvedValue(true),
-    loadUncategorizedImages: vi.fn().mockResolvedValue(true),
+    onImageSaved: vi.fn(),
     setErrorSnack: vi.fn(),
     ...overrides,
   }
@@ -70,24 +69,27 @@ describe('useCanvasAnnotations', () => {
   })
 
   it('saves one exact snapshot and clears dirty state only after success', async () => {
-    mockUpdateImage.mockResolvedValue(
-      updatedImage(4, { canvas_annotations: [annotation], other: 'preserved' }),
-    )
-    const deps = makeDeps()
+    const saved = updatedImage(4, { canvas_annotations: [annotation], other: 'preserved' })
+    mockUpdateImage.mockResolvedValue(saved)
+    const onImageSaved = vi.fn()
+    const deps = makeDeps({ onImageSaved })
     const { result } = renderHook(() => useCanvasAnnotations(deps))
 
     act(() => result.current.handleCanvasAnnotationsChange([annotation]))
-    let saved = false
+    let ok = false
     await act(async () => {
-      saved = await result.current.saveCanvasAnnotations([annotation])
+      ok = await result.current.saveCanvasAnnotations([annotation])
     })
 
-    expect(saved).toBe(true)
+    expect(ok).toBe(true)
     expect(mockUpdateImage).toHaveBeenCalledWith(1, {
       metadata_extra_merge: { canvas_annotations: [annotation] },
     })
     expect(result.current.canvasDraftDirty).toBe(false)
     expect(result.current.latestVersionRef.current).toBe(4)
+    // The host refresh hook gets the saved record so it can update its model
+    // (App reloads lists; collection viewers swap the member, #1863).
+    expect(onImageSaved).toHaveBeenCalledWith(saved)
   })
 
   it('keeps a failed draft editable and allows retry', async () => {

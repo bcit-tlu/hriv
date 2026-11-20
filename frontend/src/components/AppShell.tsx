@@ -8,18 +8,13 @@ import {
   type RefObject,
   type SetStateAction,
 } from 'react'
-import Alert from '@mui/material/Alert'
 import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
-import Collapse from '@mui/material/Collapse'
 import Container from '@mui/material/Container'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Chip from '@mui/material/Chip'
-import Dialog from '@mui/material/Dialog'
-import DialogContent from '@mui/material/DialogContent'
-import DialogTitle from '@mui/material/DialogTitle'
 import Drawer from '@mui/material/Drawer'
 import IconButton from '@mui/material/IconButton'
 import ListItemIcon from '@mui/material/ListItemIcon'
@@ -39,6 +34,7 @@ import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
 import MenuIcon from '@mui/icons-material/Menu'
 import SearchIcon from '@mui/icons-material/Search'
+import SpaceDashboardOutlined from '@mui/icons-material/SpaceDashboardOutlined'
 import CloseIcon from '@mui/icons-material/Close'
 import HomeIcon from '@mui/icons-material/Home'
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary'
@@ -46,7 +42,6 @@ import CollectionsIcon from '@mui/icons-material/Collections'
 import FolderIcon from '@mui/icons-material/Folder'
 import SchoolIcon from '@mui/icons-material/School'
 import GroupsIcon from '@mui/icons-material/Groups'
-import CampaignIcon from '@mui/icons-material/Campaign'
 import PeopleIcon from '@mui/icons-material/People'
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
 import LightModeIcon from '@mui/icons-material/LightMode'
@@ -58,7 +53,6 @@ import LogoutIcon from '@mui/icons-material/Logout'
 import LockIcon from '@mui/icons-material/Lock'
 import ColorModeToggle from './ColorModeToggle'
 import FooterBar from './FooterBar'
-import AnnouncementBanner from './AnnouncementBanner'
 import type { Role } from '../types'
 import { useColorMode } from '../useColorMode'
 import { getNavigationItems, type NavigationIcon } from '../navigation'
@@ -71,7 +65,15 @@ import {
 } from '../theme'
 
 export type Page =
-  'browse' | 'collections' | 'manage' | 'measurement' | 'people' | 'admin' | 'guide'
+  | 'browse'
+  | 'boards'
+  | 'collections'
+  | 'manage'
+  | 'measurement'
+  | 'people'
+  | 'admin'
+  | 'guide'
+  | 'announcements'
 
 export interface AppShellProps {
   page: Page
@@ -84,6 +86,7 @@ export interface AppShellProps {
   canViewPeople: boolean
   /** Deployment flag (`GET /api/features`); hides the Collections tab when off. */
   collectionsEnabled: boolean
+  markersEnabled?: boolean
   currentUser: {
     name: string
     email: string
@@ -93,10 +96,8 @@ export interface AppShellProps {
     has_local_password?: boolean
     oidc_linked?: boolean
   }
-  announcement: string
-  annMessage: string
-  annEnabled: boolean
-  onDismissAnnouncement?: () => void
+  /** Announcement banner (built by App from the shared feed); rendered under the AppBar. */
+  bannerSlot?: ReactNode
   // Profile popover
   profileOpen: boolean
   setProfileOpen: Dispatch<SetStateAction<boolean>>
@@ -108,7 +109,6 @@ export interface AppShellProps {
   onOpenCategories: () => void
   onOpenPrograms: () => void
   onOpenGroups: () => void
-  onOpenAnnouncement: () => void
   // Search
   onSearchOpen: () => void
   // Footer
@@ -125,6 +125,8 @@ export interface AppShellProps {
    *  (the My collections sheet). */
   footerDockSlot?: ReactNode
   notificationSlot?: ReactNode
+  /** Extra items rendered in the profile popover before Logout. */
+  profileMenuExtras?: ReactNode
   // Children (main content)
   children: ReactNode
 }
@@ -138,11 +140,9 @@ export default function AppShell(props: AppShellProps) {
     canManageUsers,
     canViewPeople,
     collectionsEnabled,
+    markersEnabled = false,
     currentUser,
-    announcement,
-    annMessage,
-    annEnabled,
-    onDismissAnnouncement,
+    bannerSlot,
     profileOpen,
     setProfileOpen,
     avatarRef,
@@ -152,7 +152,6 @@ export default function AppShell(props: AppShellProps) {
     onOpenCategories,
     onOpenPrograms,
     onOpenGroups,
-    onOpenAnnouncement,
     onSearchOpen,
     mode,
     frontendVersion,
@@ -163,6 +162,7 @@ export default function AppShell(props: AppShellProps) {
     fillViewport = false,
     footerDockSlot,
     notificationSlot,
+    profileMenuExtras,
     children,
   } = props
   const [manageMenuAnchor, setManageMenuAnchor] = useState<HTMLElement | null>(null)
@@ -200,14 +200,6 @@ export default function AppShell(props: AppShellProps) {
       setNavDrawerOpen(false)
     }
   }, [collapseNav])
-  const [viewAnnOpen, setViewAnnOpen] = useState(false)
-  const [annCollapsed, setAnnCollapsed] = useState(false)
-  const [prevAnnouncement, setPrevAnnouncement] = useState(announcement)
-  if (announcement !== prevAnnouncement) {
-    setPrevAnnouncement(announcement)
-    if (announcement) setAnnCollapsed(false)
-  }
-  const showViewAnnLink = annEnabled && !announcement
   const contentBg = page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined
   const groupColors = getGroupChipColors(mode)
   const { preference: themePreference, toggleMode } = useColorMode()
@@ -234,7 +226,6 @@ export default function AppShell(props: AppShellProps) {
         categories: <FolderIcon fontSize="small" />,
         programs: <SchoolIcon fontSize="small" />,
         groups: <GroupsIcon fontSize="small" />,
-        announcement: <CampaignIcon fontSize="small" />,
         measurement: <StraightenIcon fontSize="small" />,
         people: <PeopleIcon fontSize="small" />,
         admin: <AdminPanelSettingsIcon fontSize="small" />,
@@ -261,8 +252,6 @@ export default function AppShell(props: AppShellProps) {
           onOpenPrograms()
         } else if (item.id === 'groups') {
           onOpenGroups()
-        } else if (item.id === 'announcement') {
-          onOpenAnnouncement()
         } else if (item.page) {
           onTabChange(item.page)
         }
@@ -365,7 +354,7 @@ export default function AppShell(props: AppShellProps) {
           ) : (
             <Tabs
               // 'guide' has no AppBar tab — it opens via the notification menu.
-              value={page === 'guide' || page === 'measurement' ? false : page}
+              value={page === 'guide' || page === 'measurement' || page === 'boards' ? false : page}
               onChange={(_, v: Page) => {
                 if (
                   v === 'browse' ||
@@ -459,16 +448,6 @@ export default function AppShell(props: AppShellProps) {
               )}
               {canEditContent && (
                 <MenuItem
-                  onClick={() => {
-                    setManageMenuAnchor(null)
-                    onOpenAnnouncement()
-                  }}
-                >
-                  Announcement
-                </MenuItem>
-              )}
-              {canEditContent && (
-                <MenuItem
                   selected={page === 'measurement'}
                   onClick={() => {
                     setManageMenuAnchor(null)
@@ -533,6 +512,17 @@ export default function AppShell(props: AppShellProps) {
                 <SearchIcon />
               </IconButton>
             </Tooltip>
+            {markersEnabled && (
+              <Tooltip title="Boards & Markers">
+                <IconButton
+                  aria-label="Boards & Markers"
+                  onClick={() => onTabChange('boards')}
+                  sx={{ color: 'inherit', ...appBarIconButtonSx }}
+                >
+                  <SpaceDashboardOutlined />
+                </IconButton>
+              </Tooltip>
+            )}
             {notificationSlot}
             <IconButton
               ref={avatarRef}
@@ -651,20 +641,7 @@ export default function AppShell(props: AppShellProps) {
                           <ListItemText>Change password</ListItemText>
                         </MenuItem>
                       )}
-                    {showViewAnnLink && (
-                      <MenuItem
-                        sx={{ py: 1.25 }}
-                        onClick={() => {
-                          setProfileOpen(false)
-                          setViewAnnOpen(true)
-                        }}
-                      >
-                        <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>
-                          <CampaignIcon fontSize="small" />
-                        </ListItemIcon>
-                        <ListItemText>View Announcement</ListItemText>
-                      </MenuItem>
-                    )}
+                    {profileMenuExtras}
                     <MenuItem
                       sx={{ py: 1.25, color: 'primary.main' }}
                       onClick={() => {
@@ -685,35 +662,14 @@ export default function AppShell(props: AppShellProps) {
         </Toolbar>
       </AppBar>
 
-      {/* Announcement banner */}
-      {announcement && (
-        <Collapse in={!annCollapsed} onExited={onDismissAnnouncement}>
-          <Box
-            data-testid="announcement-banner"
-            sx={{
-              bgcolor: contentBg,
-              pt: 2.5,
-            }}
-          >
-            <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
-              <AnnouncementBanner
-                message={announcement}
-                onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined}
-              />
-            </Container>
-          </Box>
-        </Collapse>
+      {/* Announcement banner (#1838 policy: first live, unseen banner post) */}
+      {bannerSlot && (
+        <Box data-testid="announcement-banner" sx={{ bgcolor: contentBg, pt: 2.5 }}>
+          <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
+            {bannerSlot}
+          </Container>
+        </Box>
       )}
-
-      {/* Read-only announcement dialog (for dismissed announcements) */}
-      <Dialog open={viewAnnOpen} onClose={() => setViewAnnOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Announcement</DialogTitle>
-        <DialogContent>
-          <Alert severity="info" sx={{ mt: 1 }}>
-            {annMessage}
-          </Alert>
-        </DialogContent>
-      </Dialog>
 
       {/* Main content */}
       {children}

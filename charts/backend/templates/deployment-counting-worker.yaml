@@ -51,8 +51,6 @@ spec:
             capabilities:
               drop: [ALL]
           env:
-            - name: COUNTING_ENABLED
-              value: {{ .Values.counting.enabled | quote }}
             - name: COUNTING_QUEUE_NAME
               value: {{ .Values.counting.queueName | quote }}
             - name: COUNTING_MAX_PIXELS
@@ -71,6 +69,8 @@ spec:
               value: {{ .Values.counting.jobTimeoutSeconds | quote }}
             - name: COUNTING_MAX_OBJECTS
               value: {{ .Values.counting.maxObjects | quote }}
+            - name: COUNTING_PREPROCESS
+              value: {{ .Values.counting.preprocess | quote }}
             - name: COUNTING_TORCH_THREADS
               value: {{ .Values.countingWorker.torchThreads | quote }}
             - name: COUNTING_CELLS_OUTLINER

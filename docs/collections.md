@@ -15,6 +15,10 @@ implemented.
 
 ## Feature flags (`COLLECTIONS_ENABLED`, `COLLECTIONS_HOME_SHELF`, `COLLECTIONS_STUDENT_ACCESS`)
 
+The independent Markers and Boards dark launch uses `MARKERS_ENABLED`
+(default false), Helm `markers.enabled`, and the `markers` features response
+field. See [Markers and Boards](markers-and-boards.md).
+
 Collections are **dark-launched** so the rest of the app can keep releasing
 (patch/minor bumps via release-please, `stable` re-pins) while the epic lands
 one child issue at a time on `main`.
@@ -1390,15 +1394,63 @@ label is rendered by the fitted cell;
 `CollectionsPage` for `type === 'sequence'` below the shared detail header.
 `App`/`useShareableImageState` own the selected item (`?item={image_id}`)
 and pass it down, so the position is shareable and participates in history.
+The member's metadata drawer is `components/CollectionImageDetails.tsx`
+(#1862) around `components/ImageDetailsDrawer.tsx`.
 
-**Read-only surface.** One `ImageViewer` at a time, `key={image.id}` so
+**Viewer surface.** One `ImageViewer` at a time, `key={image.id}` so
 switching items remounts it and no viewport state bleeds between images.
-`canEditContent={false}` and no annotation mutation callbacks — canvas
-annotations, locked overlays and measurement metadata from `metadataExtra`
-render read-only via `canvasAnnotationsFromMetadata` /
+Canvas annotations, locked overlays and measurement metadata from
+`metadataExtra` render via `canvasAnnotationsFromMetadata` /
 `lockedOverlaysFromMetadata` / `measurementFromMetadata`
-(`components/imageViewerUtils.ts`). **Open image** navigates to the normal
-`?image={id}` view where annotations can be edited.
+(`components/imageViewerUtils.ts`). For students the surface stays
+read-only — `canEditContent={false}` and no mutation callbacks — while
+admins/instructors get the full editing prop set (below). **Open image**
+navigates to the normal `?image={id}` view of the same image.
+
+**Annotation and overlay editing (#1863).** `CollectionsPage` forwards
+App's auth-resolved `canEditContent` (admin/instructor only — collection
+`permissions.canEdit` is curation authority and does **not** gate this).
+The viewer runs the same `useCanvasAnnotations` / `useOverlayPersistence`
+hooks the image viewer uses, sharing their `latestVersionRef` /
+`latestMetadataRef` so lock → annotate → clear sequences keep
+optimistic-concurrency versions straight. Both hooks were generalized to a
+single `onImageSaved(image)` callback: App still reloads
+categories/uncategorized, while the viewer's `onImageRenewed` →
+`renewCollectionImage` swaps the saved `ApiImage` into `detail.images` —
+annotations live on the image record, so edits appear everywhere the image
+shows up (this collection, other collections, the image view). Entering
+canvas edit mode disables the details trigger and closes the drawer and
+note dialog; an overlay lock auto-engages when the member stores
+`locked_overlays` and disengages when the saved member no longer does.
+Unsaved edits are guarded like the image viewer's: the viewer registers a
+`CanvasDraftHandle` (`{dirty, saving, discard}`) on App's shared
+`canvasDraftRef`, so `runCanvasNavigation`/`handlePopState`/`beforeunload`
+intercept member switches, collection close and tab close with the same
+"Please wait…" snack and "Discard annotation changes?" dialog — **Discard
+Changes** runs the handle's `discard()` before the pending navigation, and
+**Keep Editing** cancels it. Editing inside the synchronized viewer's
+independent panes is a separate product question (#1864).
+
+**Object counting (#1855).** The viewer's selection-rectangle →
+**Count objects** flow works on the
+current member exactly as in the image viewer
+([object-counting.md](object-counting.md)). Jobs stay ephemeral per
+selection and are cancelled when an item change remounts the viewer.
+Member visibility already matches the count endpoint's gate, so no extra
+authorization is needed.
+
+**Image details (#1862).** The same "i" trigger + metadata drawer the image
+viewer has is mounted here through `ImageViewer`'s `viewportControl` /
+`viewportOverlay` slots via `CollectionImageDetails` — a provider that
+carries the open state, focus ref and lazy `useImageSourceInfo` fetch
+between the two slots (source info loads only on first open). The provider
+is keyed `key={current.id}` like the viewer, so stepping to the next member
+resets the drawer closed. `CollectionsPage` resolves each member's
+**Program**/**Group** rows into a `memberInfoNames` map — the member's
+filed-category path narrowed with `narrowProgramIds`/`narrowGroupIds`,
+mapped to names with the `String(id)` fallback — so the drawer shows the
+same names the browse breadcrumb would; unfiled members and categories
+absent from the caller's tree get no entry and those rows are omitted.
 
 **Caption.** A caption row under the viewport — the same `ImageCaptionRow`
 the synchronized panes and the image-view info bar use — holds the member
@@ -1538,6 +1590,22 @@ the grid pane area's minimum follows its rows' intrinsic content, so the
 page grows and scrolls when they cannot fit. The two-pane row layout is
 unchanged; its pane-area minimum dropped from 320px to 260px (#1683).
 
+**Object counting (#1855).** While the deployment's `counting` flag is on,
+each pane's selection-rectangle → **Count objects** flow works
+independently — jobs, outlines and the report belong to that pane's image
+and do not sync to the other panes
+([object-counting.md](object-counting.md)).
+
+**Image details (#1862).** Each pane wraps its `ImageViewer` in its own
+`CollectionImageDetails` provider, so every pane gets an independent "i"
+trigger, drawer and lazy source-info fetch — opening one pane's drawer does
+not affect the others. Names resolve from the same `memberInfoNames` map the
+sequence viewer uses. Because two drawers can be open at once, the provider
+also gives each drawer a unique `drawerId` and member-qualified landmark
+names (`Image details — ‹member› (‹id›)`, `Viewer controls — ‹member›
+(‹id›)`) so the landmarks stay distinguishable to assistive tech even when
+two members share a name.
+
 **Linked navigation.** `ImageViewer` exposes the OSD instance through a new
 `onViewerReady(viewer | null)` prop; the component attaches raw
 `viewport-change` handlers and mirrors zoom, center and rotation onto every
@@ -1571,8 +1639,9 @@ not snap the pane back to where it left).
 consume each other's version. The save stays put — a tile-source refresh
 from the response re-opens the pyramid but preserves the live viewport
 (`ImageViewer` snapshots it before `open`, same as the token-renewal
-path). **Restore default view** (everyone) re-applies the saved
-positions and re-arms the baselines; it is disabled until a viewport has
+path). **Restore default view** (everyone) re-links any unlinked pane
+(#1684), re-applies the saved positions and re-arms the baselines, so
+every pane follows the others again; it is disabled until a viewport has
 been saved for at least one rendered pane (#1567). Saved entries that do
 not match the shape are ignored by
 `viewportStateFromSaved` (`imageViewerUtils.ts`).
@@ -1823,7 +1892,9 @@ the shared group-chip palette.
   editable-target key guard, read-only `ImageViewer` props
   (annotations / overlays / measurement from `metadataExtra`), tile-renewal
   forwarding, mid-session failure skip + all-failed state, hidden-prop
-  filmstrip desaturation; the Manage dialog covers `move()` reorder →
+  filmstrip desaturation, image-details trigger/drawer mount, lazy
+  source-info fetch on open, `memberInfoNames` rows and drawer reset on
+  member change (#1862); the Manage dialog covers `move()` reorder →
   `PUT` with version, optimistic order in
   `detail`, rollback on error, corner-control removal, `renewCollectionImage`
   member swap.
@@ -1837,7 +1908,8 @@ the shared group-chip palette.
   a saved view, portrait
   hint, `< 2`
   fallback + "Showing _N_ of _M_" over the four-pane cap, member failure
-  slide-up, editor-only Save;
+  slide-up, editor-only Save, per-pane image-details trigger/drawer with
+  independent open state and lazy source-info fetch (#1862);
   `saveViewport` whole-replace `PUT` with `version`, queue sharing with
   `reorderImages`, cross-collection detail guard;
   `ImageViewer.test.tsx` — `onViewerReady` mount/unmount contract.
@@ -1873,3 +1945,118 @@ the shared group-chip palette.
   `transfer` hooks' version resolution (open detail vs fetched),
   mutation-queue serialization behind a reorder, filtered-list removal, and
   error propagation; and the `PUT /owners` + `POST /transfer` request bodies.
+
+## Collection slots (#1770, backend)
+
+With `MARKERS_ENABLED=true`, every member response retains its ImageOut fields
+and additionally carries `slot: {id, viewport_state, thumb, label}`. Repeated
+image IDs represent distinct ordered slots. Covers remain image-based; graph
+and reverse-lookup Collection references are deduplicated. Student image
+visibility filters slots before thumbnail token issuance; `member_count` is
+the visible slot count. The frontend slot-identity follow-up is #1774.
+
+POST and PUT `/api/collections/{id}/images` accept `image_ids` followed by
+`slots: [{id?, image_id, marker_id?, viewport_state?, label?}]`, then optional
+`source_board_id` seeds and `marker_ids` in supplied order.
+Board seeds follow member order.
+An existing slot ID must belong to this collection and match its image. Omitted
+metadata survives; explicit null clears it. Legacy IDs reuse the first unused
+matching slot. Invisible existing members survive replacement as before.
+
+The caller must see the source Board; inaccessible Board members are skipped.
+Explicit inaccessible Markers return 404. Seeding snapshots geometry, title,
+and an independent JPEG; it never changes or retains a link to the Marker.
+Student Sequence limits count slots and distinguish additions by slot identity.
+Synchronized creation from `marker_ids` or `source_board_id` requires 2–4 slots. Plain `slots` and legacy `image_ids`
+payloads retain the 0–4 member bounds on create and update, including the
+empty/single-member editing, removal, and undo workflows. Source-based updates
+also allow 0–4 slots; the two-slot minimum applies only to seeded creation.
+
+PUT `/api/collections/{id}/viewport` also accepts
+`{version, slot_viewports: {"<slot_id>": {x,y,zoom,rotation?}|null}}` under the
+existing edit permission and OCC. Coordinates must be finite numbers and zoom
+positive. The legacy `viewport_state` dictionary is replaced only when supplied.
+Slot edits do not mutate Markers. Removed slots/Collections/Images clean up
+their snapshots after commit. Image replacement retains slots and labels but
+clears their geometry and thumbnail, and invalidates the Collection version.
+
+With the feature disabled, slot request fields and duplicate image IDs are
+rejected and responses omit `slot`. Admin exports include ordered `slots`
+alongside `image_ids` regardless of the feature flag; imports prefer slots,
+otherwise accept legacy IDs, including duplicates. Admin backup and restore
+are lossless even while user-facing slot workflows are disabled.
+
+Slot creation and membership replacement take the filed destination's tile
+scope before image row locks, matching tile reorder's scope-first protocol.
+The image locks protect copied geometry against concurrent source replacement.
+Membership replacement only locks the scope revision: it does not advance the
+tile-order revision, because adding or reordering slots does not move the
+Collection's Browse tile. Creating a filed Collection still advances it.
+
+Source replacement locks every containing Collection before refreshing and
+clearing all of that image's slots, including initially blank slots. Every
+affected Collection version advances, so a viewport write with a pre-replacement
+version conflicts instead of restoring geometry for the old source. Thumbnails
+are collected again after locking so racing snapshots are removed after commit.
+
+## Board-based curation and multi-slot viewers (#1774)
+
+With `features.markers`, a Board header can create a Sequence
+Collection using the existing collection form. Select mode offers Sequence
+create/add for any non-empty selection and Synchronized create/add for 2–4
+Markers. Existing collection destinations use the normal Add to Collection
+dialog. Creating opens the new collection; adding keeps the Board open.
+
+The Manage dialog stages **Add from Board**,
+alongside its existing image-search staging. Reorders, selection and concurrent
+membership merging identify saved slots independently. Draft additions have
+temporary negative keys and do not allocate persisted slots until Done. Save
+retains existing slot ids; cancelling discards all staged additions.
+Whole-image search picks deduplicate by their source image id, including picks
+already staged in the draft. Board/Marker picks may intentionally add further
+slots for that same image.
+
+Sequence filmstrips display slot crops without visible text underneath and open
+the copied viewport, even when consecutive steps use the same slide. Thumbnail
+buttons keep `Go to {slot label or image name}` accessible names; the active slot
+label still appears in the caption below the main viewport. Share links include
+`?collection=7&item=100&slot=11`: `slot` selects the saved view and `item`
+remains the real-image fallback. Image APIs always receive the real image id.
+
+Synchronized panes register, link, unlink and restore by slot identity. Their
+initial positions prefer slot snapshots, then the legacy image-keyed defaults.
+Set as default view sends separate `slot_viewports` and legacy
+`viewport_state` dictionaries; it never writes to the source Markers.
+Slot crop renewal fetches the containing Collection to obtain a fresh
+authorized thumbnail token. Covers remain image-based, with one picker row per
+source image.
+
+Uncommitted Board picks renew their source Marker thumbnail until Done
+allocates a persisted slot. Renewal only reads the source; it never edits it.
+
+When the feature is disabled, the new controls are absent and writes retain the
+legacy `image_ids` and image-keyed viewport payloads. Server permissions,
+visibility, capacity checks and optimistic concurrency remain authoritative.
+
+### Search saved views into the Manage draft (#1775)
+
+With the Markers flag enabled, Manage Collection's search picker also offers
+Boards and Markers. A saved-view result stages one Marker or the Board's visible
+views (displayed Board member order), without navigating away
+or saving the Collection. Source images are fetched through the authorized image
+endpoint, and each view becomes an independently keyed temporary slot. Empty Boards
+and failed requests leave the picker open with an error. Ordinary whole-image picks
+still deduplicate by real image ID; saved views intentionally permit repeated images.
+
+Admin DB exports keep Collection slot metadata even with the flag disabled.
+Pair the DB archive with a filesystem archive to retain the independent slot JPEGs;
+restoring and rebuilding DZI tiles does not replace those snapshots.
+
+### Membership write responses
+
+Creation and membership replacement reload the complete member/image graph after
+committing slot snapshots. Responses must not rely on images retained in an async
+session's identity map. Fresh-request-session regressions cover Board/Marker
+seeding, direct slots and image IDs, including replacement and append flows.
+Create and add dialogs surface short, non-HTML backend error details when present;
+otherwise they show a retry-oriented fallback, without closing the failed draft.

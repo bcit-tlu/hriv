@@ -1,5 +1,137 @@
 # Changelog
 
+## [1.0.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.69.2...frontend-v1.0.0) (2026-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* rename inuksuk to marker app-wide ([#1941](https://github.com/bcit-tlu/hriv/issues/1941))
+
+### Features
+
+* **boards:** add Collections-style Boards & Inuksuks page with chip Boards and card/table Inuksuks ([#1932](https://github.com/bcit-tlu/hriv/issues/1932)) ([bebc9ce](https://github.com/bcit-tlu/hriv/commit/bebc9cecfbd3692e19e0dc1879f4f6c9d3b1d8cd))
+* **boards:** redesign overview and Board dialog ([#1916](https://github.com/bcit-tlu/hriv/issues/1916)) ([e6bd961](https://github.com/bcit-tlu/hriv/commit/e6bd96119adf4a9b374485c7d38689ef7e248712))
+* **boards:** restyle tiles, surface filter chips, marker column chooser ([#1952](https://github.com/bcit-tlu/hriv/issues/1952)) ([d8001db](https://github.com/bcit-tlu/hriv/commit/d8001dbd5384dd7c20b5e81526bd1cf0e01d351e))
+* **inuksuks:** add Boards and Inuksuks page ([#1909](https://github.com/bcit-tlu/hriv/issues/1909)) ([3cebbbc](https://github.com/bcit-tlu/hriv/commit/3cebbbcf0c6703b2c5b35c83d85503435d9513ab))
+* **inuksuks:** add Inuksuk form with checkbox Boards, star and in-place card editing ([#1934](https://github.com/bcit-tlu/hriv/issues/1934)) ([5bb30b7](https://github.com/bcit-tlu/hriv/commit/5bb30b7a4e67102ee4db307be63444b08282e40a))
+* **inuksuks:** add search, archive round-trip and docs close-out ([#1912](https://github.com/bcit-tlu/hriv/issues/1912)) ([1a6940a](https://github.com/bcit-tlu/hriv/commit/1a6940ab0e0a606c12e29bcf838bd4c1898a43f3))
+* **inuksuks:** add viewer Inuksuk tool, markers and save dialog ([#1906](https://github.com/bcit-tlu/hriv/issues/1906)) ([26d3922](https://github.com/bcit-tlu/hriv/commit/26d392281d1345af0c160d4aca5517383e0d22d9))
+* **inuksuks:** add viewer Inuksuks drawer with persisted visibility ([#1908](https://github.com/bcit-tlu/hriv/issues/1908)) ([3f1168c](https://github.com/bcit-tlu/hriv/commit/3f1168c056853581beba1e73d9d0d357ddf0a3f4))
+* **inuksuks:** build collections from Boards and support multi-slot viewers ([#1911](https://github.com/bcit-tlu/hriv/issues/1911)) ([5b58e11](https://github.com/bcit-tlu/hriv/commit/5b58e117a573f81b421eeac9e0756339e0d74b76))
+* **inuksuks:** right-side viewer panel for Inuksuks and image details ([#1928](https://github.com/bcit-tlu/hriv/issues/1928)) ([59acd03](https://github.com/bcit-tlu/hriv/commit/59acd03ff848359e636dcaccb46ac13a922d0877))
+* **inuksuks:** streamline viewer placement, info card and drawer ([#1915](https://github.com/bcit-tlu/hriv/issues/1915)) ([be190d0](https://github.com/bcit-tlu/hriv/commit/be190d016f1319cbcd942fed0159184a1a81dfba))
+* **inuksuks:** white marker discs, pinnable drawer and menu-based visibility ([#1924](https://github.com/bcit-tlu/hriv/issues/1924)) ([43b3e58](https://github.com/bcit-tlu/hriv/commit/43b3e58f83d3f4514588e0a68dfb093eab515474))
+* **markers:** board-grouped drawer, marker focus links, in-place board dialog ([#1942](https://github.com/bcit-tlu/hriv/issues/1942)) ([3ab9a01](https://github.com/bcit-tlu/hriv/commit/3ab9a01bc11bca19a92c416a0ba87532f51dc1c8))
+
+
+### Bug Fixes
+
+* **boards:** match page title, own-Boards-only view with public Boards dialog, smaller tiles ([#1930](https://github.com/bcit-tlu/hriv/issues/1930)) ([4698236](https://github.com/bcit-tlu/hriv/commit/4698236e90305594f5e4b3e74e777618e8bac4e8))
+* **collections:** eager-load members after collection writes ([#1914](https://github.com/bcit-tlu/hriv/issues/1914)) ([b7e7618](https://github.com/bcit-tlu/hriv/commit/b7e7618f3ed971f29e12d88aee2ef52ee47274d2))
+* **collections:** remove slot captions under Sequence filmstrip thumbnails ([#1926](https://github.com/bcit-tlu/hriv/issues/1926)) ([9b1b145](https://github.com/bcit-tlu/hriv/commit/9b1b1456d6eb4a2862a4090c7d62485ac0ce8c96))
+* **inuksuks:** focus new Inuksuks, compact panel text and info-card star ([#1929](https://github.com/bcit-tlu/hriv/issues/1929)) ([aeb9a8b](https://github.com/bcit-tlu/hriv/commit/aeb9a8b9779bb01dcbe0653d7b83413772bb7d2f))
+* **inuksuks:** narrower viewer panel, own/instructor Inuksuks only, Shared View tab ([#1931](https://github.com/bcit-tlu/hriv/issues/1931)) ([00bbd28](https://github.com/bcit-tlu/hriv/commit/00bbd28c59eb4e572f7414ba13b2e01c40a4b7e1))
+* **inuksuks:** prevent stuck drawer menus and Board page redraws ([#1923](https://github.com/bcit-tlu/hriv/issues/1923)) ([ce9eb78](https://github.com/bcit-tlu/hriv/commit/ce9eb786e76f9e655ef596e97a4cead52f6ad433))
+
+
+### Code Refactoring
+
+* rename inuksuk to marker app-wide ([#1941](https://github.com/bcit-tlu/hriv/issues/1941)) ([0d48398](https://github.com/bcit-tlu/hriv/commit/0d48398ff4216bc77a88ee4089a0bb8441ee3661))
+
+## [0.69.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.69.1...frontend-v0.69.2) (2026-11-14)
+
+
+### Bug Fixes
+
+* **announcements:** render banner bodies as markdown like the cards ([#1898](https://github.com/bcit-tlu/hriv/issues/1898)) ([687b337](https://github.com/bcit-tlu/hriv/commit/687b33784dee9aec9df9b6b2581f35068930767b))
+
+## [0.69.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.69.0...frontend-v0.69.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **viewer:** hide the canvas-edit pencil in full-page mode ([#1896](https://github.com/bcit-tlu/hriv/issues/1896)) ([82836d3](https://github.com/bcit-tlu/hriv/commit/82836d36360697844ecabd0d354a100e136ca1d5))
+
+## [0.69.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.68.0...frontend-v0.69.0) (2026-11-13)
+
+
+### Features
+
+* **collections:** annotation and overlay editing in the sequence viewer ([#1863](https://github.com/bcit-tlu/hriv/issues/1863)) ([#1889](https://github.com/bcit-tlu/hriv/issues/1889)) ([c968eaf](https://github.com/bcit-tlu/hriv/commit/c968eafbf8be117480b1115b032877f2513e7b32))
+* **collections:** enable object counting in collection detail viewers ([#1856](https://github.com/bcit-tlu/hriv/issues/1856)) ([797218b](https://github.com/bcit-tlu/hriv/commit/797218b5b7fd644f1039e92a5397a91d4c174e51))
+* **collections:** image details drawer in collection viewers ([#1862](https://github.com/bcit-tlu/hriv/issues/1862)) ([#1882](https://github.com/bcit-tlu/hriv/issues/1882)) ([bf372ba](https://github.com/bcit-tlu/hriv/commit/bf372ba1de69a40679456bfdce7494b95ca1add4))
+* **counting:** manual report adjustment — remove and add outlines ([#1857](https://github.com/bcit-tlu/hriv/issues/1857)) ([f322e80](https://github.com/bcit-tlu/hriv/commit/f322e804e710832770b6139fe89beaad2e92334a))
+* **counting:** preprocessing + per-image detection_params ([#1888](https://github.com/bcit-tlu/hriv/issues/1888)) ([d3ed433](https://github.com/bcit-tlu/hriv/commit/d3ed4337e6ae7c9a601c0c1a1e19d9d308abb7a1))
+* **measurement:** inspect-and-tune OSD dialog on the review page ([#1890](https://github.com/bcit-tlu/hriv/issues/1890)) ([42b6d2a](https://github.com/bcit-tlu/hriv/commit/42b6d2ac53bd4203ab286a962a74019360928c44))
+* **measurement:** live outline overlay + count chip in tune dialog ([#1872](https://github.com/bcit-tlu/hriv/issues/1872)) ([#1895](https://github.com/bcit-tlu/hriv/issues/1895)) ([8125841](https://github.com/bcit-tlu/hriv/commit/8125841b92e40f5f9e26656a79a47180e03f5299))
+* **measurement:** parametrize RBC detector + finding params ([#1866](https://github.com/bcit-tlu/hriv/issues/1866)) ([#1874](https://github.com/bcit-tlu/hriv/issues/1874)) ([2760e02](https://github.com/bcit-tlu/hriv/commit/2760e0201fb9778765a0d074effc842604200e7e))
+* **viewer:** full-screen presentation pointer tools — laser and ephemeral ink ([#1876](https://github.com/bcit-tlu/hriv/issues/1876)) ([#1881](https://github.com/bcit-tlu/hriv/issues/1881)) ([183dfae](https://github.com/bcit-tlu/hriv/commit/183dfae3243947b51164bdca9d59a506676cec5b))
+
+
+### Bug Fixes
+
+* **collections:** keep the My collections trigger visible through revalidated 304s ([#1892](https://github.com/bcit-tlu/hriv/issues/1892)) ([#1893](https://github.com/bcit-tlu/hriv/issues/1893)) ([ce2940d](https://github.com/bcit-tlu/hriv/commit/ce2940d95532c80627754a013ac5a75a0835ad7a))
+* **frontend:** format-staged large-binary crash, image budgets, leaner login splash ([#1887](https://github.com/bcit-tlu/hriv/issues/1887)) ([e15c23b](https://github.com/bcit-tlu/hriv/commit/e15c23b0e55c9886b975ff22c7a4c683a72da025))
+* **viewer:** green laser dot — red vanished into H&E tissue ([#1891](https://github.com/bcit-tlu/hriv/issues/1891)) ([525ecf9](https://github.com/bcit-tlu/hriv/commit/525ecf965974a696cd823c4381cbdf2edf80c7b0))
+
+## [0.68.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.67.0...frontend-v0.68.0) (2026-11-11)
+
+
+### Features
+
+* add a read-only collection field to the image viewer metadata area ([#1603](https://github.com/bcit-tlu/hriv/issues/1603)) ([fb1accd](https://github.com/bcit-tlu/hriv/commit/fb1accda530dfc42ce58b6344a3052dd88e5f2cd))
+* announcement banner policy, Home notices shelf, login broadcast and legacy changelog cleanup ([#1846](https://github.com/bcit-tlu/hriv/issues/1846)) ([5bc78c6](https://github.com/bcit-tlu/hriv/commit/5bc78c66e02a565eb8d1d96401b34b6b45a74176))
+* announcements composer and stream follow-ups (kind first, role audiences, MUI X pickers, one list) ([#1849](https://github.com/bcit-tlu/hriv/issues/1849)) ([2b86492](https://github.com/bcit-tlu/hriv/commit/2b86492c203e4c0636a79088014e5c4ae5d0b004))
+* authoritative existing scales, approval guard and scan progress for Measurement review ([#1742](https://github.com/bcit-tlu/hriv/issues/1742)) ([fdc5917](https://github.com/bcit-tlu/hriv/commit/fdc59173b887572b2c2c1bb3641c6c75c6387acc))
+* **collections:** defer student access behind COLLECTIONS_STUDENT_ACCESS ([#1776](https://github.com/bcit-tlu/hriv/issues/1776)) ([62e2ed7](https://github.com/bcit-tlu/hriv/commit/62e2ed773d8a113805a831dd9b6bd4bcaabc0fdd))
+* **collections:** mark student-curated collections across views ([#1698](https://github.com/bcit-tlu/hriv/issues/1698)) ([32ec6a8](https://github.com/bcit-tlu/hriv/commit/32ec6a87706404179591066d3e30fd339cde7f01))
+* **collections:** use an image icon for Open image and keep it same tab ([#1626](https://github.com/bcit-tlu/hriv/issues/1626)) ([095043f](https://github.com/bcit-tlu/hriv/commit/095043fb59909fb733824cceee0793a123e6db06))
+* **frontend:** "Graph View" dialog on the collection page ([#1638](https://github.com/bcit-tlu/hriv/issues/1638)) ([9257b45](https://github.com/bcit-tlu/hriv/commit/9257b457f5f5d937816929322a24fe7a5f49902d))
+* **frontend:** add You chip to People page ([#1705](https://github.com/bcit-tlu/hriv/issues/1705)) ([9f9a4b5](https://github.com/bcit-tlu/hriv/commit/9f9a4b53b035e4f78dbf589cfd40d2a1545ee188))
+* **frontend:** announcements page, card, composer and bell for all roles ([#1845](https://github.com/bcit-tlu/hriv/issues/1845)) ([d25b2bc](https://github.com/bcit-tlu/hriv/commit/d25b2bcba7761bf23dde87d9163d71dd9921219d))
+* **frontend:** count objects in viewer selections with progress and report ([#1710](https://github.com/bcit-tlu/hriv/issues/1710)) ([104d1b0](https://github.com/bcit-tlu/hriv/commit/104d1b06909f80843f9b960ce4fe681d7f38a054))
+* **frontend:** Manage → Measurement review page ([#1725](https://github.com/bcit-tlu/hriv/issues/1725)) ([e7212b8](https://github.com/bcit-tlu/hriv/commit/e7212b80ffd0af629c8cfe2ca654cf17908b0121))
+* **frontend:** merge Manage → Collections into the Collections Table view ([#1649](https://github.com/bcit-tlu/hriv/issues/1649)) ([ef8a9e9](https://github.com/bcit-tlu/hriv/commit/ef8a9e928d18c5be2b616fd1b5bf0b991418cfdf))
+* **frontend:** move image information into an "Image details" viewport drawer ([#1680](https://github.com/bcit-tlu/hriv/issues/1680)) ([2881b6e](https://github.com/bcit-tlu/hriv/commit/2881b6eb2cf03f6de0de9fe180e57f8fe9f239c3))
+* **frontend:** move image metadata into an "Image information" accordion ([#1622](https://github.com/bcit-tlu/hriv/issues/1622)) ([c5627a4](https://github.com/bcit-tlu/hriv/commit/c5627a4941d57280a995ff375e9c495cf3cbeac4))
+* **frontend:** password-setup page, change-password dialog and forced-change gate ([#1790](https://github.com/bcit-tlu/hriv/issues/1790)) ([1e0ee08](https://github.com/bcit-tlu/hriv/commit/1e0ee084264feb5b4f85e63aa99f9325d09cee50))
+* **frontend:** People invite-link UX, auth badges and force-change switch ([#1791](https://github.com/bcit-tlu/hriv/issues/1791)) ([ffe6d16](https://github.com/bcit-tlu/hriv/commit/ffe6d169d968b01dfecfc8220a2f120f4294b3ec))
+* **frontend:** render Markdown images and video with media tokens ([#1844](https://github.com/bcit-tlu/hriv/issues/1844)) ([ecdd8e9](https://github.com/bcit-tlu/hriv/commit/ecdd8e9cacde0a135b9438f008e2a34485f64d63))
+* **frontend:** Sign-in column, setup link in Edit Person, regenerate password link ([#1794](https://github.com/bcit-tlu/hriv/issues/1794)) ([f88332a](https://github.com/bcit-tlu/hriv/commit/f88332ac57c1472fe5bba641dbb544c3de4b3426))
+* **frontend:** synchronized collection position map in Manage dialog ([#1616](https://github.com/bcit-tlu/hriv/issues/1616)) ([8b7af23](https://github.com/bcit-tlu/hriv/commit/8b7af235c26e39ca8fd64d35cd712781de83da57))
+* **frontend:** unified Collections page with Cards, Table and Graph views ([#1636](https://github.com/bcit-tlu/hriv/issues/1636)) ([f5cb6ac](https://github.com/bcit-tlu/hriv/commit/f5cb6ac4fc1f8302b76140ec33bccc7cf67cd4cb))
+* **measurements:** add Actions menu, Category column/filter and sortable columns to Measurement review ([#1801](https://github.com/bcit-tlu/hriv/issues/1801)) ([d96d02a](https://github.com/bcit-tlu/hriv/commit/d96d02a2e96efc9dda68132c7270d4c16a611a57))
+* **measurements:** editable objective across Measurement review, Edit image, details and Manage ([#1797](https://github.com/bcit-tlu/hriv/issues/1797)) ([2df3bcc](https://github.com/bcit-tlu/hriv/commit/2df3bccda38210a21d30d26927b4d86c69244aea))
+* **measurements:** reversible review, re-scan, and whole-library scans ([#1777](https://github.com/bcit-tlu/hriv/issues/1777)) ([d33e829](https://github.com/bcit-tlu/hriv/commit/d33e829ba4a99eee615f719fc8c3c05b9e3e5dac))
+* **observability:** record OpenSeadragon viewer-open failure messages ([#1673](https://github.com/bcit-tlu/hriv/issues/1673)) ([a1125db](https://github.com/bcit-tlu/hriv/commit/a1125dbbaaa0f7f3d9104eed28cae9d8d6035a69))
+* revision-based ETag/304 for GET /api/collections ([#1654](https://github.com/bcit-tlu/hriv/issues/1654)) ([79550b6](https://github.com/bcit-tlu/hriv/commit/79550b62a2d39a757623f1f310112bff1e7ef0bf))
+* scale unit picker shared by Measurement review and Edit image ([#1741](https://github.com/bcit-tlu/hriv/issues/1741)) ([1cae492](https://github.com/bcit-tlu/hriv/commit/1cae492f5fc43fa5c491f60af47ee05c676dc963))
+* server-side search, sort and paging for GET /api/collections ([#1650](https://github.com/bcit-tlu/hriv/issues/1650)) ([dba702b](https://github.com/bcit-tlu/hriv/commit/dba702b2c5b3ec43e22f60c9822ebb577a4a09ba))
+* **users:** user auth-state schema and UserOut credential flags ([#1786](https://github.com/bcit-tlu/hriv/issues/1786)) ([41c03b7](https://github.com/bcit-tlu/hriv/commit/41c03b77ecb269de594376477e5b8f6a7bc0ab2a))
+
+
+### Bug Fixes
+
+* **announcements:** authors see their own banner/bell entry, notify-again resets, grey picker, Admins = Admin program ([#1852](https://github.com/bcit-tlu/hriv/issues/1852)) ([abf279f](https://github.com/bcit-tlu/hriv/commit/abf279f4a2bb6371f168a4e6b2e9de9244e9141e))
+* **announcements:** poll-driven reflow, kind accents, bordered cards/banner with reactions, range chips, local links ([#1850](https://github.com/bcit-tlu/hriv/issues/1850)) ([e47ed19](https://github.com/bcit-tlu/hriv/commit/e47ed19d89c080747c25e33934e83b257abaa6d9))
+* **announcements:** seen-state 500, one reaction per reader, dot bell badge, page-only reactions, draft wash ([#1851](https://github.com/bcit-tlu/hriv/issues/1851)) ([5af1166](https://github.com/bcit-tlu/hriv/commit/5af116622950484771e08d61b567a6cff895f586))
+* **collections:** keep Browse-root return path on collection reload ([#1592](https://github.com/bcit-tlu/hriv/issues/1592)) ([#1814](https://github.com/bcit-tlu/hriv/issues/1814)) ([c34d267](https://github.com/bcit-tlu/hriv/commit/c34d26701958ade2dd16131956c38d96fbe91bb5))
+* **collections:** re-link synchronized panes on Restore default view ([#1692](https://github.com/bcit-tlu/hriv/issues/1692)) ([f381f25](https://github.com/bcit-tlu/hriv/commit/f381f25d004c835dcd35d3112a826c405dabc19a))
+* **counting:** classical pixel budget, orphaned distutils .pth, Cells vs Nuclei help ([#1719](https://github.com/bcit-tlu/hriv/issues/1719)) ([2421ba4](https://github.com/bcit-tlu/hriv/commit/2421ba41166094fe7adef2c76dfe11adf89651c8))
+* **frontend:** cache OSD WebGL probe and use canvas navigator drawer ([#1263](https://github.com/bcit-tlu/hriv/issues/1263)) ([ecd9d66](https://github.com/bcit-tlu/hriv/commit/ecd9d661501c328ffecfd855b63512d7d92737e1))
+* **frontend:** collection viewer layout fixes — dock overlap and pane notes ([#1683](https://github.com/bcit-tlu/hriv/issues/1683), [#1686](https://github.com/bcit-tlu/hriv/issues/1686)) ([#1685](https://github.com/bcit-tlu/hriv/issues/1685)) ([eb9abfd](https://github.com/bcit-tlu/hriv/commit/eb9abfd5dd0cc51f1fb7e31a8ea920a7182eb5ce))
+* **frontend:** collections tab reset, graph toolbar/refit, FilterBar + Choose columns ([#1644](https://github.com/bcit-tlu/hriv/issues/1644)) ([a1a00a1](https://github.com/bcit-tlu/hriv/commit/a1a00a16408a0cb6472baa948655e602e04759f9))
+* **frontend:** graph legend always open, type colours, pan hint, consistent node sizes ([#1658](https://github.com/bcit-tlu/hriv/issues/1658)) ([e8b33ac](https://github.com/bcit-tlu/hriv/commit/e8b33acacbd0511108a6bf2584b9312b91df6c29))
+* **frontend:** make count report Close and X buttons work ([#1721](https://github.com/bcit-tlu/hriv/issues/1721)) ([5cea67d](https://github.com/bcit-tlu/hriv/commit/5cea67dcae5145f1f4b49451a1a557c6c65b60dc))
+* **frontend:** raise graph edge contrast and say categorize in the file-only notice ([#1648](https://github.com/bcit-tlu/hriv/issues/1648)) ([1bb8438](https://github.com/bcit-tlu/hriv/commit/1bb8438e8d34e29bdaa1e25a5bb14f9c25bb870d))
+* **frontend:** reconcile browse path and cat links with live ancestry ([#1813](https://github.com/bcit-tlu/hriv/issues/1813)) ([26ff623](https://github.com/bcit-tlu/hriv/commit/26ff623e0c13c4badaf46b070584fe5b301900c7))
+* **frontend:** rename Browse "Add Collection" button to "New collection" ([#1607](https://github.com/bcit-tlu/hriv/issues/1607)) ([a442810](https://github.com/bcit-tlu/hriv/commit/a4428104c939f49e751cadc118c8abef4de79077))
+* **frontend:** rename synchronized view buttons to default-view terms ([#1672](https://github.com/bcit-tlu/hriv/issues/1672)) ([fdad3e6](https://github.com/bcit-tlu/hriv/commit/fdad3e6c81a9068a3d021d135e6fa92df0e10876))
+* **frontend:** show My collections drawer in the image viewer and on Collections pages ([#1615](https://github.com/bcit-tlu/hriv/issues/1615)) ([4e0c29e](https://github.com/bcit-tlu/hriv/commit/4e0c29e2c4d958e20bef898875e383baba147bd6))
+* **frontend:** show only current collection rows and revalidate on navigation ([#1620](https://github.com/bcit-tlu/hriv/issues/1620)) ([8e471ef](https://github.com/bcit-tlu/hriv/commit/8e471ef7d4870e2b71164451658a7ed1379e393d))
+* resolve category card covers server-side so students see them ([#1646](https://github.com/bcit-tlu/hriv/issues/1646)) ([50cf478](https://github.com/bcit-tlu/hriv/commit/50cf47843d68d479de22df5122b0a7b8289645f6))
+* viewer polish follow-ups and no-op image PATCH 500 ([#1681](https://github.com/bcit-tlu/hriv/issues/1681)) ([bf3cc64](https://github.com/bcit-tlu/hriv/commit/bf3cc64650b0c244c0edad3081ba04a496ef5be0))
+
 ## [0.67.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.66.0...frontend-v0.67.0) (2026-10-08)
 
 

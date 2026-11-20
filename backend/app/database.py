@@ -49,21 +49,37 @@ class Settings(BaseSettings):
     rebuild_retry_backoff_base_seconds: int = Field(default=60, ge=1)
     rebuild_retry_backoff_cap_seconds: int = Field(default=900, ge=1)
 
+    # Resumable bulk-import coordination (#1173). The coordinator stays
+    # API-hosted but is now claimed through a PostgreSQL lease on its
+    # ``Job`` supervisor row, so an API restart/crash/rollout resumes the
+    # import instead of abandoning it. Heartbeats must stay well under the
+    # lease; the periodic sweep re-spawns coordinators for active durable
+    # jobs and bounds crash-looping imports via the claim cap.
+    bulk_import_coordinator_lease_seconds: int = Field(default=120, ge=30)
+    bulk_import_coordinator_heartbeat_seconds: int = Field(default=30, ge=5)
+    bulk_import_item_lease_seconds: int = Field(default=300, ge=30)
+    bulk_import_max_coordinator_claims: int = Field(default=10, ge=1)
+    bulk_import_max_item_attempts: int = Field(default=3, ge=1)
+    bulk_import_coordinator_sweep_seconds: int = Field(default=30, ge=5)
+
     # Dark-launch flag for the collections feature (epic #1409). When off the
     # collections router answers 404 and the frontend hides the tab; the chart
     # defaults it off and the `latest` overlay turns it on (docs/collections.md).
     collections_enabled: bool = False
+    markers_enabled: bool = False
     collections_student_access: bool = True
 
     # My collections Browse shelf (#1583), gated by collections_enabled.
     collections_home_shelf: bool = False
 
-    # Object counting (epic #1661): dark-launch flag, dedicated arq
-    # queue/worker, pre-flight pixel budget, per-user job cap and ephemeral
-    # Redis result policy. Job state never touches Postgres. The budget,
-    # downsample and margin defaults are placeholders until the outliner
-    # spike (#1662) produces measured numbers — see docs/object-counting.md.
-    counting_enabled: bool = False
+    # Announcements stream (epic #1832): dark-launch flag for the new
+    # /api/announcements surface and the Announcements UI. The legacy
+
+    # Object counting (epic #1661): dedicated arq queue/worker, pre-flight
+    # pixel budget, per-user job cap and ephemeral Redis result policy.
+    # Job state never touches Postgres. The budget, downsample and margin
+    # defaults are placeholders until the outliner spike (#1662) produces
+    # measured numbers — see docs/object-counting.md.
     counting_queue_name: str = "arq:counting"
     counting_max_pixels: int = Field(default=750_000, ge=65_536)
     # Classical (scikit-image watershed) outliners are ~20x faster per MP
@@ -80,6 +96,10 @@ class Settings(BaseSettings):
     counting_result_ttl_seconds: int = Field(default=600, ge=60)
     counting_job_timeout_seconds: int = Field(default=60, ge=5)
     counting_max_objects: int = Field(default=3000, ge=1)
+    # Ops-level kill-switch for the flat-field + stretch preprocessing in
+    # the classical mask path (#1870). Deliberately the only knob —
+    # per-image tuning arrives via metadata.detection_params instead.
+    counting_preprocess: bool = True
 
     # Audit middleware: comma-separated list of URL paths whose request logs are
     # emitted at DEBUG instead of INFO. Entries without a trailing slash match
@@ -208,6 +228,22 @@ class Settings(BaseSettings):
             raise ValueError(
                 "REBUILD_RETRY_BACKOFF_BASE_SECONDS must not exceed "
                 "REBUILD_RETRY_BACKOFF_CAP_SECONDS"
+            )
+        if (
+            self.bulk_import_coordinator_heartbeat_seconds
+            >= self.bulk_import_coordinator_lease_seconds
+        ):
+            raise ValueError(
+                "BULK_IMPORT_COORDINATOR_HEARTBEAT_SECONDS must be shorter "
+                "than BULK_IMPORT_COORDINATOR_LEASE_SECONDS"
+            )
+        if (
+            self.bulk_import_coordinator_heartbeat_seconds
+            >= self.bulk_import_item_lease_seconds
+        ):
+            raise ValueError(
+                "BULK_IMPORT_COORDINATOR_HEARTBEAT_SECONDS must be shorter "
+                "than BULK_IMPORT_ITEM_LEASE_SECONDS"
             )
         return self
 

@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import os
+import re
 import queue
 import shutil
 import subprocess
@@ -21,6 +22,7 @@ import threading
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Iterator
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TextIO, TypeVar
@@ -37,22 +39,28 @@ from .backup_access import (
     restore_snapshot_file,
 )
 from .browse_state import bump_browse_revision
+from .board_archives import (
+    SAVED_VIEW_ID_TABLES, clear_saved_views, export_saved_views, import_saved_views,
+)
 from .component_versions import get_app_version
 from .database import get_async_session, settings
+from .collection_slots import export_slots, import_slots
 from .models import (
     ACTIVE_TASK_STATUSES,
     AdminTask,
     Announcement,
+    AnnouncementReaction,
     Category,
-    ChangelogEntry,
     Collection,
-    CollectionImage,
+    ContentMedia,
     Group,
     Image,
     MeasurementFinding,
     Program,
     SourceImage,
     User,
+    announcement_groups,
+    announcement_programs,
 )
 from .rebuild_fixture import (
     FIXTURE_ARCHIVE_LOCK_FILENAME as REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME,
@@ -67,6 +75,7 @@ from .rebuild_locks import (
     find_active_rebuild,
 )
 from .tile_order import INITIAL_SCOPE_REVISION
+from .snapshot_files import snapshot_files, snapshot_relative_target
 from .worker import TaskQueueUnavailableError, enqueue_admin_task
 
 logger = logging.getLogger(__name__)
@@ -491,35 +500,56 @@ def _swap_imported_entries(
             raise TaskCancelled("Task cancelled by admin")
 
     try:
-        for entry in sorted(extracted_dir.iterdir(), key=lambda p: p.name):
+        entries = [
+            (entry, data_dir / entry.name)
+            for entry in sorted(extracted_dir.iterdir(), key=lambda p: p.name)
+            if entry.name not in {tasks_basename, staging_basename, tiles_basename}
+        ]
+        archived_tiles = extracted_dir / tiles_basename
+        entries.extend(
+            (path, Path(tiles_dir) / snapshot_relative_target(path.relative_to(archived_tiles)))
+            for path in snapshot_files(archived_tiles)
+        )
+        for entry, target in entries:
             _check_cancel()
-            if entry.name in {tasks_basename, staging_basename, tiles_basename}:
-                continue
-            target = data_dir / entry.name
-            backup = (
-                _unique_sibling_path(target, ".bak")
-                if target.exists() or target.is_symlink()
-                else None
-            )
-            if backup is not None:
-                os.rename(str(target), str(backup))
-            try:
-                os.rename(str(entry), str(target))
-            except Exception:
-                if target.exists() or target.is_symlink():
-                    _remove_path(target)
-                if backup is not None and backup.exists():
-                    try:
-                        os.rename(str(backup), str(target))
-                    except OSError:
-                        logger.debug(
-                            "Failed to restore backup path %s to %s during rollback",
-                            backup,
-                            target,
-                            exc_info=True,
-                        )
-                raise
-            moved.append((target, backup))
+            if not target.parent.resolve().is_relative_to(data_dir.resolve()):
+                raise ValueError("Restore target escapes the data directory")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with ExitStack() as staging:
+                promote = os.rename
+                if entry.is_relative_to(archived_tiles):
+                    temporary_dir = staging.enter_context(
+                        tempfile.TemporaryDirectory(dir=target.parent, prefix=".restore-")
+                    )
+                    staged_entry = Path(temporary_dir) / entry.name
+                    shutil.copyfile(entry, staged_entry)
+                    entry = staged_entry
+                    promote = os.replace
+                    _check_cancel()
+                backup = (
+                    _unique_sibling_path(target, ".bak")
+                    if target.exists() or target.is_symlink()
+                    else None
+                )
+                if backup is not None:
+                    os.rename(str(target), str(backup))
+                try:
+                    promote(str(entry), str(target))
+                except Exception:
+                    if target.exists() or target.is_symlink():
+                        _remove_path(target)
+                    if backup is not None and backup.exists():
+                        try:
+                            os.rename(str(backup), str(target))
+                        except OSError:
+                            logger.debug(
+                                "Failed to restore backup path %s to %s during rollback",
+                                backup,
+                                target,
+                                exc_info=True,
+                            )
+                    raise
+                moved.append((target, backup))
     except Exception:
         for target, backup in reversed(moved):
             try:
@@ -609,6 +639,22 @@ _T = TypeVar("_T")
 
 class TaskCancelled(Exception):
     """Raised when an admin task detects a cancellation request."""
+
+
+
+def one_reaction_per_reader(rows: list[dict]) -> list[dict]:
+    """Keep each reader's newest reaction per announcement (highest ``id``).
+
+    Dumps taken before ``0044_one_reaction_per_user`` may hold several emojis
+    per reader; the live schema allows one, so mirror the migration's choice.
+    """
+    newest: dict[tuple[int, int], dict] = {}
+    for row in rows:
+        key = (row["announcement_id"], row["user_id"])
+        current = newest.get(key)
+        if current is None or (row.get("id") or 0) > (current.get("id") or 0):
+            newest[key] = row
+    return sorted(newest.values(), key=lambda r: r.get("id") or 0)
 
 
 async def reconcile_stale_tasks(
@@ -833,6 +879,79 @@ async def _run_with_task_heartbeat(
             poll_task,
             return_exceptions=True,
         )
+
+
+def _announcement_rows_from_dump(dump: dict) -> list[dict]:
+    """Return announcement rows from a dump, mapping the pre-0042 shape.
+
+    New dumps carry an ``"announcements"`` list.  Older dumps carry a
+    ``"changelog_entries"`` list (→ ``kind='release'`` / ``audience='staff'``
+    announcements, ids preserved) plus an ``"announcement"`` singleton object
+    (→ one ``audience='everyone'`` banner announcement when its message is not
+    blank; ``enabled`` maps to the publish window).
+    """
+    rows = list(dump.get("announcements") or [])
+    if "announcements" in dump:
+        return rows
+    for entry in dump.get("changelog_entries", []) or []:
+        rows.append(
+            {
+                "id": entry.get("id"),
+                "title": entry.get("title"),
+                "message": entry.get("body", ""),
+                "kind": "release",
+                "audience": "staff",
+                "author_id": None,
+                "publish_at": entry.get("published_at"),
+                "notified_at": entry.get("published_at"),
+                "created_at": entry.get("created_at") or entry.get("published_at"),
+                "updated_at": entry.get("updated_at") or entry.get("published_at"),
+            }
+        )
+    ann_data = dump.get("announcement") or {}
+    message = (ann_data.get("message") or "").strip()
+    if message:
+        used_ids = {r["id"] for r in rows if r.get("id") is not None}
+        next_id = max(used_ids, default=0) + 1
+        published = ann_data.get("created_at") if ann_data.get("enabled") else None
+        rows.append(
+            {
+                "id": next_id,
+                "title": None,
+                "message": ann_data.get("message", ""),
+                "kind": "notice",
+                "audience": "everyone",
+                "author_id": None,
+                "publish_at": published,
+                "notified_at": published,
+                "banner": True,
+                "created_at": ann_data.get("created_at"),
+                "updated_at": ann_data.get("updated_at"),
+            }
+        )
+    return rows
+
+
+def _seed_announcement_seen(metadata: dict | None, release_rows: list[dict]) -> dict | None:
+    """Mirror migration 0042 for pre-0042 dumps: ``changelog_last_read_at`` →
+    ``announcement_seen`` markers for the release notes published on or before
+    it. Other metadata keys are preserved; the legacy key is kept too (the
+    deployed frontend still reads it until #1838)."""
+    if not metadata or not isinstance(metadata, dict):
+        return metadata
+    last_read = _parse_dt(metadata.get("changelog_last_read_at"))
+    if last_read is None:
+        return metadata
+    seen = dict(metadata.get("announcement_seen") or {})
+    for row in release_rows:
+        if row.get("kind") != "release" or row.get("id") is None:
+            continue
+        published = _parse_dt(row.get("notified_at") or row.get("publish_at"))
+        if published is not None and published <= last_read:
+            seen.setdefault(str(row["id"]), published.isoformat())
+    if not seen:
+        return metadata
+    return {**metadata, "announcement_seen": seen}
 
 
 def _parse_dt(value: str | None) -> datetime | None:
@@ -1173,10 +1292,10 @@ async def run_db_export(task_id: int) -> None:
             collections = result.scalars().all()
             exported_image_ids = {image.id for image in images}
 
-            # Changelog entries
-            await _update_task(session, task, log_line="Exporting changelog entries…", progress=70, check_cancelled=True)
-            result = await snapshot.execute(select(ChangelogEntry).order_by(ChangelogEntry.id))
-            changelog_entries = result.scalars().all()
+            # Announcements (incl. release notes, formerly changelog_entries)
+            await _update_task(session, task, log_line="Exporting announcements…", progress=70, check_cancelled=True)
+            result = await snapshot.execute(select(Announcement).order_by(Announcement.id))
+            announcements = result.scalars().all()
 
             # Measurement findings (reviews of rebuild-fixture images are dropped)
             await _update_task(session, task, log_line="Exporting measurement findings…", progress=72, check_cancelled=True)
@@ -1189,17 +1308,20 @@ async def run_db_export(task_id: int) -> None:
                 if f.image_id in exported_image_ids
             ]
 
-            # Announcement
-            await _update_task(session, task, log_line="Exporting announcement…", progress=75, check_cancelled=True)
+            # Announcement reactions and uploaded media
+            await _update_task(session, task, log_line="Exporting announcement reactions…", progress=75, check_cancelled=True)
             result = await snapshot.execute(
-                select(Announcement).where(Announcement.id == 1)
+                select(AnnouncementReaction).order_by(AnnouncementReaction.id)
             )
-            ann = result.scalar_one_or_none()
+            announcement_reactions = result.scalars().all()
+            result = await snapshot.execute(select(ContentMedia).order_by(ContentMedia.id))
+            content_media = result.scalars().all()
 
             def dt(v: datetime | None) -> str | None:
                 return v.isoformat() if v else None
 
             dump = {
+                **await export_saved_views(snapshot, exported_image_ids),
                 "exported_at": datetime.now(timezone.utc).isoformat(),
                 "programs": [
                     {
@@ -1325,6 +1447,7 @@ async def run_db_export(task_id: int) -> None:
                             for link in c.image_links
                             if link.image_id in exported_image_ids
                         ],
+                        "slots": export_slots(c, exported_image_ids),
                         # Only meaningful while the pinned member is exported
                         # too — otherwise the tile falls back to first member.
                         "cover_image_id": (
@@ -1340,16 +1463,47 @@ async def run_db_export(task_id: int) -> None:
                     }
                     for c in collections
                 ],
-                "changelog_entries": [
+                "announcements": [
                     {
-                        "id": entry.id,
-                        "title": entry.title,
-                        "body": entry.body,
-                        "published_at": dt(entry.published_at),
-                        "created_at": dt(entry.created_at),
-                        "updated_at": dt(entry.updated_at),
+                        "id": a.id,
+                        "title": a.title,
+                        "message": a.message,
+                        "kind": a.kind,
+                        "author_id": a.author_id,
+                        "audience": a.audience,
+                        "publish_at": dt(a.publish_at),
+                        "expires_at": dt(a.expires_at),
+                        "notified_at": dt(a.notified_at),
+                        "pinned": a.pinned,
+                        "banner": a.banner,
+                        "program_ids": sorted(p.id for p in a.programs),
+                        "group_ids": sorted(g.id for g in a.groups),
+                        "created_at": dt(a.created_at),
+                        "updated_at": dt(a.updated_at),
                     }
-                    for entry in changelog_entries
+                    for a in announcements
+                ],
+                "announcement_reactions": [
+                    {
+                        "id": r.id,
+                        "announcement_id": r.announcement_id,
+                        "user_id": r.user_id,
+                        "emoji": r.emoji,
+                        "created_at": dt(r.created_at),
+                    }
+                    for r in announcement_reactions
+                ],
+                "content_media": [
+                    {
+                        "id": m.id,
+                        "stored_name": m.stored_name,
+                        "original_name": m.original_name,
+                        "content_type": m.content_type,
+                        "size_bytes": m.size_bytes,
+                        "uploader_id": m.uploader_id,
+                        "created_at": dt(m.created_at),
+                    }
+                    for m in content_media
                 ],
                 "measurement_findings": [
                     {
@@ -1362,6 +1516,7 @@ async def run_db_export(task_id: int) -> None:
                         "objective": f.objective,
                         "confidence": f.confidence,
                         "evidence": f.evidence,
+                        "params": f.params,
                         "detector_version": f.detector_version,
                         "approved_scale": f.approved_scale,
                         "approved_unit": f.approved_unit,
@@ -1373,12 +1528,6 @@ async def run_db_export(task_id: int) -> None:
                     }
                     for f in measurement_findings
                 ],
-                "announcement": {
-                    "message": ann.message if ann else "",
-                    "enabled": ann.enabled if ann else False,
-                    "created_at": dt(ann.created_at) if ann else None,
-                    "updated_at": dt(ann.updated_at) if ann else None,
-                },
             }
 
             # Write JSON to file
@@ -1398,7 +1547,7 @@ async def run_db_export(task_id: int) -> None:
                 f"{len(dump['users'])} users, "
                 f"{len(dump['source_images'])} source images, "
                 f"{len(dump['collections'])} collections, "
-                f"{len(dump['changelog_entries'])} changelog entries."
+                f"{len(dump['announcements'])} announcements."
             )
             await _update_task(
                 session, task,
@@ -1522,6 +1671,7 @@ async def run_db_import(task_id: int) -> None:
                 )
                 await status_session.commit()
 
+                await clear_saved_views(data_session)
                 await data_session.execute(text("DELETE FROM collection_images"))
                 await data_session.execute(text("DELETE FROM collection_programs"))
                 await data_session.execute(text("DELETE FROM collection_groups"))
@@ -1538,7 +1688,10 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.execute(text("DELETE FROM groups"))
                 await data_session.execute(text("DELETE FROM user_programs"))
                 await data_session.execute(text("DELETE FROM users"))
-                await data_session.execute(text("DELETE FROM changelog_entries"))
+                await data_session.execute(text("DELETE FROM announcement_reactions"))
+                await data_session.execute(text("DELETE FROM announcement_groups"))
+                await data_session.execute(text("DELETE FROM announcement_programs"))
+                await data_session.execute(text("DELETE FROM content_media"))
                 await data_session.execute(text("DELETE FROM announcements"))
                 await data_session.execute(text("DELETE FROM programs"))
                 # The restore rewrites category/image sort_order wholesale, so
@@ -1567,7 +1720,12 @@ async def run_db_import(task_id: int) -> None:
 
                 # Import users
                 await _update_task(status_session, task, log_line="Importing users…", progress=25)
+                legacy_dump = "announcements" not in dump
+                announcement_rows = _announcement_rows_from_dump(dump)
                 for u in dump["users"]:
+                    user_metadata = u.get("metadata", {})
+                    if legacy_dump:
+                        user_metadata = _seed_announcement_seen(user_metadata, announcement_rows)
                     user = User(
                         id=u["id"],
                         name=u["name"],
@@ -1581,7 +1739,7 @@ async def run_db_import(task_id: int) -> None:
                         role=u.get("role", "student"),
                         active=u.get("active", True),
                         last_access=_parse_dt(u.get("last_access")),
-                        metadata_=u.get("metadata", {}),
+                        metadata_=user_metadata,
                         created_at=_parse_dt(u.get("created_at")),
                         updated_at=_parse_dt(u.get("updated_at")),
                     )
@@ -1760,6 +1918,18 @@ async def run_db_import(task_id: int) -> None:
                 # Import collections (after users, programs, groups and images:
                 # owner, scope and image links all reference those rows)
                 await _update_task(status_session, task, log_line="Importing collections…", progress=68)
+                thumbnail_ids = [
+                    int(slot["thumb"].rsplit("/", 1)[1].removesuffix(".jpg"))
+                    for collection_data in dump.get("collections", [])
+                    for slot in collection_data.get("slots", [])
+                    if isinstance(slot.get("thumb"), str)
+                    and re.fullmatch(r"/api/tiles/[0-9]+/collection_slots/[1-9][0-9]*\.jpg", slot["thumb"])
+                ]
+                if thumbnail_ids:
+                    await data_session.execute(text(
+                        "SELECT setval('collection_images_id_seq', GREATEST("
+                        "(SELECT last_value FROM collection_images_id_seq), :maximum), true)"
+                    ), {"maximum": max(thumbnail_ids)})
                 for c in dump.get("collections", []):
                     collection = Collection(
                         id=c["id"],
@@ -1790,14 +1960,11 @@ async def run_db_import(task_id: int) -> None:
                             select(Group).where(Group.id.in_(group_ids))
                         )).scalars().all()
                         collection.groups = list(grps)
-                    collection.image_links = [
-                        CollectionImage(image_id=image_id, sort_order=position)
-                        for position, image_id in enumerate(c.get("image_ids", []))
-                    ]
+                    collection.image_links = import_slots(c)
                     # Pinned cover survives only while it names an imported
                     # member (older dumps predate the field). The explicit
                     # "no cover" flag survives independently of members.
-                    if c.get("cover_image_id") in (c.get("image_ids") or []):
+                    if c.get("cover_image_id") in {link.image_id for link in collection.image_links}:
                         collection.cover_image_id = c["cover_image_id"]
                     collection.cover_blank = bool(c.get("cover_blank"))
                     if collection.cover_blank:
@@ -1831,6 +1998,7 @@ async def run_db_import(task_id: int) -> None:
                             objective=f.get("objective"),
                             confidence=f.get("confidence", 0.0),
                             evidence=f.get("evidence"),
+                            params=f.get("params"),
                             detector_version=f["detector_version"],
                             approved_scale=f.get("approved_scale"),
                             approved_unit=f.get("approved_unit"),
@@ -1843,39 +2011,74 @@ async def run_db_import(task_id: int) -> None:
                     )
                 await data_session.flush()
 
-                # Import changelog entries
-                await _update_task(status_session, task, log_line="Importing changelog entries…", progress=70)
-                for entry in dump.get("changelog_entries", []):
-                    changelog_entry = ChangelogEntry(
-                        id=entry["id"],
-                        title=entry["title"],
-                        body=entry["body"],
-                        published_at=_parse_dt(entry.get("published_at")),
-                        created_at=_parse_dt(entry.get("created_at")),
-                        updated_at=_parse_dt(entry.get("updated_at")),
+                # Import announcements (new dumps) or map the pre-0042 shape
+                # (`changelog_entries` list + `announcement` singleton object).
+                await _update_task(status_session, task, log_line="Importing announcements…", progress=70)
+                for row in announcement_rows:
+                    data_session.add(
+                        Announcement(
+                            id=row.get("id"),
+                            title=row.get("title"),
+                            message=row.get("message", ""),
+                            kind=row.get("kind", "notice"),
+                            author_id=row.get("author_id"),
+                            audience=row.get("audience", "targeted"),
+                            publish_at=_parse_dt(row.get("publish_at")),
+                            expires_at=_parse_dt(row.get("expires_at")),
+                            notified_at=_parse_dt(row.get("notified_at")),
+                            pinned=bool(row.get("pinned", False)),
+                            banner=bool(row.get("banner", False)),
+                            created_at=_parse_dt(row.get("created_at")),
+                            updated_at=_parse_dt(row.get("updated_at")),
+                        )
                     )
-                    data_session.add(changelog_entry)
                 await data_session.flush()
+                program_links = [
+                    {"announcement_id": row["id"], "program_id": pid}
+                    for row in announcement_rows
+                    if row.get("id") is not None
+                    for pid in row.get("program_ids", [])
+                ]
+                if program_links:
+                    await data_session.execute(insert(announcement_programs).values(program_links))
+                group_links = [
+                    {"announcement_id": row["id"], "group_id": gid}
+                    for row in announcement_rows
+                    if row.get("id") is not None
+                    for gid in row.get("group_ids", [])
+                ]
+                if group_links:
+                    await data_session.execute(insert(announcement_groups).values(group_links))
 
-                # Import announcement
-                await _update_task(status_session, task, log_line="Importing announcement…", progress=75, check_cancelled=True)
-                ann_data = dump.get("announcement")
-                if ann_data:
-                    ann = Announcement(
-                        id=1,
-                        message=ann_data.get("message", ""),
-                        enabled=ann_data.get("enabled", False),
-                        created_at=_parse_dt(ann_data.get("created_at")),
-                        updated_at=_parse_dt(ann_data.get("updated_at")),
+                await _update_task(status_session, task, log_line="Importing announcement reactions…", progress=75, check_cancelled=True)
+                for r in one_reaction_per_reader(dump.get("announcement_reactions", [])):
+                    data_session.add(
+                        AnnouncementReaction(
+                            id=r.get("id"),
+                            announcement_id=r["announcement_id"],
+                            user_id=r["user_id"],
+                            emoji=r["emoji"],
+                            created_at=_parse_dt(r.get("created_at")),
+                        )
                     )
-                    data_session.add(ann)
-                else:
-                    data_session.add(Announcement(id=1, message="", enabled=False))
+                for m in dump.get("content_media", []):
+                    data_session.add(
+                        ContentMedia(
+                            id=m.get("id"),
+                            stored_name=m["stored_name"],
+                            original_name=m.get("original_name", m["stored_name"]),
+                            content_type=m.get("content_type", "application/octet-stream"),
+                            size_bytes=int(m.get("size_bytes", 0)),
+                            uploader_id=m.get("uploader_id"),
+                            created_at=_parse_dt(m.get("created_at")),
+                        )
+                    )
                 await data_session.flush()
 
                 # Reset sequences
+                await import_saved_views(data_session, dump)
                 await _update_task(status_session, task, log_line="Resetting sequences…", progress=85)
-                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "changelog_entries", "source_images", "collections", "measurement_findings"):
+                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "announcement_reactions", "content_media", "source_images", "collections", "collection_images", "measurement_findings", *SAVED_VIEW_ID_TABLES):
                     await data_session.execute(
                         text(
                             f"SELECT setval('{tbl}_id_seq', "
@@ -1899,7 +2102,7 @@ async def run_db_import(task_id: int) -> None:
                     f"{len(dump['users'])} users, "
                     f"{len(dump.get('source_images', []))} source images, "
                     f"{len(dump.get('collections', []))} collections, "
-                    f"{len(dump.get('changelog_entries', []))} changelog entries."
+                    f"{len(announcement_rows)} announcements."
                 )
                 # Do NOT check_cancelled here — data_session.commit() already
                 # succeeded so the import data is permanently persisted.
@@ -2455,6 +2658,10 @@ def _iter_export_entries(
                 # zero-byte entry or skip it on its own.
                 size = 0
             yield arc_fpath, fpath, size, False
+
+    for path in snapshot_files(Path(settings.tiles_dir)):
+        _check_cancel()
+        yield str(Path("data") / tiles_basename / path.relative_to(settings.tiles_dir)), str(path), path.stat().st_size, False
 
 
 def _iter_export_files(data_dir: str) -> Iterator[tuple[str, int]]:

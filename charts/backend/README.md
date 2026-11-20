@@ -138,10 +138,17 @@ parameter on every tile request:
   same pod (`127.0.0.1:8000`, `GET /api/tiles-auth`), forwarding only
   `X-Original-URI: $request_uri`; the validator extracts the token from the
   original URI's query string. 204 allows, 401 means missing/expired/tampered
-  token, 403 means the token is bound to a different image.
+  token, 403 means the token is bound to a different image or the forwarded
+  path (decoded once, as nginx does) has dot (`.`/`..`) or empty segments,
+  backslashes or null bytes.
+- Raw request paths containing dot segments (literal or percent-encoded,
+  e.g. `/api/tiles/5/../6/image.dzi`) are rejected with 404 before auth:
+  nginx would serve the normalized path while the validator sees the raw
+  one.
 - Auth verdicts are cached in a `proxy_cache` zone (`tile_auth`, 1m keys,
-  8m max) keyed on `$tile_auth_token:$tile_image_id` — never on client
-  identity. Valid (204) verdicts are cached for 30 seconds (≤ 60s); 401/403
+  8m max) keyed on `$tile_auth_token:$tile_image_id:$tile_path_class` (id
+  and path class taken from the normalized `$uri`, i.e. the path nginx
+  serves) — never on client identity. Valid (204) verdicts are cached for 30 seconds (≤ 60s); 401/403
   verdicts are not cached. Requests without a token bypass the cache entirely.
 - Tile responses carry `Cache-Control: private, max-age=2592000` — browsers
   cache aggressively, but shared caches/CDNs must not store them.
@@ -199,6 +206,15 @@ execution window and recovery settings:
 Heartbeat and child timeout values must remain shorter than the lease, and the
 pump cadence must be a whole-minute interval. Retry eligibility is stored in
 PostgreSQL and the retry base must not exceed the cap.
+
+## Markers and Boards feature flag (`markers.enabled`)
+
+`markers.enabled` defaults to `false` and renders `MARKERS_ENABLED` on
+the API pod. While disabled, `/api/boards` and `/api/markers` and their
+descendants return 404 before body parsing; maintenance still returns 503.
+`GET /api/features` exposes `markers`. Local Docker Compose enables the
+flag by default. The schema is additive and remains present when disabled.
+See [Markers and Boards](../../docs/markers-and-boards.md).
 
 ## Collections feature flag (`collections.enabled`)
 
@@ -415,7 +431,6 @@ outliner selection also feeds the API so it uses the correct mode's budget.
 
 | Values key                                                                      | Default                                                           | Purpose                                                                            |
 | ------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `counting.enabled`                                                              | `false`                                                           | API feature flag (`COUNTING_ENABLED`).                                             |
 | `counting.queueName`                                                            | `arq:counting`                                                    | Dedicated queue.                                                                   |
 | `counting.maxPixels` / `classicalMaxPixels`                                     | `750000` / `2000000`                                              | ML / classical stitched-pixel budgets.                                             |
 | `counting.maxDownsample` / `marginPx`                                           | `8` / `32`                                                        | Maximum power-of-two downsample / processing-level margin.                         |

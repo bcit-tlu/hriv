@@ -5,11 +5,6 @@ can view — the same gate as ``GET /api/images/{id}`` (404, never 403).
 Jobs are Redis-only (no DB tables): a JSON record plus result with a short
 TTL. The API only validates and enqueues; counting runs on the dedicated
 counting worker, never in-process in the API pod.
-
-The whole surface is dark-launched: ``CountingFeatureMiddleware`` answers
-404 for ``/api/counts*`` and ``/api/images/{id}/counts`` while
-``COUNTING_ENABLED`` is off, and ``require_counting_enabled`` keeps the
-same 404 as a router-level second layer.
 """
 
 import contextlib
@@ -29,6 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import get_current_user
 from ..auth_events import actor_log_fields
 from ..counting import jobs
+from ..counting.mpp import (
+    detection_params_from_metadata,
+    mpp_from_metadata,
+    nuclei_downsample,
+)
 from ..counting.stitch import (
     InvalidSelection,
     MissingTiles,
@@ -56,17 +56,6 @@ logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
 
-def require_counting_enabled() -> None:
-    """Router-wide gate for the ``COUNTING_ENABLED`` dark-launch flag.
-
-    Same 404 as an unknown route while the feature is off, mirroring
-    ``require_collections_enabled``. Evaluated per request so tests and
-    operators can flip it without rebuilding the app.
-    """
-    if not settings.counting_enabled:
-        raise HTTPException(status_code=404, detail="Not Found")
-
-
 # A cached pool can outlive Redis; connection/timeout failures on counting
 # operations surface as the stable 503 rather than a 500.
 _REDIS_ERRORS = (RedisError, OSError)
@@ -76,10 +65,7 @@ def _unavailable() -> HTTPException:
     return HTTPException(status_code=503, detail="counting_unavailable")
 
 
-router = APIRouter(
-    tags=["counts"],
-    dependencies=[Depends(require_counting_enabled)],
-)
+router = APIRouter(tags=["counts"])
 
 
 def _counting_health_key() -> str:
@@ -138,16 +124,15 @@ async def create_count(
                 raise HTTPException(status_code=409, detail="tiles_not_ready")
 
             # Cheap pre-flight validation — the worker re-plans identically
-            # before stitching, so both sides share ``plan_region``.
-            raw_mpp = (getattr(img, "metadata_", None) or {}).get("mpp_x")
-            # Metadata is free-form JSON: only a positive number counts as a
-            # known pixel size; anything else is treated as absent.
-            mpp_x = (
-                float(raw_mpp)
-                if isinstance(raw_mpp, (int, float))
-                and not isinstance(raw_mpp, bool)
-                and raw_mpp > 0
-                else None
+            # before stitching, so both sides share ``plan_region``. The
+            # resolved mpp rides the job record to the worker, so this one
+            # derivation feeds pre-flight, the level rule and the outliner.
+            mpp = mpp_from_metadata(getattr(img, "metadata_", None))
+            # Instructor-tuned detection values promoted at measurement
+            # approval (#1869); malformed payloads are ignored rather than
+            # breaking enqueue (#1870).
+            params = detection_params_from_metadata(
+                getattr(img, "metadata_", None)
             )
             try:
                 tile_root = resolve_tile_root(
@@ -175,17 +160,19 @@ async def create_count(
                         classical_max_pixels=settings.counting_classical_max_pixels,
                     ),
                     max_downsample=settings.counting_max_downsample,
-                    # Nuclei without mpp always run at level 0 (the
-                    # hematoxylin estimate merges dense tissue); forcing
-                    # the same d=1 here surfaces selection_too_large at
-                    # enqueue instead of after a wasted queue slot.
+                    # Nuclei run at the worker's fixed level rule — level
+                    # 0 with no pixel size (the hematoxylin estimate merges
+                    # dense tissue), the mpp-derived level otherwise.
+                    # Planning the same d here surfaces selection_too_large
+                    # at enqueue instead of after a wasted queue slot.
                     downsample=(
-                        1
+                        nuclei_downsample(
+                            mpp, settings.counting_max_downsample
+                        )
                         if (
                             body.mode == "nuclei"
                             and settings.counting_nuclei_outliner
                             not in CHEAP_OUTLINERS
-                            and mpp_x is None
                         )
                         else None
                     ),
@@ -232,11 +219,8 @@ async def create_count(
                     source_image_id=source_image_id,
                     mode=body.mode,
                     selection=body.selection.model_dump(),
-                    mpp=(
-                        mpp_x
-                        if isinstance(mpp_x, (int, float)) and mpp_x > 0
-                        else None
-                    ),
+                    mpp=mpp,
+                    params=params,
                     ttl_seconds=settings.counting_result_ttl_seconds,
                 )
                 reserved = await jobs.reserve_active_slot(

@@ -144,6 +144,7 @@ async def _run(
             max_downsample=settings.counting_max_downsample,
             max_objects=settings.counting_max_objects,
             is_cancelled=is_cancelled,
+            preprocess=settings.counting_preprocess,
         )
     )
     try:

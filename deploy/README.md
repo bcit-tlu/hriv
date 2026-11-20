@@ -101,7 +101,7 @@ intended split-PVC configuration.
 
 ## Counting worker (#1661/#1666)
 
-To enable object counting in `latest`: set `counting.enabled: true` and
+To enable object counting in `latest`: set
 `countingWorker.enabled: true` in the hriv-backend overlay, and point
 `countingWorker.networkPolicy.{redis,otel}` peers at the in-cluster
 Redis and OTel collector. KEDA on `arq:counting` is the preferred

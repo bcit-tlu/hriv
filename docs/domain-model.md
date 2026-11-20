@@ -7,6 +7,34 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 
 ## Entities
 
+### Marker and Board _(added in `0046_inuksuks_and_boards`)_
+
+- **Marker** (`markers`): a bookmark on one image, with required `title`
+  (255 characters), `x`, `y`, and `zoom`; `rotation` defaults to zero.
+  Optional `description` and `thumb` store text and a cropped thumbnail path.
+  `favourite` defaults to false; `sort_order` to zero; `version` to one
+  (optimistic concurrency). `image_id` is indexed and **CASCADE** on image
+  deletion. `created_by_user_id` is nullable creator audit (**SET NULL**).
+- **Board** (`boards`): required `name` (255 characters), optional
+  `description`, `visibility` (CHECK: private/public/restricted, default
+  private), `sort_order` (zero), and OCC `version` (one).
+  `created_by_user_id` and optional `owner_program_id` are **SET NULL** FKs.
+  Both entities have timezone-aware `created_at` / `updated_at` timestamps.
+- **Ownership and scope:** `marker_owners(marker_id, user_id)`,
+  `board_owners(board_id, user_id)`, `board_programs(board_id, program_id)`,
+  and `board_groups(board_id, group_id)` use composite PKs and **CASCADE**
+  FKs; both owner junctions index `user_id`. User deletion removes objects
+  whose entire owner set is departing, except program-owned boards. Co-owned
+  objects survive. Creator audit does not grant ownership.
+- **Membership:** `board_markers` has composite PK `(board_id, marker_id)`
+  with **CASCADE** FKs and `sort_order` (zero). An index covers
+  `(board_id, sort_order)`. Removing a Board never deletes a linked Marker
+  that is still on another Board.
+- **Caps:** `STUDENT_MAX_BOARDS = 10`, `STUDENT_MAX_MARKERS = 200`.
+  These constants are for subsequent creation APIs, not DB constraints.
+- **Dark launch:** `MARKERS_ENABLED=false` by default. See
+  [Markers and Boards](markers-and-boards.md); no CRUD endpoints ship yet.
+
 ### User
 
 - **Purpose:** authenticated user with role-based access.
@@ -145,7 +173,8 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   (nullable FK, `SET NULL`); `copyright`; `note`; `active` (boolean — inactive
   images are hidden from students); `metadata_` (JSONB, DB column `metadata` —
   stores `canvas_annotations`, `locked_overlays`, `measurement_scale`,
-  `measurement_unit`); `sort_order`; `version` (integer, starts at 1, used for
+  `measurement_unit`, `detection_params` — approved DetectionTuning);
+  `sort_order`; `version` (integer, starts at 1, used for
   optimistic concurrency); `width`; `height`; `file_size`.
 - **Common mistakes:**
   - `metadata_` is the Python attribute but the DB column is `metadata`.
@@ -158,7 +187,8 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   admin/instructor review ([measurement-review](measurement-review.md)).
 - **Key fields:** `image_id` (FK, `CASCADE`); `status`
   (`pending`/`approved`/`rejected`/`superseded`); `source`; `proposed_scale`;
-  `objective`; `confidence`; `evidence` (JSONB); `detector_version`;
+  `objective`; `confidence`; `evidence` (JSONB); `params` (JSONB, nullable —
+  `DetectionTuning`, NULL = shipped defaults); `detector_version`;
   `approved_scale`; `reviewed_by` (FK users, `SET NULL`).
 - **Common mistakes:**
   - Findings never change image metadata until approved; approval merges only
@@ -175,7 +205,11 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `status_message`; `name`; `category_id` (`SET NULL`); `copyright`; `note`;
   `active`; `image_id` (FK to Image, `SET NULL` — linked after processing);
   `file_size` (BigInteger); `uploaded_by` (FK to User, `SET NULL` — audit only,
-  resolved at processing time rather than snapshotting role/synthetic metadata).
+  resolved at processing time rather than snapshotting role/synthetic metadata);
+  `bulk_import_job_id` (FK to BulkImportJob, `SET NULL` — set for rows created
+  by a bulk import; paired with `stored_path` under the partial unique index
+  `uq_source_images_bulk_import_entry` so a resumed coordinator creates each
+  source image exactly once, added in `0041_bulk_import_resume`).
 
 - **Tile-cache provenance** _(added in `0014_add_tile_provenance`)_:
   `source_checksum` (SHA-256 of the source file), `tile_settings_hash`
@@ -190,9 +224,14 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 - **Purpose:** tracks multi-file upload/import operations.
 - **Key fields:** `status` (`pending` / `processing` / `completed` / `failed`);
   `category_id` (nullable FK, `SET NULL`); `total_count`; `completed_count`;
-  `failed_count`; `errors` (JSONB array); `requested_by` (FK to User, `SET NULL`
-  — audit only).
-- **Relationships:** `category`; `requester` (nullable FK to `User`).
+  `failed_count`; `errors` (JSONB array); `file_manifest` (JSONB staged
+  `[filename, stored_path]` pairs persisted at creation for orphan cleanup);
+  `job_id` (nullable FK to Job, `SET NULL` — durable supervisor link for
+  resumable coordination, added in `0041_bulk_import_resume`; `NULL` rows keep
+  the legacy finalize-on-stale reconciliation); `requested_by` (FK to User,
+  `SET NULL` — audit only).
+- **Relationships:** `category`; `requester` (nullable FK to `User`);
+  `job` (nullable FK to `Job`).
 
 ### Job _(added in `0022_add_jobs`)_
 
@@ -204,7 +243,10 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `total_count`; `completed_count`; `skipped_count`; `failed_count`;
   `cancelled_count`;
   `error_message`; `metadata_` (JSONB, DB column `metadata`); `requested_by`
-  (FK to User, `SET NULL`); `started_at`; `completed_at`.
+  (FK to User, `SET NULL`); `coordinator_token` / `coordinator_heartbeat_at` /
+  `coordinator_lease_expires_at` (CAS-guarded supervisor lease used by
+  resumable bulk-import coordinators, added in `0041_bulk_import_resume`);
+  `started_at`; `completed_at`.
 - **Relationships:** `requester`; `items` (one-to-many `JobItem`, cascade
   delete).
 - **Rebuild uniqueness:** PostgreSQL has a partial unique index permitting only
@@ -232,21 +274,58 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   lease recovery clears it for the next attempt. PostgreSQL
   `retry_not_before` controls when a queued retry is claimable.
 
-### Announcement
+### Announcement _(reworked in `0042_announcements`, epic #1832)_
 
-- **Purpose:** system-wide banner message.
-- **Key fields:** `message` (text); `enabled` (boolean).
-- **Note:** singleton — only `id=1` is used in practice.
+- **Purpose:** a message posted to an audience — notices, events, reminders,
+  celebrations, release notes and warnings. Replaces both the former singleton
+  banner row and `changelog_entries`.
+- **Key fields:** `title`; `message` (Markdown); `kind` (`notice` | `event` |
+  `reminder` | `celebration` | `release` | `warning` — the author picks an icon,
+  the icon _is_ the kind, and the kind fixes the severity); `author_id` (FK →
+  `users`, `ON DELETE SET NULL`); `audience` (`everyone` | `staff` | `admins` |
+  `instructors` | `staff_only` | `targeted` — the role audiences resolve
+  dynamically at read time: `staff` to the `admin`, `instructor` and `staff`
+  roles together, the other three to exactly one role each; `targeted` uses the
+  junction tables); `publish_at` (`NULL` = draft),
+  `expires_at`, `notified_at` (version marker — bumping it makes the row unseen
+  again); `pinned`; `banner`.
+- **Live window:** `publish_at <= now()` and (`expires_at IS NULL` or in the
+  future). See `app/announcements.py` for the shared helpers.
+- **Relationships:** `programs` (via `announcement_programs`) and `groups`
+  (via `announcement_groups`), both `CASCADE`; `reactions`
+  (`AnnouncementReaction`, `CASCADE`); `author`.
+- **Seen-state:** per-user, in `users.metadata["announcement_seen"]` as
+  `{announcement_id: notified_at ISO string}` — merged, never overwritten.
+- **Rollout flag:** `ANNOUNCEMENTS_ENABLED` gated the surface during the
+  trunk-based rollout and was removed after the production flip; the stream is
+  always on.
+- **Legacy endpoints:** `/api/announcement/` and `/api/changelog/` were
+  removed by #1838; `GET /api/announcements/broadcast` replaces the login banner
+  read.
 
-### ChangelogEntry _(added in `0012_add_changelog_entries`)_
+### AnnouncementReaction _(added in `0042_announcements`)_
 
-- **Purpose:** admin-authored in-app release notes shown in the **What's New**
-  feed for admin and instructor users.
-- **Key fields:** `title`; `body` (Markdown text rendered by the frontend);
-  `published_at` (defaults to creation time and is bumped on edit/republish).
-- **Relationships:** none — this is a standalone content table.
-- **Deletion:** no cascade targets; deleting an entry only removes that
-  changelog item.
+- **Purpose:** one emoji reaction by one user on one announcement.
+- **Key fields:** `announcement_id` (FK, `CASCADE`); `user_id` (FK, `CASCADE`);
+  `emoji` (reaction key, e.g. `rocket`); unique on
+  `(announcement_id, user_id)` since `0044_one_reaction_per_user` — one
+  reaction per reader per post (was `(announcement_id, user_id, emoji)`;
+  the migration keeps each reader's newest row).
+
+### ContentMedia _(added in `0042_announcements`)_
+
+- **Purpose:** an uploaded image/video referenced from announcement Markdown
+  (served by #1835).
+- **Key fields:** `stored_name` (unique on-disk name); `original_name`;
+  `content_type`; `size_bytes`; `uploader_id` (FK → `users`, `SET NULL`).
+
+### ChangelogEntry _(removed in `0042_announcements`)_
+
+- Former admin-authored release notes (`0012_add_changelog_entries`). Each row
+  became an `Announcement` with `kind='release'`, `audience='staff'`,
+  `message = body`, `publish_at = notified_at = published_at`; each user's
+  `changelog_last_read_at` seeded `announcement_seen` for the migrated rows
+  published on or before it.
 
 ### AdminTask
 
@@ -334,3 +413,33 @@ See also: [Groups](groups.md), [Collections](collections.md),
 [Category visibility & program restriction](category-visibility-and-programs.md),
 [Admin import/export](admin-import-export.md),
 [agent feature map](agent-feature-map.md).
+
+### CollectionImage slots (#1770)
+
+Revision `0047_collection_image_slots` replaces the composite membership PK
+with an auto-incrementing `id`. Both cascading FKs remain. The ordered-member
+index `(collection_id, sort_order)` remains, and a non-unique
+`(collection_id, image_id)` index replaces composite uniqueness. Existing rows
+and collection-level viewport dictionaries are preserved. Downgrade keeps the
+minimum-ID row per Collection/Image pair before restoring the composite PK.
+
+Nullable slot fields are `viewport_state JSONB`, `thumb TEXT`, and
+`label VARCHAR(255)`. They snapshot saved views without a Marker FK. Thumb
+paths use `/api/tiles/<source-id>/collection_slots/<slot-id>.jpg`; slot-scoped
+thumbnail-only JWTs are issued after member authorization. Slot identity is
+separate from Image identity. Admin import resets the new ID sequence and
+allocates imported IDs above restored snapshot filenames to avoid collisions.
+
+### Saved-view archive relationships (#1775)
+
+Admin JSON archives additionally preserve `boards`, `markers`,
+`board_owners`, `board_programs`, `board_groups`, `marker_owners` and
+`board_markers` as explicit table records. IDs, timestamps, owner/scope links,
+Board membership and saved-view order round-trip independently of the feature
+flag. Imports delete association records before their parents and insert Boards
+and Markers before their associations. Numeric sequences for Boards and
+Markers are reset alongside Collection slots. Older archives may omit these keys.
+
+Saved-view JPEGs under `tiles/<source-id>/{markers,collection_slots}/<id>.jpg`
+are authoritative snapshots: admin filesystem archives preserve them, while DZI
+pyramids remain derived. Same-source tile rebuilds retain both namespaces.

@@ -92,23 +92,81 @@ export interface Group {
  * the surface rather than rendering it against a 404 API.
  */
 export interface Features {
+  markers: boolean
   /** Collections tab + ``?collection=`` deep links (epic #1409). */
   collections: boolean
   collectionsStudentAccess: boolean
   /** My collections drawer on Browse (#1583). */
   collectionsHomeShelf: boolean
-  /** Object counting in the viewer (epic #1661). */
-  counting: boolean
 }
 
 export const DEFAULT_FEATURES: Features = {
+  markers: false,
   collections: false,
   collectionsStudentAccess: true,
   collectionsHomeShelf: false,
-  counting: false,
 }
 
 // ── Collections (docs/collections.md) ─────────────────────
+
+export type MarkerSource = 'mine' | 'instructor' | 'public'
+export type BoardVisibility = 'private' | 'restricted' | 'public'
+export interface MarkerView {
+  x: number
+  y: number
+  zoom: number
+  rotation: number
+}
+export interface ApiMarker extends MarkerView {
+  id: number
+  image_id: number
+  category_name?: string | null
+  title: string
+  description: string | null
+  thumb: string | null
+  favourite: boolean
+  sort_order: number
+  version: number
+  owners: { user_id: number | null; program_id: number | null; name: string; role: Role | null }[]
+  board_ids: number[]
+  source: MarkerSource | null
+  permissions: { can_edit: boolean; can_delete: boolean }
+  created_at: string
+  updated_at: string
+}
+export interface ApiBoardSummary {
+  id: number
+  name: string
+  description: string | null
+  visibility: BoardVisibility
+  owners: ApiMarker['owners']
+  owner_program_id: number | null
+  program_ids: number[]
+  group_ids: number[]
+  marker_count: number
+  cover_thumb: string | null
+  /** Pinned cover member; `null` = first-member fallback. */
+  cover_marker_id: number | null
+  /** Explicit "no cover" pick — the tile renders the Board icon placeholder. */
+  cover_blank: boolean
+  sort_order: number
+  version: number
+  permissions: {
+    can_edit: boolean
+    can_change_scope: boolean
+    can_delete: boolean
+    can_transfer: boolean
+  }
+  created_at: string
+  updated_at: string
+}
+export interface ApiBoard extends ApiBoardSummary {
+  markers: ApiMarker[]
+}
+export interface BoardAssignment {
+  board_id: number
+  sort_order?: number
+}
 
 export type CollectionType = 'synchronized' | 'sequence'
 
@@ -172,10 +230,30 @@ export interface CollectionSummary {
 
 export interface Collection extends CollectionSummary {
   /** Ordered member images (only those visible to the caller). */
-  images: ImageItem[]
+  images: CollectionMember[]
   viewportState: Record<string, unknown>
   /** Nominal member count for unfiltered viewers; for students the backend
    * clamps it to `imageCount + 1` when members are hidden, so it signals
    * "restricted members exist" without revealing how many (#1529). */
   memberCount: number
+}
+
+export interface SlotViewport {
+  x: number
+  y: number
+  zoom: number
+  rotation?: number
+}
+
+export interface CollectionSlot {
+  id: number
+  viewport_state: SlotViewport | null
+  thumb: string | null
+  label: string | null
+}
+
+export interface CollectionMember extends ImageItem {
+  slot?: CollectionSlot | null
+  draftKey?: number
+  markerId?: number
 }

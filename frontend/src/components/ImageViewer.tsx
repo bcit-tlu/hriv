@@ -1,8 +1,26 @@
-import { useEffect, useEffectEvent, useRef, useCallback, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useCallback, useState, useContext, useId } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
+import Alert from '@mui/material/Alert'
+import Button from '@mui/material/Button'
+import Snackbar from '@mui/material/Snackbar'
+import { copyViewLink } from '../useShareableImageState'
+import { AuthContext } from '../authContextValue'
+import type { ApiMarker, MarkerView } from '../types'
+import { useImageMarkers } from '../useImageMarkers'
+import { adjustMarkerPixelForFlip, navigateToMarker, navigateToView } from '../markerViewport'
+import { useMarkerVisibilityPrefs } from '../useMarkerVisibilityPrefs'
+import { usePinnedDrawerState } from '../usePinnedDrawerState'
+import ViewerSidePanel, { ViewerPanelToggle } from './ViewerSidePanel'
+import { useViewerPanelState } from '../useViewerPanelState'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import ImageMarkersDrawer, { ImageMarkersTrigger, ImageMarkersList } from './ImageMarkersDrawer'
+import MarkerFormDialog, { MarkerDeleteDialog } from './MarkerFormDialog'
+import MarkersLayer from './MarkersLayer'
+import MarkerInfoCard from './MarkerInfoCard'
+import { useTheme } from '@mui/material/styles'
 import type { ResponsiveStyleValue } from '@mui/system'
 import {
   emitEvent,
@@ -10,11 +28,27 @@ import {
   emitFrontendError,
   emitFrontendPerformance,
 } from '../observability'
-import { userMessage, type ApiImage } from '../api'
+import { ApiError, deleteMarker, userMessage, type ApiImage } from '../api'
 import { isTileTokenAuthorizationFailure, renewImageRecord } from '../tileTokenRenewal'
 import CanvasOverlay from './CanvasOverlay'
 import type { CanvasAnnotation } from './CanvasOverlay'
 import SelectionCountLayer from './SelectionCountLayer'
+import {
+  createPresentationLayer,
+  inkStrokeAlpha,
+  strokePathD,
+  trailAlpha,
+  INK_FADE_START_MS,
+  INK_MIN_POINT_PX,
+  LASER_CORE_RADIUS,
+  LASER_TRAIL_MS,
+  LASER_TRAIL_POINTS,
+  MAX_INK_STROKES,
+  type InkStroke,
+  type PresentationLayer,
+  type PresentationTool,
+} from './presentationTools'
+import { getPresentationColors } from '../theme'
 import {
   formatMeasurement,
   createMeasurementLabel,
@@ -27,6 +61,10 @@ import {
 } from './imageViewerUtils'
 
 let pendingFullScreenHandoff: string | number | null = null
+
+// Every mounted viewer's root element — the toolbar keyboard shortcuts use
+// it to decide which of several viewers (e.g. collection panes) owns a key.
+const mountedViewerElements = new Set<HTMLElement>()
 
 // OSD starts asynchronous tile-source work during construction but does not
 // cancel every continuation when it is destroyed. React Strict Mode's
@@ -58,6 +96,25 @@ const isViewportAtHome = (viewer: OpenSeadragon.Viewer) => {
 }
 
 interface ImageViewerProps {
+  markersEnabled?: boolean
+  onMarkersDrawerOpenChange?: (open: boolean) => void
+  /** Opens the Board dialog for a drawer group heading; carries this
+   * viewer's container so the dialog stays visible in full-page mode. */
+  onOpenBoard?: (boardId: number, container?: HTMLElement | null) => void
+  /**
+   * Marker an external flow wants selected and revealed (e.g. a Boards &
+   * Markers list click or a `?marker=` link). A fresh object re-triggers the
+   * focus even for the same marker id. `navigate` re-centres on the marker's
+   * saved view — omitted when an explicit shared viewport should win.
+   */
+  markerFocus?: {
+    id: number
+    imageId: number
+    navigate?: boolean
+    viewport?: ViewportState
+  } | null
+  /** Bumped when Marker/Board data mutates elsewhere (in-place Board dialog) — reloads markers. */
+  markersReloadSignal?: number
   tileSources: OpenSeadragon.TileSourceOptions | string
   /** Id of the image being viewed; emitted as a structured telemetry field. */
   imageId?: number
@@ -102,10 +159,15 @@ interface ImageViewerProps {
    * raw `viewport-change` handlers and drive the viewport imperatively.
    */
   onViewerReady?: (viewer: OpenSeadragon.Viewer | null) => void
-  /** Show "Count objects" affordances on selection rectangles (epic #1661). */
-  countingEnabled?: boolean
   /** Extra UI portaled into the OSD container (`viewer.container`) so it stays visible in OSD full-page mode. */
   viewportOverlay?: ReactNode
+  /** False for Synchronized panes, which retain their independent legacy drawers. */
+  viewerPanel?: boolean
+  /** Metadata rendered lazily when the feature-on panel selects Details. */
+  sidePanelDetails?: ReactNode
+  onShareView?: () => void
+  /** Reports the reserved desktop width; closed panels and xs overlays report zero. */
+  onViewerPanelWidthChange?: (width: number) => void
   /**
    * UI portaled into a top-right OSD control so it fades with the toolbar
    * (OSD `autoFade`) and also survives full-page mode.
@@ -121,6 +183,11 @@ interface DragState {
 }
 
 export default function ImageViewer({
+  markersEnabled = false,
+  onMarkersDrawerOpenChange,
+  onOpenBoard,
+  markerFocus,
+  markersReloadSignal,
   tileSources,
   imageId,
   categoryId,
@@ -144,19 +211,210 @@ export default function ImageViewer({
   onTileSourceRenewed,
   onError,
   onViewerReady,
-  countingEnabled = false,
   viewportOverlay,
   viewportControl,
+  viewerPanel = true,
+  sidePanelDetails,
+  onShareView,
+  onViewerPanelWidthChange,
 }: ImageViewerProps) {
+  const auth = useContext(AuthContext)
+  const [shareCopied, setShareCopied] = useState(false)
+  const shareOverlaysRef = useRef<OverlayRect[]>(initialOverlays ?? [])
+  const markers = useImageMarkers(imageId, markersEnabled)
+  const visibilityPrefs = useMarkerVisibilityPrefs(auth?.currentUser?.id, markersEnabled)
+  const drawerId = useId()
+  const panelEnabled = markersEnabled && viewerPanel && imageId != null
+  const panelState = useViewerPanelState(auth?.currentUser?.id, panelEnabled)
+  const drawerIdentity = `${auth?.currentUser?.id ?? 'session'}:${imageId}`
+  const drawerState = usePinnedDrawerState(
+    auth?.currentUser?.id != null ? String(auth.currentUser.id) : 'anonymous',
+    'markers-drawer',
+    markersEnabled && !viewerPanel,
+  )
+  const [drawerFor, setDrawerFor] = useState<string | null>(null)
+  const setMarkersDrawerOpen = (open: boolean) => {
+    drawerState.setOpen(open)
+    setDrawerFor(open ? drawerIdentity : null)
+  }
+  const markersTriggerRef = useRef<HTMLButtonElement>(null)
+  const [leftControlWrapper, setLeftControlWrapper] = useState<HTMLDivElement | null>(null)
+  const [markerDraft, setMarkerDraft] = useState<{ imageId: number; view: MarkerView } | null>(null)
+  const [editingMarker, setEditingMarker] = useState<ApiMarker | null>(null)
+  const [selectedMarkerId, setSelectedMarkerId] = useState<number | null>(null)
+  const [focusMarkerId, setFocusMarkerId] = useState<number | null>(null)
+  const [infoMarkerId, setInfoMarkerId] = useState<number | null>(null)
+  const [draftTitle, setDraftTitle] = useState('New Marker')
+  const [deletingMarker, setDeletingMarker] = useState<ApiMarker | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleteConflict, setDeleteConflict] = useState(false)
+  const cancelMarkerDraft = useEffectEvent(() => {
+    if (!markerDraft || markerDraft.imageId !== imageId) return false
+    setMarkerDraft(null)
+    return true
+  })
+  const placeMarker = useEffectEvent((view: MarkerView) => {
+    if (imageId == null || !markersEnabled) return
+    if (editingMarker) return false
+    if (markerDraft?.imageId === imageId) return
+    setEditingMarker(null)
+    setInfoMarkerId(null)
+    setFocusMarkerId(null)
+    setDraftTitle('New Marker')
+    setMarkerDraft({ imageId, view })
+    if (panelEnabled && panelState.open) panelState.setTab('markers')
+    return true
+  })
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
+  const theme = useTheme()
   const [canvasEditMode, setCanvasEditMode] = useState(false)
+  const mobilePanel = useMediaQuery(theme.breakpoints.down('sm'))
+  const panelOpen = panelEnabled && panelState.open
+  const markersDrawerOpen =
+    markersEnabled &&
+    !viewerPanel &&
+    imageId != null &&
+    drawerState.open &&
+    (drawerState.pinned || drawerFor === drawerIdentity) &&
+    !canvasEditMode
+  useEffect(() => {
+    onMarkersDrawerOpenChange?.(markersDrawerOpen)
+    return () => onMarkersDrawerOpenChange?.(false)
+  }, [markersDrawerOpen, onMarkersDrawerOpenChange])
+  const [panelHost, setPanelHost] = useState<HTMLElement | null>(null)
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
+  // Selecting a marker always reveals it on the canvas: a hidden marker the
+  // user explicitly opened (drawer row, Boards & Markers, `?marker=` link)
+  // gets a `markerVisible` override so it doesn't land invisible.
+  const selectMarker = (item: ApiMarker, focus = false) => {
+    if (visibilityPrefs.visibilityFor(item).markerVisible === false)
+      visibilityPrefs.setItem(item, 'markerVisible', true)
+    setSelectedMarkerId(item.id)
+    setFocusMarkerId(focus ? item.id : null)
+  }
+  const beginMarkerEdit = (item: ApiMarker) => {
+    if (!viewerInstance || (editingMarker && editingMarker.id !== item.id)) return
+    navigateToMarker(viewerInstance, item)
+    selectMarker(item, true)
+    setMarkerDraft(null)
+    setInfoMarkerId(item.id)
+    setEditingMarker(item)
+  }
+  const beginMarkerDelete = (item: ApiMarker) => {
+    if (editingMarker) return
+    selectMarker(item, true)
+    setDeleteError(null)
+    setDeleteConflict(false)
+    setDeletingMarker(item)
+  }
+  // Consume an externally requested marker focus (Boards & Markers click,
+  // `?marker=` link): selecting is render-phase adjustment per "adjusting
+  // state when a prop changes"; navigation/reveal stay in the effect below.
+  // A fresh object re-triggers the focus even for the same marker id.
+  const [appliedFocus, setAppliedFocus] = useState<typeof markerFocus>(null)
+  if (markerFocus && markerFocus !== appliedFocus) {
+    const item = markers.items.find((value) => value.id === markerFocus.id)
+    if (item) {
+      setAppliedFocus(markerFocus)
+      setSelectedMarkerId(item.id)
+      setFocusMarkerId(item.id)
+      if (!editingMarker) setInfoMarkerId(item.id)
+    }
+  } else if (!markerFocus && appliedFocus) {
+    setAppliedFocus(null)
+  }
+  const navigatedFocus = useRef<typeof appliedFocus>(null)
+  useEffect(() => {
+    if (!appliedFocus) {
+      navigatedFocus.current = null
+      return
+    }
+    if (navigatedFocus.current === appliedFocus || !viewerInstance) return
+    const item = markers.items.find((value) => value.id === appliedFocus.id)
+    if (!item) return
+    navigatedFocus.current = appliedFocus
+    if (appliedFocus.navigate !== false) navigateToMarker(viewerInstance, item)
+    else if (appliedFocus.viewport) navigateToView(viewerInstance, appliedFocus.viewport)
+    if (visibilityPrefs.visibilityFor(item).markerVisible === false)
+      visibilityPrefs.setItem(item, 'markerVisible', true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- visibilityPrefs churns identity; only marker identity matters
+  }, [appliedFocus, markers.items, viewerInstance])
+  // Marker/Board data can mutate elsewhere while the viewer stays mounted
+  // (in-place Board dialog favourites, edits, deletes) — reload on the bump.
+  const seenReloadSignal = useRef(markersReloadSignal)
+  useEffect(() => {
+    if (markersReloadSignal == null || markersReloadSignal === seenReloadSignal.current) return
+    seenReloadSignal.current = markersReloadSignal
+    void markers.reload()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload identity churns; only the signal matters
+  }, [markersReloadSignal])
+  // Drawer headings report only the Board id — attach this viewer's
+  // container so the dialog can portal inside full-page mode.
+  const handleOpenBoard = onOpenBoard
+    ? (id: number) => onOpenBoard(id, viewerInstance?.container ?? null)
+    : undefined
+  const clearDelete = () => {
+    setDeletingMarker(null)
+    setDeleteError(null)
+    setDeleteConflict(false)
+  }
+  const confirmMarkerDelete = async () => {
+    if (!deletingMarker) return
+    setDeleteBusy(true)
+    setDeleteError(null)
+    try {
+      await deleteMarker(deletingMarker.id, deletingMarker.version)
+      await markers.reload()
+      setSelectedMarkerId((id) => (id === deletingMarker.id ? null : id))
+      setFocusMarkerId((id) => (id === deletingMarker.id ? null : id))
+      setInfoMarkerId((id) => (id === deletingMarker.id ? null : id))
+      clearDelete()
+    } catch (err) {
+      const conflict = err instanceof ApiError && err.status === 409
+      setDeleteConflict(conflict)
+      setDeleteError(
+        conflict
+          ? 'This Marker changed. Reload the list before deleting it.'
+          : userMessage(err, 'Unable to delete Marker.'),
+      )
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+  useEffect(() => {
+    const width = panelOpen && !mobilePanel ? 256 : 0
+    onViewerPanelWidthChange?.(width)
+    return () => onViewerPanelWidthChange?.(0)
+  }, [panelOpen, mobilePanel, onViewerPanelWidthChange])
+  useEffect(() => {
+    const container = viewerRef.current?.container
+    if (!container || !panelEnabled) return
+    const previousWidth = container.style.width
+    const previousTransition = container.style.transition
+    container.style.width = panelOpen && !mobilePanel ? 'calc(100% - 256px)' : '100%'
+    container.style.transition = theme.transitions.create('width', {
+      easing: theme.transitions.easing.sharp,
+      duration: panelOpen
+        ? theme.transitions.duration.enteringScreen
+        : theme.transitions.duration.leavingScreen,
+    })
+    container.style.setProperty('--hriv-marker-panel-right', panelOpen ? '8px' : '56px')
+    container.dataset.viewerImageArea = 'true'
+    return () => {
+      container.style.width = previousWidth
+      container.style.transition = previousTransition
+      container.style.removeProperty('--hriv-marker-panel-right')
+      delete container.dataset.viewerImageArea
+    }
+  }, [viewerInstance, panelEnabled, panelOpen, mobilePanel, theme])
   // Object counting (epic #1661): drawn selections with stable keys.
   const [countSelections, setCountSelections] = useState<
     { key: number; index: number; rect: { x: number; y: number; width: number; height: number } }[]
   >([])
   const [clearedToken, setClearedToken] = useState(0)
+  const [presentationLayer, setPresentationLayer] = useState<PresentationLayer | null>(null)
   const [selectionDrawing, setSelectionDrawing] = useState(false)
   const [controlWrapper, setControlWrapper] = useState<HTMLDivElement | null>(null)
   const [viewerMountReady, setViewerMountReady] = useState(!deferViewerInitializationForStrictMode)
@@ -237,6 +495,13 @@ export default function ImageViewer({
   useEffect(() => {
     onCanvasEditModeChangeRef.current = onCanvasEditModeChange
   }, [onCanvasEditModeChange])
+  // Keep the presentation overlay on the active palette (#1876).
+  useEffect(() => {
+    presentationLayer?.setColors(getPresentationColors(theme.palette.mode))
+  }, [presentationLayer, theme.palette.mode])
+  const getCurrentPresentationColors = useEffectEvent(() =>
+    getPresentationColors(theme.palette.mode),
+  )
   const emitToolbarAction = useCallback((action: string) => {
     emitEvent({
       event: 'ui.toolbar_action',
@@ -248,6 +513,13 @@ export default function ImageViewer({
   }, [])
   const updateLockUiRef = useRef<(() => void) | null>(null)
   const updateCanvasEditUiRef = useRef<((active: boolean) => void) | null>(null)
+  // Single arbiter for viewer.setMouseNavEnabled — selection, canvas edit and
+  // the ink tool all disable navigation, so raw set(true) calls can stomp an
+  // armed mode (epic #1876).
+  const syncMouseNavRef = useRef<(() => void) | null>(null)
+  // Arms a presentation tool queued while a dirty canvas draft blocked it;
+  // invoked when edit mode exits (epic #1876).
+  const notifyCanvasEditExitedRef = useRef<(() => void) | null>(null)
   const canvasCancelRef = useRef<(() => Promise<void>) | null>(null)
   const registerCanvasCancel = useCallback((handler: (() => Promise<void>) | null) => {
     canvasCancelRef.current = handler
@@ -540,7 +812,9 @@ export default function ImageViewer({
       showNavigator: true,
       navigatorPosition: 'BOTTOM_RIGHT',
       navigatorSizeRatio: 0.15,
-      gestureSettingsMouse: { scrollToZoom: true },
+      // Scroll zooms; a plain click does not (user testing found click-to-zoom
+      // unused, and it would fire on every laser-pointer/ink click — #1877).
+      gestureSettingsMouse: { scrollToZoom: true, clickToZoom: false },
       // Rotation controls
       showRotationControl: true,
       gestureSettingsTouch: { pinchRotate: true },
@@ -624,6 +898,7 @@ export default function ImageViewer({
         w: p.rect.width,
         h: p.rect.height,
       }))
+      shareOverlaysRef.current = rects
       onOverlaysChangeRef.current?.(rects)
     }
 
@@ -709,17 +984,419 @@ export default function ImageViewer({
       srcGroup: prefix + 'selection_grouphover.svg',
       srcHover: prefix + 'selection_hover.svg',
       srcDown: prefix + 'selection_pressed.svg',
-      onClick: () => {
-        selectionModeRef.current = !selectionModeRef.current
-        emitToolbarAction(selectionModeRef.current ? 'selection_mode_on' : 'selection_mode_off')
-        viewer.setMouseNavEnabled(!selectionModeRef.current)
-        setButtonIcons(selectionButton, selectionModeRef.current ? 'selection_active' : 'selection')
-      },
+      onClick: () => toggleSelectionMode(),
     })
     selectionButton.element.style.lineHeight = '0'
     viewer.addControl(selectionButton.element, {
       anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
     })
+    let markerMode = false
+    let pendingMarkerPlacement = false
+    let markerButton: OpenSeadragon.Button | null = null
+    const setMarkerMode = (active: boolean) => {
+      if (active && canvasEditModeRef.current && canvasCancelRef.current) {
+        pendingMarkerPlacement = true
+        pendingPresentationTool = null
+        void canvasCancelRef.current()
+        return
+      }
+      pendingMarkerPlacement = false
+      markerMode = active
+      if (active) {
+        setPresentationTool(null)
+        selectionModeRef.current = false
+        setSelectionDrawing(false)
+        setButtonIcons(selectionButton, 'selection')
+      }
+      viewer.canvas.style.cursor = active ? 'crosshair' : ''
+      if (markerButton) {
+        markerButton.element.setAttribute('aria-pressed', String(active))
+        if (active) setButtonIcons(markerButton, 'marker_active')
+        else setButtonIcons(markerButton, 'marker')
+      }
+      syncMouseNav()
+    }
+    if (markersEnabled && imageId != null) {
+      markerButton = new OpenSeadragon.Button({
+        tooltip: 'Add Marker',
+        srcRest: prefix + 'marker_rest.svg',
+        srcGroup: prefix + 'marker_grouphover.svg',
+        srcHover: prefix + 'marker_hover.svg',
+        srcDown: prefix + 'marker_pressed.svg',
+        onClick: () => setMarkerMode(!markerMode),
+      })
+      markerButton.element.style.lineHeight = '0'
+      markerButton.element.setAttribute('role', 'button')
+      markerButton.element.setAttribute('aria-label', 'Add Marker')
+      markerButton.element.setAttribute('aria-pressed', 'false')
+      markerButton.element.tabIndex = 0
+      markerButton.element.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          setMarkerMode(!markerMode)
+        }
+      })
+      viewer.addControl(markerButton.element, { anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT })
+    }
+    const handleMarkerClick = (event: OpenSeadragon.CanvasClickEvent) => {
+      if (!markerMode || !event.quick || !event.position) return
+      const target = event.originalEvent?.target
+      if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) return
+      event.preventDefaultAction = true
+      const point = viewer.viewport.pointFromPixel(event.position)
+      const view = {
+        x: point.x,
+        y: point.y,
+        zoom: viewer.viewport.getZoom(),
+        rotation: viewer.viewport.getRotation(),
+      }
+      if (placeMarker(view)) {
+        const pixel = adjustMarkerPixelForFlip(viewer, event.position)
+        const width = viewer.container.clientWidth
+        if (width > 0 && pixel.x > width - Math.min(320, width / 2 - 16) - 24 && pixel.y < 400) {
+          viewer.viewport.panTo(new OpenSeadragon.Point(view.x, view.y))
+        }
+      }
+    }
+    viewer.addHandler('canvas-click', handleMarkerClick)
+    const cancelMarkerPlacement = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (cancelMarkerDraft()) {
+        event.stopPropagation()
+        event.preventDefault()
+        return
+      }
+      if (markerMode || pendingMarkerPlacement) setMarkerMode(false)
+    }
+    document.addEventListener('keydown', cancelMarkerPlacement, true)
+
+    // --- Presentation pointer tools (epic #1876): laser pointer + ephemeral
+    // ink, armed only in OSD full-page mode. Ink is never persisted.
+    const presentationUi = createPresentationLayer(getCurrentPresentationColors())
+    setPresentationLayer(presentationUi)
+    viewer.canvas.appendChild(presentationUi.svg)
+
+    let presentationTool: PresentationTool | null = null
+    // A tool queued while a dirty canvas draft blocked arming (a discard
+    // prompt can end in "Keep editing", which leaves edit mode active).
+    let pendingPresentationTool: PresentationTool | null = null
+    const inkStrokes: InkStroke[] = []
+    let inkDrawing: InkStroke | null = null
+    let inkLastPx: OpenSeadragon.Point | null = null
+    const trailPoints: { x: number; y: number; t: number }[] = []
+    let presentationRaf: number | null = null
+    // One-shot wake so opaque strokes don't keep the RAF loop alive.
+    let inkWakeTimer: number | null = null
+
+    const syncMouseNav = () => {
+      viewer.setMouseNavEnabled(
+        !(selectionModeRef.current || canvasEditModeRef.current || presentationTool === 'ink'),
+      )
+    }
+    syncMouseNavRef.current = syncMouseNav
+
+    const projectToCanvas = (p: { x: number; y: number }) =>
+      viewer.viewport.pixelFromPoint(new OpenSeadragon.Point(p.x, p.y), true)
+
+    const reprojectInk = () => {
+      for (const stroke of inkStrokes) {
+        stroke.element.setAttribute('d', strokePathD(stroke.points.map(projectToCanvas)))
+      }
+    }
+
+    const clearInk = () => {
+      inkDrawing = null
+      inkLastPx = null
+      for (const stroke of inkStrokes) stroke.element.remove()
+      inkStrokes.length = 0
+    }
+
+    const presentationTick = () => {
+      presentationRaf = null
+      const now = performance.now()
+      while (trailPoints.length > 0 && now - trailPoints[0].t > LASER_TRAIL_MS) {
+        trailPoints.shift()
+      }
+      presentationUi.trailDots.forEach((dot, i) => {
+        const point = trailPoints[trailPoints.length - 1 - i]
+        if (!point) {
+          dot.setAttribute('opacity', '0')
+          return
+        }
+        dot.setAttribute('cx', point.x.toFixed(1))
+        dot.setAttribute('cy', point.y.toFixed(1))
+        dot.setAttribute('r', Math.max(0.5, LASER_CORE_RADIUS - i * 0.3).toFixed(1))
+        dot.setAttribute('opacity', (trailAlpha(now - point.t) * 0.7).toFixed(2))
+      })
+      let inkFading = false
+      let inkWakeAt = Number.POSITIVE_INFINITY
+      for (let i = inkStrokes.length - 1; i >= 0; i -= 1) {
+        const stroke = inkStrokes[i]
+        if (stroke.finishedAt == null) continue
+        const alpha = inkStrokeAlpha(now - stroke.finishedAt)
+        if (alpha <= 0) {
+          stroke.element.remove()
+          inkStrokes.splice(i, 1)
+        } else {
+          stroke.element.setAttribute('opacity', alpha.toFixed(2))
+          if (alpha < 1) inkFading = true
+          else inkWakeAt = Math.min(inkWakeAt, stroke.finishedAt + INK_FADE_START_MS)
+        }
+      }
+      if (trailPoints.length > 0 || inkFading) {
+        presentationRaf = window.requestAnimationFrame(presentationTick)
+      } else if (inkWakeAt !== Number.POSITIVE_INFINITY) {
+        // Opaque strokes look identical every frame — wake once when the
+        // earliest one reaches its fade start instead of spinning on RAF.
+        if (inkWakeTimer != null) window.clearTimeout(inkWakeTimer)
+        inkWakeTimer = window.setTimeout(
+          () => {
+            inkWakeTimer = null
+            ensurePresentationTicker()
+          },
+          Math.max(0, inkWakeAt - now),
+        )
+      }
+    }
+    const ensurePresentationTicker = () => {
+      if (presentationRaf == null) {
+        presentationRaf = window.requestAnimationFrame(presentationTick)
+      }
+    }
+
+    const startInkStroke = (position: OpenSeadragon.Point) => {
+      const vp = viewer.viewport.pointFromPixel(position)
+      const stroke: InkStroke = {
+        points: [{ x: vp.x, y: vp.y }],
+        finishedAt: null,
+        element: presentationUi.createStrokeElement(),
+      }
+      inkStrokes.push(stroke)
+      if (inkStrokes.length > MAX_INK_STROKES) {
+        inkStrokes.shift()?.element.remove()
+      }
+      inkDrawing = stroke
+      inkLastPx = position
+      stroke.element.setAttribute('d', strokePathD([{ x: position.x, y: position.y }]))
+      ensurePresentationTicker()
+    }
+
+    const appendInkPoint = (position: OpenSeadragon.Point) => {
+      if (!inkDrawing || !inkLastPx) return
+      const dx = position.x - inkLastPx.x
+      const dy = position.y - inkLastPx.y
+      if (dx * dx + dy * dy < INK_MIN_POINT_PX * INK_MIN_POINT_PX) return
+      inkLastPx = position
+      const vp = viewer.viewport.pointFromPixel(position)
+      inkDrawing.points.push({ x: vp.x, y: vp.y })
+      // Append the new segment only — reprojecting the whole polyline per
+      // sample would make long strokes quadratic.
+      const px = projectToCanvas({ x: vp.x, y: vp.y })
+      const d = inkDrawing.element.getAttribute('d') ?? ''
+      inkDrawing.element.setAttribute('d', `${d} L${px.x.toFixed(1)} ${px.y.toFixed(1)}`)
+    }
+
+    const finishInkStroke = () => {
+      if (!inkDrawing) return
+      // A lone point needs a degenerate segment so the round caps render a dot.
+      if (inkDrawing.points.length === 1) {
+        inkDrawing.points.push({ ...inkDrawing.points[0] })
+        reprojectInk()
+      }
+      inkDrawing.finishedAt = performance.now()
+      inkDrawing = null
+      inkLastPx = null
+      ensurePresentationTicker()
+    }
+
+    const laserMoved = (position: OpenSeadragon.Point) => {
+      presentationUi.setLaserVisible(true)
+      presentationUi.setLaserPosition(position.x, position.y)
+      trailPoints.push({ x: position.x, y: position.y, t: performance.now() })
+      if (trailPoints.length > LASER_TRAIL_POINTS) trailPoints.shift()
+      ensurePresentationTicker()
+    }
+
+    const setPresentationTool = (tool: PresentationTool | null) => {
+      if (tool === presentationTool) return
+      // A canvas draft gates arming: its cancel flow may open a discard
+      // prompt, and "Keep editing" leaves edit mode active — a pointer tool
+      // must never arm over the Fabric canvas. The queued tool arms via
+      // notifyCanvasEditExited when edit mode actually exits.
+      if (tool != null && canvasEditModeRef.current && canvasCancelRef.current) {
+        pendingPresentationTool = tool
+        void canvasCancelRef.current()
+        return
+      }
+      const leaving = presentationTool
+      presentationTool = tool
+      if (leaving === 'laser') {
+        presentationUi.setLaserVisible(false)
+        trailPoints.length = 0
+      }
+      if (leaving === 'ink') finishInkStroke()
+      viewer.canvas.style.cursor = ''
+      if (tool != null) {
+        setMarkerMode(false)
+        if (selectionModeRef.current) {
+          selectionModeRef.current = false
+          setSelectionDrawing(false)
+          setButtonIcons(selectionButton, 'selection')
+        }
+        emitToolbarAction(tool === 'laser' ? 'laser_pointer_on' : 'ink_on')
+      } else if (leaving != null) {
+        emitToolbarAction(leaving === 'laser' ? 'laser_pointer_off' : 'ink_off')
+      }
+      if (tool === 'laser') {
+        // The dot stays hidden until the first pointermove — no stale (0,0).
+        presentationUi.setLaserVisible(false)
+        viewer.canvas.style.cursor = 'none'
+      } else if (tool === 'ink') {
+        viewer.canvas.style.cursor = 'crosshair'
+      }
+      syncMouseNav()
+      setButtonIcons(laserButton, tool === 'laser' ? 'laser_pointer_active' : 'laser_pointer')
+      setButtonIcons(inkButton, tool === 'ink' ? 'ink_active' : 'ink')
+    }
+
+    const toggleSelectionMode = () => {
+      setMarkerMode(false)
+      selectionModeRef.current = !selectionModeRef.current
+      emitToolbarAction(selectionModeRef.current ? 'selection_mode_on' : 'selection_mode_off')
+      if (selectionModeRef.current) setPresentationTool(null)
+      syncMouseNav()
+      setButtonIcons(selectionButton, selectionModeRef.current ? 'selection_active' : 'selection')
+    }
+    const toggleLaser = () => setPresentationTool(presentationTool === 'laser' ? null : 'laser')
+    const toggleInk = () => setPresentationTool(presentationTool === 'ink' ? null : 'ink')
+
+    const laserButton = new OpenSeadragon.Button({
+      tooltip: 'Laser pointer',
+      srcRest: prefix + 'laser_pointer_rest.svg',
+      srcGroup: prefix + 'laser_pointer_grouphover.svg',
+      srcHover: prefix + 'laser_pointer_hover.svg',
+      srcDown: prefix + 'laser_pointer_pressed.svg',
+      onClick: () => toggleLaser(),
+    })
+    laserButton.element.style.lineHeight = '0'
+    const laserWrapper = document.createElement('div')
+    laserWrapper.style.display = 'none'
+    laserWrapper.appendChild(laserButton.element)
+
+    const inkButton = new OpenSeadragon.Button({
+      tooltip: 'Freehand ink',
+      srcRest: prefix + 'ink_rest.svg',
+      srcGroup: prefix + 'ink_grouphover.svg',
+      srcHover: prefix + 'ink_hover.svg',
+      srcDown: prefix + 'ink_pressed.svg',
+      onClick: () => toggleInk(),
+    })
+    inkButton.element.style.lineHeight = '0'
+    const inkWrapper = document.createElement('div')
+    inkWrapper.style.display = 'none'
+    inkWrapper.appendChild(inkButton.element)
+
+    // Toolbar keyboard shortcuts — H: home, B: selection box, L: laser,
+    // I: ink. Chosen to avoid OSD's own keys (WASD/arrows pan, F flips,
+    // R rotates, 0 homes, J/K page). Laser/ink mirror their buttons and
+    // only respond in full-page. Ignored while typing, inside dialogs, or
+    // when the pointer/focus belongs to a different viewer on the page.
+    const handleToolbarKey = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable ||
+          target.closest('[role="dialog"]') != null)
+      ) {
+        return
+      }
+      if (target instanceof Node && !viewer.element.contains(target)) {
+        // Focus inside a different mounted viewer (e.g. a collection pane)
+        // wins over merely hovering this one; a keypress outside every
+        // viewer goes to whichever viewer is hovered.
+        const insideOtherViewer = Array.from(mountedViewerElements).some(
+          (el) => el !== viewer.element && el.contains(target),
+        )
+        if (insideOtherViewer || !viewer.container.matches(':hover')) return
+      }
+      switch (event.key.toLowerCase()) {
+        case 'h':
+          viewer.viewport.goHome()
+          break
+        case 'b':
+          toggleSelectionMode()
+          break
+        case 'l':
+          if (viewer.isFullPage()) toggleLaser()
+          break
+        case 'i':
+          if (viewer.isFullPage()) toggleInk()
+          break
+        default:
+          return
+      }
+      event.preventDefault()
+    }
+    document.addEventListener('keydown', handleToolbarKey)
+    mountedViewerElements.add(viewer.element)
+
+    // Full-page entry arms the laser; exit disarms and clears all ink.
+    // Auto-arming is skipped while canvas edit mode is active — annotation
+    // editing works in full-page too, so entering must not tear it down.
+    const applyFullPagePresentation = (fullPage: boolean) => {
+      laserWrapper.style.display = fullPage ? 'inline-block' : 'none'
+      inkWrapper.style.display = fullPage ? 'inline-block' : 'none'
+      if (fullPage) {
+        // Editing continues into full-page, so the entry auto-arm becomes a
+        // queued arm — the laser turns on when edit mode exits.
+        if (canvasEditModeRef.current) pendingPresentationTool = 'laser'
+        else setPresentationTool('laser')
+      } else {
+        pendingPresentationTool = null
+        setPresentationTool(null)
+        clearInk()
+      }
+    }
+
+    // When canvas edit mode exits, arm the tool a presenter queued behind a
+    // dirty-draft discard prompt — but only while still in full-page, since
+    // the buttons are hidden otherwise.
+    notifyCanvasEditExitedRef.current = () => {
+      if (pendingMarkerPlacement) {
+        pendingMarkerPlacement = false
+        setMarkerMode(true)
+        return
+      }
+      const pending = pendingPresentationTool
+      pendingPresentationTool = null
+      if (pending != null && viewer.isFullPage()) setPresentationTool(pending)
+    }
+
+    // User testing found the +/- and rotation buttons useless while
+    // presenting; hide them in full-screen so the dock stays decluttered.
+    // They stay in normal view (#1877). The canvas-edit pencil joins the
+    // list at creation below: full-page is presenter mode, editing happens
+    // in normal view.
+    const fullPageHiddenEls: HTMLElement[] = []
+    const setNavControlsHidden = (hidden: boolean) => {
+      // Restore 'inline-block' — ControlDock.addControl sets it inline; a
+      // blank string would collapse the buttons to display:block stacking.
+      for (const el of fullPageHiddenEls) {
+        el.style.display = hidden ? 'none' : 'inline-block'
+      }
+    }
+    for (const button of [
+      viewer.zoomInButton,
+      viewer.zoomOutButton,
+      viewer.rotateLeftButton,
+      viewer.rotateRightButton,
+    ]) {
+      if (button?.element) fullPageHiddenEls.push(button.element)
+    }
 
     // --- Mouse tracker for drawing selection rectangles ---
     let currentRect: OpenSeadragon.Rect | null = null
@@ -733,12 +1410,35 @@ export default function ImageViewer({
       // — and preventDefault the pointerdown, which suppresses focus and
       // breaks the toolbar's arrow-key nudge. preventGesture skips both.
       preProcessEventHandler: (event: OpenSeadragon.PreProcessMouseTrackerEvent) => {
+        if (markerMode) {
+          event.preventGesture = true
+          event.preventDefault = false
+          return
+        }
+        if (event.eventType === 'click') event.preventDefault = false
         const target = event.originalEvent?.target
         if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) {
+          event.preventGesture = true
+          event.preventDefault = false
+          return
+        }
+        // A press on the OSD control dock or navigator must not start a rect
+        // or ink stroke — but check only gesture START: once OSD captures the
+        // pointer, every move/up retargets to viewer.element (outside
+        // viewer.canvas), and blocking those would cancel the drag (#1881).
+        if (
+          event.eventType === 'pointerdown' &&
+          target instanceof Element &&
+          !viewer.canvas.contains(target)
+        ) {
           event.preventGesture = true
         }
       },
       pressHandler: (event: OpenSeadragon.MouseTrackerEvent) => {
+        if (presentationTool === 'ink') {
+          if (event.position) startInkStroke(event.position)
+          return
+        }
         if (!selectionModeRef.current || !event.position) return
         setSelectionDrawing(true)
         const overlayElement = document.createElement('div')
@@ -760,7 +1460,19 @@ export default function ImageViewer({
         dragRef.current = { overlayElement, startPos: viewportPos, widthLabel, heightLabel }
         currentRect = new OpenSeadragon.Rect(viewportPos.x, viewportPos.y, 0, 0)
       },
+      moveHandler: (event: OpenSeadragon.MouseTrackerEvent) => {
+        if (presentationTool !== 'laser' || !event.position) return
+        laserMoved(event.position)
+      },
+      leaveHandler: () => {
+        presentationUi.setLaserVisible(false)
+        trailPoints.length = 0
+      },
       dragHandler: (event: OpenSeadragon.MouseTrackerEvent) => {
+        if (inkDrawing) {
+          if (event.position) appendInkPoint(event.position)
+          return
+        }
         if (!dragRef.current || !event.position) return
         const viewportPos = viewer.viewport.pointFromPixel(event.position)
         let diffX = viewportPos.x - dragRef.current.startPos.x
@@ -787,6 +1499,10 @@ export default function ImageViewer({
         updateMeasurementLabels(location, dragRef.current.widthLabel, dragRef.current.heightLabel)
       },
       releaseHandler: () => {
+        if (inkDrawing) {
+          finishInkStroke()
+          return
+        }
         if (!dragRef.current) return
         // Store the final rect and labels for repositioning on zoom/pan
         if (currentRect && currentRect.width > 0 && currentRect.height > 0) {
@@ -813,7 +1529,7 @@ export default function ImageViewer({
         currentRect = null
         selectionModeRef.current = false
         setSelectionDrawing(false)
-        viewer.setMouseNavEnabled(true)
+        syncMouseNav()
         setButtonIcons(selectionButton, 'selection')
       },
     })
@@ -834,6 +1550,17 @@ export default function ImageViewer({
     }
     viewer.addHandler('animation', repositionLabels)
     viewer.addHandler('animation-finish', repositionLabels)
+    // Ink strokes are image-anchored: reproject viewport points on every
+    // viewport/frame change so they track the underlying structures.
+    for (const eventName of [
+      'animation',
+      'animation-finish',
+      'resize',
+      'viewport-change',
+      'open',
+    ] as const) {
+      viewer.addHandler(eventName, reprojectInk)
+    }
 
     // --- Lock overlay toolbar button (visible to admin/instructor) ---
     let lockButton: OpenSeadragon.Button | null = null
@@ -907,7 +1634,18 @@ export default function ImageViewer({
     })
     updateClearButtonState()
 
+    // Presentation tools dock after the selection-adjacent controls (lock,
+    // clear) so those sit directly next to the selection button; laser/ink
+    // are hidden outside full-page anyway.
+    viewer.addControl(laserWrapper, {
+      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+    })
+    viewer.addControl(inkWrapper, {
+      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+    })
+
     // --- Canvas edit mode toolbar button (visible to admin/instructor) ---
+    // Docked last so the pencil is always the final icon in the toolbar.
     if (canEditContentRef.current) {
       const canvasEditButton = new OpenSeadragon.Button({
         tooltip: 'Canvas annotations (add shapes, text, links)',
@@ -924,13 +1662,18 @@ export default function ImageViewer({
             return
           }
           canvasEditModeRef.current = entering
+          if (entering) setMarkerMode(false)
           setCanvasEditMode(entering)
-          viewer.setMouseNavEnabled(!entering)
+          if (entering) setPresentationTool(null)
+          syncMouseNav()
           onCanvasEditModeChangeRef.current?.(entering)
           setButtonIcons(canvasEditButton, entering ? 'canvas_edit_active' : 'canvas_edit')
         },
       })
       canvasEditButton.element.style.lineHeight = '0'
+      // Hidden in full-page like zoom/rotate: presenting and editing are
+      // separate modes — exit full-screen to reach the pencil again.
+      fullPageHiddenEls.push(canvasEditButton.element)
       viewer.addControl(canvasEditButton.element, {
         anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
       })
@@ -955,11 +1698,18 @@ export default function ImageViewer({
     const topRightControl = document.createElement('div')
     topRightControl.style.display = 'inline-block'
     topRightControl.style.lineHeight = '0'
+    const topLeftControl =
+      markersEnabled && !viewerPanel && imageId != null ? document.createElement('div') : null
+    if (topLeftControl) {
+      topLeftControl.style.display = 'inline-block'
+      topLeftControl.style.lineHeight = '0'
+    }
     const keepControlsEnabled = () => viewer.setControlsEnabled(true)
     // Don't start auto-hide when focus moves within the control, or while
     // the pointer still hovers the viewer — OSD's own leave handler resumes it.
     const releaseControls = (e: FocusEvent) => {
       if (e.relatedTarget instanceof Node && topRightControl.contains(e.relatedTarget)) return
+      if (e.relatedTarget instanceof Node && topLeftControl?.contains(e.relatedTarget)) return
       if (viewer.container.matches(':hover')) return
       viewer.setControlsEnabled(false)
     }
@@ -974,6 +1724,15 @@ export default function ImageViewer({
     }
     if (topRightAnchor) topRightAnchor.style.zIndex = '26'
     setControlWrapper(topRightControl)
+    if (topLeftControl) {
+      topLeftControl.addEventListener('focusin', keepControlsEnabled)
+      topLeftControl.addEventListener('focusout', releaseControls)
+      viewer.addControl(topLeftControl, { anchor: OpenSeadragon.ControlAnchor.TOP_LEFT })
+      let anchor: HTMLElement | null = topLeftControl
+      while (anchor && anchor.parentElement !== viewer.container) anchor = anchor.parentElement
+      if (anchor) anchor.style.zIndex = '26'
+      setLeftControlWrapper(topLeftControl)
+    }
 
     // --- Magnification factor badge (inside the navigator mini-map) ---
     // Only visible when the image has measurement settings (scale + unit).
@@ -1038,6 +1797,7 @@ export default function ImageViewer({
 
     // Expose viewer instance to React state for child components
     setViewerInstance(viewer)
+    setPanelHost(containerRef.current)
     onViewerReadyRef.current?.(viewer)
 
     // Restore viewport state and initial overlays after the image has loaded
@@ -1144,10 +1904,14 @@ export default function ImageViewer({
       // Fires on both enter and exit; count only entering full screen.
       if (event.fullPage) emitToolbarAction('full_screen')
       syncFullPageIcon()
+      setNavControlsHidden(event.fullPage)
+      applyFullPagePresentation(event.fullPage)
     })
     // Run once now: a setFullPage(true) from the fullscreen handoff path can
     // fire 'full-page' before this handler is registered.
     syncFullPageIcon()
+    setNavControlsHidden(viewer.isFullPage())
+    applyFullPagePresentation(viewer.isFullPage())
     viewer.addHandler('resize', () => {
       pendingHomeResize = homeViewportAtLastSettledStateRef.current
     })
@@ -1214,16 +1978,44 @@ export default function ImageViewer({
       canvasEditModeRef.current = false
       setCanvasEditMode(false)
       setViewerInstance(null)
+      setPanelHost(null)
+      presentationTool = null
+      pendingPresentationTool = null
+      if (presentationRaf != null) {
+        window.cancelAnimationFrame(presentationRaf)
+        presentationRaf = null
+      }
+      if (inkWakeTimer != null) {
+        window.clearTimeout(inkWakeTimer)
+        inkWakeTimer = null
+      }
+      clearInk()
+      trailPoints.length = 0
+      presentationUi.svg.remove()
+      setPresentationLayer(null)
+      viewer.canvas.style.cursor = ''
+      syncMouseNavRef.current = null
+      notifyCanvasEditExitedRef.current = null
       if (renewalTimerRef.current != null) {
         window.clearTimeout(renewalTimerRef.current)
         renewalTimerRef.current = null
       }
       selectionTracker.destroy()
+      document.removeEventListener('keydown', handleToolbarKey)
+      document.removeEventListener('keydown', cancelMarkerPlacement, true)
+      mountedViewerElements.delete(viewer.element)
       topRightControl.removeEventListener('focusin', keepControlsEnabled)
       topRightControl.removeEventListener('focusout', releaseControls)
       const registeredControl = viewer.controls?.find((c) => c.element === topRightControl)
       if (registeredControl) viewer.removeControl(registeredControl)
       setControlWrapper(null)
+      if (topLeftControl) {
+        topLeftControl.removeEventListener('focusin', keepControlsEnabled)
+        topLeftControl.removeEventListener('focusout', releaseControls)
+        const control = viewer.controls?.find((c) => c.element === topLeftControl)
+        if (control) viewer.removeControl(control)
+      }
+      setLeftControlWrapper(null)
       onViewerReadyRef.current?.(null)
       if (handleFullscreenChange) {
         document.removeEventListener('fullscreenchange', handleFullscreenChange)
@@ -1250,6 +2042,8 @@ export default function ImageViewer({
       viewerRef.current = null
     }
   }, [
+    markersEnabled,
+    viewerPanel,
     imageId,
     initialViewport,
     initialOverlays,
@@ -1292,9 +2086,11 @@ export default function ImageViewer({
   const handleCanvasEditModeChange = useCallback((mode: boolean) => {
     canvasEditModeRef.current = mode
     setCanvasEditMode(mode)
-    viewerRef.current?.setMouseNavEnabled(!mode)
+    syncMouseNavRef.current?.()
     updateCanvasEditUiRef.current?.(mode)
     onCanvasEditModeChangeRef.current?.(mode)
+    // Arm a presentation tool that waited on this exit (#1876).
+    if (!mode) notifyCanvasEditExitedRef.current?.()
   }, [])
 
   return (
@@ -1328,6 +2124,247 @@ export default function ImageViewer({
           registerCancelHandler={registerCanvasCancel}
         />
       )}
+      <Snackbar
+        open={shareCopied}
+        autoHideDuration={3000}
+        onClose={() => setShareCopied(false)}
+        message="Link copied to clipboard"
+      />
+      {viewerInstance && imageId != null && markersEnabled && (
+        <>
+          {leftControlWrapper &&
+            createPortal(
+              <ImageMarkersTrigger
+                open={markersDrawerOpen}
+                count={markers.items.length}
+                disabled={canvasEditMode}
+                drawerId={drawerId}
+                triggerRef={markersTriggerRef}
+                pinned={drawerState.pinned}
+                onOpenChange={setMarkersDrawerOpen}
+                tooltipContainer={viewerInstance.container}
+              />,
+              leftControlWrapper,
+            )}
+          {panelEnabled && panelHost
+            ? createPortal(
+                <ViewerSidePanel
+                  open={panelOpen}
+                  tab={panelState.tab}
+                  onTabChange={panelState.setTab}
+                  onClose={() => {
+                    panelState.setOpen(false)
+                    requestAnimationFrame(() => markersTriggerRef.current?.focus())
+                  }}
+                  panelId={drawerId}
+                  details={sidePanelDetails}
+                  onShareView={
+                    onShareView ??
+                    (() => {
+                      const viewport = viewerInstance.viewport
+                      const center = viewport.getCenter()
+                      const url = new URL(window.location.pathname, window.location.origin)
+                      url.searchParams.set('image', String(imageId))
+                      url.searchParams.set('zoom', viewport.getZoom().toFixed(4))
+                      url.searchParams.set('x', center.x.toFixed(6))
+                      url.searchParams.set('y', center.y.toFixed(6))
+                      url.searchParams.set('rotation', viewport.getRotation().toFixed(1))
+                      shareOverlaysRef.current
+                        .slice(0, MAX_SHARE_OVERLAYS)
+                        .forEach((rect, index) => {
+                          url.searchParams.set(
+                            `ov${index}`,
+                            [rect.x, rect.y, rect.w, rect.h].map((n) => n.toPrecision(8)).join(','),
+                          )
+                        })
+                      copyViewLink(url.href, () => setShareCopied(true), imageId, categoryId)
+                    })
+                  }
+                  markers={
+                    <ImageMarkersList
+                      key={drawerIdentity}
+                      drawerId={drawerId + '-list'}
+                      items={markers.items}
+                      boards={markers.boards ?? undefined}
+                      currentUser={auth?.currentUser ?? null}
+                      draftTitle={markerDraft?.imageId === imageId ? draftTitle : undefined}
+                      prefs={visibilityPrefs}
+                      selectedId={selectedMarkerId}
+                      focusId={focusMarkerId}
+                      error={markers.error}
+                      onOpenBoard={handleOpenBoard}
+                      onSelect={(item) => {
+                        if (editingMarker) return
+                        navigateToMarker(viewerInstance, item)
+                        selectMarker(item)
+                      }}
+                      onEdit={(item) => {
+                        beginMarkerEdit(item)
+                      }}
+                      onDelete={(item) => {
+                        beginMarkerDelete(item)
+                      }}
+                    />
+                  }
+                />,
+                panelHost,
+              )
+            : createPortal(
+                <ImageMarkersDrawer
+                  key={drawerIdentity}
+                  items={markers.items}
+                  boards={markers.boards ?? undefined}
+                  currentUser={auth?.currentUser ?? null}
+                  draftTitle={markerDraft?.imageId === imageId ? draftTitle : undefined}
+                  open={markersDrawerOpen}
+                  pinned={drawerState.pinned}
+                  onPinnedChange={(pinned) => {
+                    drawerState.setPinned(pinned)
+                    setDrawerFor(drawerIdentity)
+                  }}
+                  onOpenChange={setMarkersDrawerOpen}
+                  triggerRef={markersTriggerRef}
+                  drawerId={drawerId}
+                  prefs={visibilityPrefs}
+                  selectedId={selectedMarkerId}
+                  focusId={focusMarkerId}
+                  error={markers.error}
+                  onOpenBoard={handleOpenBoard}
+                  onSelect={(item) => {
+                    if (editingMarker) return
+                    navigateToMarker(viewerInstance, item)
+                    selectMarker(item)
+                  }}
+                  onEdit={(item) => {
+                    beginMarkerEdit(item)
+                  }}
+                  onDelete={(item) => {
+                    beginMarkerDelete(item)
+                  }}
+                />,
+                viewerInstance.container,
+              )}
+          <MarkersLayer
+            viewer={viewerInstance}
+            items={[
+              ...markers.items.map((item) => ({
+                ...item,
+                ...visibilityPrefs.visibilityFor(item),
+              })),
+              ...(markerDraft?.imageId === imageId
+                ? [{ ...markerDraft.view, id: -1, title: draftTitle || 'New Marker' }]
+                : []),
+            ]}
+            selectedId={selectedMarkerId}
+            onSelect={(marker) => {
+              if (editingMarker) return
+              const item = markers.items.find((value) => value.id === marker.id)
+              if (!item) return
+              setSelectedMarkerId(item.id)
+              setFocusMarkerId(null)
+              setMarkerDraft(null)
+              setEditingMarker(null)
+              setInfoMarkerId(item.id)
+            }}
+          />
+          {infoMarkerId != null &&
+            markers.items
+              .filter((item) => item.id === infoMarkerId)
+              .map((item) => (
+                <MarkerInfoCard
+                  key={item.id}
+                  item={item}
+                  container={viewerInstance.container}
+                  editing={editingMarker?.id === item.id}
+                  userId={auth?.currentUser?.id}
+                  onChanged={markers.reload}
+                  onCancelEdit={() => setEditingMarker(null)}
+                  onClose={() => {
+                    setInfoMarkerId(null)
+                    setSelectedMarkerId(null)
+                    setFocusMarkerId(null)
+                    setEditingMarker(null)
+                  }}
+                  onEdit={(current) => {
+                    beginMarkerEdit(current)
+                  }}
+                />
+              ))}
+          {markerDraft?.imageId === imageId && (
+            <MarkerFormDialog
+              key="new"
+              imageId={imageId}
+              view={markerDraft.view}
+              userId={auth?.currentUser?.id}
+              placement
+              onTitleChange={setDraftTitle}
+              container={viewerInstance.container}
+              onChanged={async (created) => {
+                await markers.reload()
+                if (!created) return
+                navigateToMarker(viewerInstance, created)
+                setSelectedMarkerId(created.id)
+                setInfoMarkerId(created.id)
+                setFocusMarkerId(created.id)
+                if (panelEnabled) {
+                  panelState.setTab('markers')
+                  panelState.setOpen(true)
+                } else {
+                  setMarkersDrawerOpen(true)
+                }
+              }}
+              onClose={() => {
+                setEditingMarker(null)
+                setMarkerDraft(null)
+              }}
+            />
+          )}
+          {markers.error &&
+            createPortal(
+              <Alert
+                severity="error"
+                data-hriv-canvas-ui
+                sx={{ position: 'absolute', bottom: 64, left: 8, zIndex: 25 }}
+              >
+                {markers.error}
+              </Alert>,
+              viewerInstance.container,
+            )}
+          {deletingMarker && (
+            <MarkerDeleteDialog
+              title={deletingMarker.title}
+              container={viewerInstance.container}
+              busy={deleteBusy}
+              confirmDisabled={deleteConflict}
+              error={
+                deleteError ? (
+                  <Alert
+                    severity="error"
+                    action={
+                      deleteConflict ? (
+                        <Button
+                          size="small"
+                          color="inherit"
+                          onClick={() => {
+                            void markers.reload()
+                            clearDelete()
+                          }}
+                        >
+                          Reload list
+                        </Button>
+                      ) : undefined
+                    }
+                  >
+                    {deleteError}
+                  </Alert>
+                ) : undefined
+              }
+              onCancel={clearDelete}
+              onConfirm={() => void confirmMarkerDelete()}
+            />
+          )}
+        </>
+      )}
       {/* Like CanvasOverlay, portal into viewer.container so the overlay
           survives OSD full-page reparenting; positioned children anchor to
           the position:relative container. */}
@@ -1339,7 +2376,7 @@ export default function ImageViewer({
           canvas edit mode and while a rectangle is being drawn — mounting
           it unconditionally would cancel in-flight jobs via the hook's
           unmount cleanup. */}
-      {viewerInstance && countingEnabled && imageId != null
+      {viewerInstance && imageId != null
         ? createPortal(
             <SelectionCountLayer
               viewer={viewerInstance}
@@ -1351,7 +2388,23 @@ export default function ImageViewer({
             viewerInstance.container,
           )
         : null}
-      {controlWrapper && viewportControl ? createPortal(viewportControl, controlWrapper) : null}
+      {controlWrapper && panelEnabled
+        ? createPortal(
+            !panelOpen && (
+              <ViewerPanelToggle
+                open={false}
+                panelId={drawerId}
+                triggerRef={markersTriggerRef}
+                disabled={canvasEditMode}
+                onToggle={() => panelState.setOpen(true)}
+                tooltipContainer={viewerInstance?.container ?? null}
+              />
+            ),
+            controlWrapper,
+          )
+        : controlWrapper && viewportControl
+          ? createPortal(viewportControl, controlWrapper)
+          : null}
     </Box>
   )
 }

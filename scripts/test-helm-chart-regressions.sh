@@ -94,7 +94,7 @@ assert_not_contains "$backend_explicit_tiles_pvc" "- ReadWriteOnce" \
 backend_tiles_configmap="$(extract_yaml_doc "$backend_legacy_manifest" "ConfigMap" "test-hriv-backend-nginx-tiles")"
 assert_contains "$backend_tiles_configmap" 'proxy_cache_key "$tile_auth_token:$tile_image_id:$tile_path_class"' \
   "tiles auth verdict cache key must include the thumb-vs-tiles path class so a thumbnail verdict is never replayed for tile paths (#1609)"
-assert_contains "$backend_tiles_configmap" 'map $request_uri $tile_path_class_from_uri' \
+assert_contains "$backend_tiles_configmap" 'map $uri $tile_path_class_from_uri' \
   "tiles config should classify requests into thumb vs tiles cache classes"
 
 backup_legacy_manifest="$(helm template test charts/backup \
@@ -532,6 +532,9 @@ assert_contains "$backend_default_rebuild_enabled" 'value: "false"' \
   "backend deployment should default durable parallel rebuilding to disabled"
 assert_contains "$backend_mode_default_deployment" 'name: COLLECTIONS_ENABLED' \
   "backend deployment should render the collections dark-launch flag"
+backend_default_markers_enabled="$(grep -F -A1 'name: MARKERS_ENABLED' <<<"$backend_mode_default_deployment")"
+assert_contains "$backend_default_markers_enabled" 'value: "false"' \
+  "backend deployment should default markers to disabled"
 backend_default_collections_enabled="$(grep -F -A1 'name: COLLECTIONS_ENABLED' <<<"$backend_mode_default_deployment")"
 assert_contains "$backend_default_collections_enabled" 'value: "false"' \
   "backend deployment should default collections to disabled"
@@ -598,6 +601,7 @@ backend_required_manifest="$(helm template test charts/backend \
   --set tasks.rebuild.parallelism=3 \
   --set tasks.rebuild.pumpCadenceSeconds=120 \
   --set collections.enabled=true \
+  --set markers.enabled=true \
   --set collections.studentAccess=false \
   --set collections.homeShelf=true \
   --set redis.enabled=true \
@@ -616,6 +620,9 @@ backend_required_rebuild_enabled="$(grep -F -A1 'name: REBUILD_PARALLEL_ENABLED'
 assert_contains "$backend_required_rebuild_enabled" 'value: "true"' \
   "backend deployment should permit durable rebuilding in required mode"
 backend_required_collections_enabled="$(grep -F -A1 'name: COLLECTIONS_ENABLED' <<<"$backend_required_api")"
+backend_required_markers_enabled="$(grep -F -A1 'name: MARKERS_ENABLED' <<<"$backend_required_api")"
+assert_contains "$backend_required_markers_enabled" 'value: "true"' \
+  "backend deployment should render MARKERS_ENABLED=true when markers.enabled is set"
 assert_contains "$backend_required_collections_enabled" 'value: "true"' \
   "backend deployment should render COLLECTIONS_ENABLED=true when collections.enabled is set"
 backend_required_home_shelf="$(grep -F -A1 'name: COLLECTIONS_HOME_SHELF' <<<"$backend_required_api")"
@@ -1298,10 +1305,8 @@ fi
 backend_counting_default_manifest="$(helm template test charts/backend)"
 assert_not_contains "$backend_counting_default_manifest" "counting-worker" \
   "counting worker must render nothing when countingWorker.enabled is false"
-assert_contains "$backend_counting_default_manifest" "name: COUNTING_ENABLED" \
-  "API deployment must always render COUNTING_ENABLED"
-assert_contains "$backend_counting_default_manifest" 'value: "false"' \
-  "COUNTING_ENABLED must default to false (dark launch)"
+assert_not_contains "$backend_counting_default_manifest" "name: COUNTING_ENABLED" \
+  "COUNTING_ENABLED is retired — nothing renders the flag (#1859)"
 assert_contains "$backend_counting_default_manifest" "name: COUNTING_MAX_PIXELS" \
   "API deployment must render the counting budget env vars"
 assert_contains "$backend_counting_default_manifest" "name: COUNTING_CLASSICAL_MAX_PIXELS" \
@@ -1319,7 +1324,6 @@ backend_counting_manifest="$(helm template test charts/backend \
   --set redis.enabled=true \
   --set persistence.enabled=true \
   --set persistence.tiles.accessModes[0]=ReadWriteMany \
-  --set counting.enabled=true \
   --set countingWorker.enabled=true)"
 backend_counting_deployment="$(extract_yaml_doc "$backend_counting_manifest" "Deployment" "test-hriv-backend-counting-worker")"
 assert_contains "$backend_counting_deployment" "ghcr.io/bcit-tlu/hriv/hriv-counting-worker:" \
@@ -1404,5 +1408,9 @@ assert_contains "$backend_counting_netpol" "port: 6379" \
   "counting worker egress must allow Redis"
 assert_contains "$backend_counting_netpol" "protocol: UDP" \
   "counting worker egress must allow DNS"
+
+slot_tiles_config="$(helm template test charts/backend --set tiles.enabled=true --set persistence.enabled=true)"
+assert_contains "$slot_tiles_config" '~^/api/tiles/[0-9]+/collection_slots/[0-9]+\.jpg$ $uri;' \
+  "slot thumbnail auth must be isolated by exact URI, not shared tile class"
 
 echo "Helm chart regression checks passed."

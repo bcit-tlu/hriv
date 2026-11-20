@@ -32,6 +32,7 @@ function makeFinding(overrides: Partial<ApiMeasurementFinding> = {}): ApiMeasure
     approved_unit: null,
     approved_objective: null,
     objective_scales: { '10': 2, '40': 7.3, '100': 18.7 },
+    params: null,
     reviewed_by: null,
     reviewed_at: null,
     created_at: FIXED_NOW,
@@ -61,12 +62,46 @@ const pendingFindings = [
   }),
 ]
 
+const IMAGE = {
+  id: 11,
+  name: 'Peripheral blood film ×40',
+  thumb: THUMB,
+  tile_sources: 'https://example.test/image.dzi',
+  category_id: 3,
+  copyright: null,
+  note: null,
+  active: true,
+  sort_order: 0,
+  metadata_extra: null,
+  version: 1,
+  width: 2880,
+  height: 2048,
+  file_size: 12345,
+  created_at: FIXED_NOW,
+  updated_at: FIXED_NOW,
+}
+
+const PREVIEW = {
+  diameter_px: 54.8,
+  component_count: 150,
+  selected_count: 140,
+  peak_fraction: 0.8,
+  proposed_scale: 7.4,
+  proposed_unit: 'um',
+  objective: '40',
+  confidence: 0.85,
+  reason: null,
+  work_scale: null,
+  outline: null,
+}
+
 function makeApi(items: ApiMeasurementFinding[]): MeasurementReviewApi {
   return {
     fetchFindings: fn(async () => ({ items, total: items.length })),
     fetchCategories: fn(async () => [
       { id: 3, path: 'Hematology › Blood films', count: items.length },
     ]),
+    fetchImage: fn(async () => IMAGE),
     scan: fn(async () => ({ image_ids: [21, 22, 23], mode: 'queued' as const })),
     scanProgress: fn(async () => ({ total: 3, done: 3 })),
     scanRemaining: fn(async () => ({ remaining: 0 })),
@@ -74,6 +109,8 @@ function makeApi(items: ApiMeasurementFinding[]): MeasurementReviewApi {
     reject: fn(async (id: number) => makeFinding({ id, status: 'rejected' })),
     reset: fn(async (id: number) => makeFinding({ id, status: 'pending' })),
     bulkApprove: fn(async (ids: number[]) => ({ approved: ids, skipped: [] })),
+    preview: fn(async () => PREVIEW),
+    updateParams: fn(async (id: number) => makeFinding({ id, params: null })),
   }
 }
 

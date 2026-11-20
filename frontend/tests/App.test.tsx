@@ -2,6 +2,9 @@ import { createRef, useEffect, useState, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from '../src/App'
+import { MARKER_FIXTURE } from '../src/components/markerFixtures'
+import type { ApiMarker, ImageItem } from '../src/types'
+import type { UseShareableImageStateDeps } from '../src/useShareableImageState'
 import type { ProcessingJob } from '../src/useProcessingJobs'
 import {
   ApiError,
@@ -112,7 +115,7 @@ const mockCategories = [
     label: 'Slides',
     parentId: null,
     children: [],
-    images: [],
+    images: new Array<ImageItem>(),
     programIds: [1],
     groupIds: [10],
     status: 'active',
@@ -151,9 +154,12 @@ const mockDeepPath: MockCategory[] = [
 ]
 
 let mockInitialPath: MockCategory[] = []
+const realBoardNavigation = vi.hoisted(() => ({ enabled: false }))
 
 /** Restore every shared mutable fixture; call from each suite's beforeEach. */
 function resetFixtures() {
+  realBoardNavigation.enabled = false
+  mockCategories[0].images = []
   // resetAllMocks drops implementations and unconsumed *Once queue entries
   // left by earlier suites, so defaults must be re-established below.
   vi.resetAllMocks()
@@ -299,25 +305,6 @@ const shareableImageStateMock = {
   clearPending: vi.fn(),
 }
 
-const announcementModalMock = {
-  announcement: '',
-  annMessage: '',
-  annEnabled: false,
-  dismissAnnouncement: vi.fn(),
-  loadAnnouncement: vi.fn(),
-  annModalOpen: false,
-  setAnnModalOpen: vi.fn(),
-  annDraftMessage: '',
-  setAnnDraftMessage: vi.fn(),
-  annDraftEnabled: false,
-  setAnnDraftEnabled: vi.fn(),
-  annSaving: false,
-  annError: null,
-  setAnnError: vi.fn(),
-  openAnnModal: vi.fn(),
-  handleAnnSave: vi.fn(),
-}
-
 const userProfileMock = {
   avatarRef: createRef<HTMLButtonElement>(),
   profileOpen: false,
@@ -415,6 +402,7 @@ vi.mock('../src/components/AppShell', () => ({
     backendVersion,
     onReportIssue,
     collectionsEnabled,
+    markersEnabled,
     fillViewport,
     footerDockSlot,
   }: {
@@ -431,12 +419,14 @@ vi.mock('../src/components/AppShell', () => ({
     backendVersion: string | null
     onReportIssue: () => void
     collectionsEnabled: boolean
+    markersEnabled?: boolean
   }) => (
     <div data-fill-viewport={fillViewport ? 'true' : undefined}>
       <div>
         versions: {String(frontendVersion)}/{String(backendVersion)}
       </div>
       <div data-testid="shell-collections-enabled">{String(collectionsEnabled)}</div>
+      {markersEnabled && <button onClick={() => onTabChange('boards')}>Shell Boards</button>}
       <button type="button" onClick={onReportIssue}>
         Shell report issue
       </button>
@@ -541,22 +531,29 @@ vi.mock('../src/components/SortableTileGrid', () => ({
   ),
 }))
 
+const imageViewerProps = vi.hoisted(() => ({
+  current: null as Record<string, unknown> | null,
+}))
 vi.mock('../src/components/ImageViewer', () => ({
-  default: function MockImageViewer({
-    imageId,
-    onCanvasEditModeChange,
-    onCanvasAnnotationsChange,
-    onSaveCanvasAnnotations,
-    viewportOverlay,
-    viewportControl,
-  }: {
-    imageId?: number
-    onCanvasEditModeChange?: (active: boolean) => void
-    onCanvasAnnotationsChange?: (annotations: unknown[]) => void
-    onSaveCanvasAnnotations?: (annotations: unknown[]) => Promise<boolean>
-    viewportOverlay?: ReactNode
-    viewportControl?: ReactNode
-  }) {
+  default: function MockImageViewer(
+    props: {
+      imageId?: number
+      onCanvasEditModeChange?: (active: boolean) => void
+      onCanvasAnnotationsChange?: (annotations: unknown[]) => void
+      onSaveCanvasAnnotations?: (annotations: unknown[]) => Promise<boolean>
+      viewportOverlay?: ReactNode
+      viewportControl?: ReactNode
+    } & Record<string, unknown>,
+  ) {
+    imageViewerProps.current = props
+    const {
+      imageId,
+      onCanvasEditModeChange,
+      onCanvasAnnotationsChange,
+      onSaveCanvasAnnotations,
+      viewportOverlay,
+      viewportControl,
+    } = props
     const [internalEditMode, setInternalEditMode] = useState(false)
     return (
       <div>
@@ -670,6 +667,7 @@ const collectionsDataMocks = vi.hoisted(() => ({
   move: vi.fn(),
   saveOwners: vi.fn(),
   setHidden: vi.fn(),
+  renewCollectionImage: vi.fn(),
   filters: {
     type: 'all' as string,
     mine: false,
@@ -733,12 +731,79 @@ vi.mock('../src/useCollectionsData', async () => {
             ? addToCollectionMocks.addImagesToCollection(id, imageIds)
             : addToCollectionMocks.addImagesToCollection(id, imageIds, role),
         removeImages: vi.fn(),
-        renewCollectionImage: vi.fn(),
+        renewCollectionImage: collectionsDataMocks.renewCollectionImage,
       }
     },
   }
 })
 vi.mock('../src/components/ManagePage', () => ({ default: () => null }))
+vi.mock('../src/components/BoardsPage', () => ({
+  default: ({
+    enabled,
+    boardId,
+    onSelectBoard,
+    onOpenMarker,
+  }: {
+    enabled: boolean
+    boardId: number | null
+    onSelectBoard: (id: number) => void
+    onOpenMarker: (item: ApiMarker) => void
+  }) =>
+    enabled ? (
+      <div data-testid="boards-page" data-board={String(boardId)}>
+        <button onClick={() => onSelectBoard(5)}>Select Board</button>
+        <button onClick={() => onOpenMarker({ ...MARKER_FIXTURE, image_id: 101, rotation: 90 })}>
+          Open saved view
+        </button>
+      </div>
+    ) : null,
+}))
+vi.mock('../src/components/BoardDialog', () => ({
+  default: ({
+    boardId,
+    container,
+    onClose,
+    onOpenMarker,
+    onManage,
+    onChanged,
+  }: {
+    boardId: number | null
+    container?: HTMLElement | null
+    onClose: () => void
+    onOpenMarker: (item: ApiMarker) => void
+    onManage?: (id: number) => void
+    onChanged?: () => void
+  }) =>
+    boardId != null ? (
+      <div
+        data-testid="board-dialog"
+        data-board={String(boardId)}
+        data-container={container ? 'viewer' : 'none'}
+      >
+        <button onClick={onClose}>Close Board dialog</button>
+        <button onClick={() => onManage?.(boardId)}>Manage Board dialog</button>
+        <button onClick={() => onChanged?.()}>Trigger Board change</button>
+        <button onClick={() => onOpenMarker({ ...MARKER_FIXTURE, image_id: 101, rotation: 90 })}>
+          Open dialog saved view
+        </button>
+        <button
+          onClick={() =>
+            onOpenMarker({
+              ...MARKER_FIXTURE,
+              id: 8,
+              image_id: 101,
+              x: 0.7,
+              y: 0.6,
+              zoom: 4,
+              rotation: 45,
+            })
+          }
+        >
+          Open dialog other view
+        </button>
+      </div>
+    ) : null,
+}))
 const addToCollectionMocks = vi.hoisted(() => ({
   addImagesToCollection: vi.fn(),
   createCollectionWithImages: vi.fn(),
@@ -924,7 +989,11 @@ let mockCategoriesStable: { signature: string; value: MockCategory[] } | null = 
 function stableMockCategories(): MockCategory[] {
   const signature = JSON.stringify(mockCategories)
   if (mockCategoriesStable == null || mockCategoriesStable.signature !== signature) {
-    mockCategoriesStable = { signature, value: [...mockCategories] }
+    // Snapshot, not a shallow copy — `value` must not share element refs with
+    // `mockCategories`: resetFixtures mutates `.images` in place then splices
+    // out the element, and a signature collision would otherwise serve the
+    // stale (emptied) object.
+    mockCategoriesStable = { signature, value: JSON.parse(signature) as MockCategory[] }
   }
   return mockCategoriesStable.value
 }
@@ -969,20 +1038,26 @@ let popStateHandler:
     ) => boolean)
   | null = null
 
-vi.mock('../src/useNavigationHistory', () => ({
-  useNavigationHistory: (
-    onPopState: (
-      page: string,
-      catIds: number[],
-      imageId: number | null,
-      traversal?: { collectionFromBrowse?: boolean },
-    ) => boolean,
-  ) => {
-    popStateHandler = onPopState
-    return { pushNavState: pushNavStateMock, replayPopState: vi.fn() }
-  },
-  buildNavHistoryState: vi.fn(),
-}))
+vi.mock('../src/useNavigationHistory', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/useNavigationHistory')>()
+  return {
+    ...actual,
+    useNavigationHistory: (
+      onPopState: (
+        page: string,
+        catIds: number[],
+        imageId: number | null,
+        traversal?: { collectionFromBrowse?: boolean },
+      ) => boolean,
+    ) => {
+      if (realBoardNavigation.enabled) return actual.useNavigationHistory(onPopState)
+      popStateHandler = onPopState
+      return { pushNavState: pushNavStateMock, replayPopState: vi.fn() }
+    },
+    buildNavHistoryState: (...args: Parameters<typeof actual.buildNavHistoryState>) =>
+      realBoardNavigation.enabled ? actual.buildNavHistoryState(...args) : undefined,
+  }
+})
 
 vi.mock('../src/useProcessingJobs', () => ({
   useProcessingJobs: () => processingJobsMock,
@@ -990,20 +1065,22 @@ vi.mock('../src/useProcessingJobs', () => ({
   FAILURE_COLLAPSE_THRESHOLD: 5,
 }))
 
-vi.mock('../src/useShareableImageState', () => ({
-  useShareableImageState: ({ setPath }: { setPath: (path: MockCategory[]) => void }) => {
-    useEffect(() => {
-      if (mockInitialPath.length > 0) {
-        setPath(mockInitialPath)
-      }
-    }, [setPath])
-    return shareableImageStateMock
-  },
-}))
-
-vi.mock('../src/useAnnouncementModal', () => ({
-  useAnnouncementModal: () => announcementModalMock,
-}))
+vi.mock('../src/useShareableImageState', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/useShareableImageState')>()
+  return {
+    ...actual,
+    useShareableImageState: (deps: UseShareableImageStateDeps) => {
+      const { setPath } = deps
+      useEffect(() => {
+        if (!realBoardNavigation.enabled && mockInitialPath.length > 0) {
+          setPath(mockInitialPath)
+        }
+      }, [setPath])
+      if (realBoardNavigation.enabled) return actual.useShareableImageState(deps)
+      return shareableImageStateMock
+    },
+  }
+})
 
 vi.mock('../src/useUserProfile', () => ({
   useUserProfile: () => userProfileMock,
@@ -1053,6 +1130,135 @@ describe('App breadcrumbs', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Discard Changes' }))
     expect(canvasAnnotationsMock.discardCanvasAnnotations).toHaveBeenCalledOnce()
     expect(authState.logout).toHaveBeenCalledOnce()
+  })
+
+  // #1863 — the sequence viewer registers its edit draft on the shared
+  // `canvasDraftRef` handle; the same dialog/guards then cover collection
+  // item switches and collection close.
+  async function openCollectionsPage() {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Shell tab collections' }))
+    expect(await screen.findByTestId('collections-page')).toBeInTheDocument()
+  }
+  function registerCollectionDraft(draft: { dirty: boolean; saving?: boolean }) {
+    const ref = collectionsPageProps.current?.canvasDraftRef as
+      { current: { dirty: boolean; saving: boolean; discard: () => void } | null } | undefined
+    expect(ref, 'canvasDraftRef prop').toBeTruthy()
+    ref!.current = { dirty: draft.dirty, saving: draft.saving ?? false, discard: vi.fn() }
+    return ref!.current!
+  }
+
+  it('passes the annotation gate and shared draft handle to the collections page', async () => {
+    await openCollectionsPage()
+    // The App-level user is an instructor → canEditContent.
+    expect(collectionsPageProps.current!.canAnnotateImages).toBe(true)
+    expect(collectionsPageProps.current!.canvasDraftRef).toBeTruthy()
+  })
+
+  it('confirms before switching collection items with a dirty collection draft', async () => {
+    await openCollectionsPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    const handle = registerCollectionDraft({ dirty: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select item 99' }))
+    const dialog = screen.getByRole('dialog', { name: 'Discard annotation changes?' })
+    expect(dialog).toHaveAccessibleDescription('Your unsaved annotation changes will be lost.')
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+
+    // Keep Editing cancels the switch and stays on the current member.
+    fireEvent.click(screen.getByRole('button', { name: 'Keep Editing' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+
+    // Retry → Discard Changes runs the registered discard and switches.
+    fireEvent.click(await screen.findByRole('button', { name: 'Select item 99' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Discard Changes' }))
+    expect(handle.discard).toHaveBeenCalledOnce()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+  })
+
+  it('confirms before closing the collection with a dirty draft', async () => {
+    await openCollectionsPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    registerCollectionDraft({ dirty: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(screen.getByRole('dialog', { name: 'Discard annotation changes?' })).toBeInTheDocument()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard Changes' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+  })
+
+  it('renews the browse caches when a collection member is saved', async () => {
+    await openCollectionsPage()
+    const onCollectionImageRenewed = collectionsPageProps.current?.onCollectionImageRenewed as (
+      collectionId: number,
+      image: ApiImage,
+    ) => void
+    expect(onCollectionImageRenewed).toBeTypeOf('function')
+
+    // Open the same image in the regular viewer first — the popstate/browse
+    // caches hold its pre-edit record.
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab browse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    expect(imageViewerProps.current?.imageId).toBe(101)
+    expect(imageViewerProps.current?.tileSources).toBe('/tiles.dzi')
+
+    const renewed = {
+      id: 101,
+      name: 'Specimen Image',
+      thumb: '/thumb.jpg',
+      tile_sources: '/renewed-tiles.dzi',
+      category_id: 1,
+      copyright: null,
+      note: null,
+      active: true,
+      sort_order: 0,
+      version: 2,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-02T00:00:00Z',
+      metadata_extra: { canvas_annotations: [{ id: 'a1', type: 'rect', x: 0, y: 0, w: 1, h: 1 }] },
+      width: 100,
+      height: 100,
+      file_size: 10,
+    } as ApiImage
+
+    act(() => onCollectionImageRenewed(5, renewed))
+
+    // The collection detail swap still happens…
+    expect(collectionsDataMocks.renewCollectionImage).toHaveBeenCalledWith(5, renewed)
+    // …and the saved record is swapped into the browse caches + selected
+    // image wholesale, so the open regular viewer (and a later browser back
+    // into it) sees the saved metadata instead of the stale pre-edit record.
+    // (useCanvasAnnotations is mocked here, so tileSources is the observable
+    // proof the selectedImage object was replaced.)
+    expect(imageViewerProps.current?.tileSources).toBe('/renewed-tiles.dzi')
+  })
+
+  it('blocks navigation while a collection draft save is pending', async () => {
+    await openCollectionsPage()
+    registerCollectionDraft({ dirty: false, saving: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select item 99' }))
+
+    expect(screen.queryByText('Discard annotation changes?')).not.toBeInTheDocument()
+    expect(screen.getByText('Please wait for the annotation save to finish.')).toBeInTheDocument()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+  })
+
+  it('blocks beforeunload while a collection draft is dirty or saving', async () => {
+    await openCollectionsPage()
+    const handle = registerCollectionDraft({ dirty: true })
+
+    const dirtyUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirtyUnload)
+    expect(dirtyUnload.defaultPrevented).toBe(true)
+
+    handle.dirty = false
+    const cleanUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(cleanUnload)
+    expect(cleanUnload.defaultPrevented).toBe(false)
   })
 
   it('blocks navigation while an explicit canvas save is pending', async () => {
@@ -1746,19 +1952,6 @@ describe('App breadcrumbs', () => {
     }
   })
 
-  it('does not load the announcement while auth is still loading', async () => {
-    authState = {
-      ...authState,
-      currentUser: null,
-      loading: true,
-    }
-
-    render(<App />)
-
-    await screen.findByRole('progressbar')
-    expect(announcementModalMock.loadAnnouncement).not.toHaveBeenCalled()
-  })
-
   it('fetches component versions for instructors (canEditContent)', async () => {
     render(<App />)
 
@@ -1862,6 +2055,19 @@ describe('App failure notifications', () => {
 })
 
 describe('App image details drawer', () => {
+  it('replaces the old details controls with panel metadata only when Markers is enabled', async () => {
+    resetFixtures()
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: true, markers: true })
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    await waitFor(() => expect(imageViewerProps.current?.markersEnabled).toBe(true))
+    expect(screen.queryByRole('button', { name: 'Image details' })).toBeNull()
+    expect(imageViewerProps.current?.sidePanelDetails).toMatchObject({
+      props: { image: expect.objectContaining({ id: mockImage.id }) },
+    })
+    expect(apiMocks.fetchImageSourceInfo).not.toHaveBeenCalled()
+  })
+
   beforeEach(() => {
     resetFixtures()
     Object.assign(mockImage, { copyright: 'Educational use only' })
@@ -3482,5 +3688,267 @@ describe('App search collections integration (#1418)', () => {
     expect(
       await screen.findByText('Staged 2 images for "Managed set" — press Done to apply.'),
     ).toBeInTheDocument()
+  })
+})
+
+describe('Boards navigation', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/')
+  })
+  beforeEach(() => {
+    resetFixtures()
+    mockCategories[0].images = [mockImage]
+    realBoardNavigation.enabled = true
+    window.history.replaceState(null, '', '/?page=boards&board=5&section=11')
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: true, markers: true })
+    apiMocks.fetchImage.mockResolvedValue({
+      id: 101,
+      name: 'Specimen Image',
+      thumb: '/thumb.jpg',
+      tile_sources: '/tiles.dzi',
+      category_id: 1,
+      copyright: null,
+      note: null,
+      active: true,
+      sort_order: 0,
+      metadata_extra: null,
+      version: 1,
+      width: 1024,
+      height: 1024,
+      file_size: 100,
+      created_at: '',
+      updated_at: '',
+    })
+  })
+  it('ignores obsolete grouping parameters on the Board deep link, and resets to the overview on utility entry', async () => {
+    render(<App />)
+    const page = await screen.findByTestId('boards-page')
+    expect(page).toHaveAttribute('data-board', '5')
+    expect(page).not.toHaveAttribute('data-section')
+    fireEvent.click(screen.getByRole('button', { name: 'Shell Boards' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('boards-page')).toHaveAttribute('data-board', 'null'),
+    )
+    expect(window.location.search).toBe('?page=boards')
+  })
+  it('Back closes a Board opened from the overview', async () => {
+    window.history.replaceState(null, '', '/?page=boards')
+    render(<App />)
+    expect(await screen.findByTestId('boards-page')).toHaveAttribute('data-board', 'null')
+    fireEvent.click(screen.getByRole('button', { name: 'Select Board' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('boards-page')).toHaveAttribute('data-board', '5'),
+    )
+    await act(async () => {
+      const popped = new Promise<void>((resolve) =>
+        window.addEventListener('popstate', () => resolve(), { once: true }),
+      )
+      window.history.back()
+      await popped
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('boards-page')).toHaveAttribute('data-board', 'null'),
+    )
+    expect(window.location.search).toBe('?page=boards')
+  })
+  it('keeps the saved viewport and browser Back returns to the Board', async () => {
+    const goBack = async () => {
+      await act(async () => {
+        const popped = new Promise<void>((resolve) =>
+          window.addEventListener('popstate', () => resolve(), { once: true }),
+        )
+        window.history.back()
+        await popped
+      })
+    }
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    expect(screen.queryByRole('button', { name: 'Share View' })).not.toBeInTheDocument()
+    expect(imageViewerProps.current?.onShareView).toEqual(expect.any(Function))
+    expect(imageViewerProps.current?.initialViewport).toEqual({
+      x: 0.46,
+      y: 0.29,
+      zoom: 2.5,
+      rotation: 90,
+    })
+    expect(window.location.search).toContain('rotation=90')
+    await goBack()
+    await waitFor(() =>
+      expect(screen.getByTestId('boards-page')).toHaveAttribute('data-board', '5'),
+    )
+    expect(window.location.search).toBe('?page=boards&board=5')
+  })
+  it('focuses the selected Marker and carries it in the URL', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    expect(imageViewerProps.current?.markerFocus).toMatchObject({
+      id: 7,
+      imageId: 101,
+      navigate: true,
+    })
+    expect(window.location.search).toContain('marker=7')
+  })
+  it('opens the Board dialog over the viewer when the viewer requests a Board', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    const host = document.createElement('div')
+    act(() => {
+      ;(
+        imageViewerProps.current?.onOpenBoard as (
+          id: number,
+          container?: HTMLElement | null,
+        ) => void
+      )(7, host)
+    })
+    const dialog = await screen.findByTestId('board-dialog')
+    expect(dialog).toHaveAttribute('data-board', '7')
+    // The opening viewer's container reaches the dialog for full-page portals.
+    expect(dialog).toHaveAttribute('data-container', 'viewer')
+    // The viewer stays mounted and the URL stays on the image — no Boards navigation.
+    expect(screen.getByText(/Image Viewer 101/)).toBeInTheDocument()
+    expect(window.location.search).not.toContain('page=boards')
+  })
+  it('restores a shared viewport instead of re-centring when popping to a marker link', async () => {
+    const goBack = async () => {
+      await act(async () => {
+        const popped = new Promise<void>((resolve) =>
+          window.addEventListener('popstate', () => resolve(), { once: true }),
+        )
+        window.history.back()
+        await popped
+      })
+    }
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    expect(imageViewerProps.current?.markerFocus).toMatchObject({ id: 7, navigate: true })
+    // Leaving for Boards pushes a second entry; Back pops to the recorded
+    // `?marker=7&x/y/zoom` entry — the shared viewport wins, so no re-centre;
+    // the recorded coords ride along so the mounted viewer can restore them.
+    fireEvent.click(screen.getByRole('button', { name: 'Shell Boards' }))
+    await screen.findByTestId('boards-page')
+    await goBack()
+    await waitFor(() =>
+      expect(imageViewerProps.current?.markerFocus).toMatchObject({
+        id: 7,
+        imageId: 101,
+        navigate: false,
+        viewport: { x: 0.46, y: 0.29, zoom: 2.5, rotation: 90 },
+      }),
+    )
+  })
+  it('restores the recorded viewport when popping between markers on one image', async () => {
+    const goBack = async () => {
+      await act(async () => {
+        const popped = new Promise<void>((resolve) =>
+          window.addEventListener('popstate', () => resolve(), { once: true }),
+        )
+        window.history.back()
+        await popped
+      })
+    }
+    render(<App />)
+    // Marker A from Boards, then marker B via the in-place Board dialog on
+    // the same image — two history entries (Devin Review scenario).
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    expect(imageViewerProps.current?.markerFocus).toMatchObject({ id: 7, navigate: true })
+    act(() => {
+      ;(imageViewerProps.current?.onOpenBoard as (id: number) => void)(7)
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Open dialog other view' }))
+    await waitFor(() =>
+      expect(imageViewerProps.current?.markerFocus).toMatchObject({ id: 8, navigate: true }),
+    )
+    // Back pops to A's entry: same image stays mounted, so the recorded
+    // viewport must ride along in the focus payload to be restored.
+    await goBack()
+    await waitFor(() =>
+      expect(imageViewerProps.current?.markerFocus).toMatchObject({
+        id: 7,
+        imageId: 101,
+        navigate: false,
+        viewport: { x: 0.46, y: 0.29, zoom: 2.5, rotation: 90 },
+      }),
+    )
+    expect(screen.getByText(/Image Viewer 101/)).toBeInTheDocument()
+  })
+  it('signals the mounted viewer to reload markers after a Board dialog change', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    const before = imageViewerProps.current?.markersReloadSignal
+    act(() => {
+      ;(imageViewerProps.current?.onOpenBoard as (id: number) => void)(7)
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Trigger Board change' }))
+    await waitFor(() => expect(imageViewerProps.current?.markersReloadSignal).not.toBe(before))
+  })
+  it('signals a mounted collection viewer to reload markers after a Board change', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Shell tab collections' }))
+    await screen.findByTestId('collections-page')
+    const before = collectionsPageProps.current?.markersReloadSignal
+    act(() => {
+      ;(collectionsPageProps.current?.onOpenBoard as (id: number) => void)(7)
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Trigger Board change' }))
+    await waitFor(() => expect(collectionsPageProps.current?.markersReloadSignal).not.toBe(before))
+  })
+  it('reaches the Boards page through the dialog manage link', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    act(() => {
+      ;(imageViewerProps.current?.onOpenBoard as (id: number) => void)(7)
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage Board dialog' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('boards-page')).toHaveAttribute('data-board', '7'),
+    )
+    expect(window.location.search).toBe('?page=boards&board=7')
+    expect(screen.queryByTestId('board-dialog')).not.toBeInTheDocument()
+  })
+  it('does not navigate after a late image fetch if the user left Boards', async () => {
+    let finish: (image: ApiImage) => void = () => {}
+    apiMocks.fetchImage.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    )
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab browse' }))
+    await act(async () =>
+      finish({
+        id: 101,
+        name: 'Specimen Image',
+        thumb: '/thumb.jpg',
+        tile_sources: '/tiles.dzi',
+        category_id: 1,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: 1024,
+        height: 1024,
+        file_size: 100,
+        created_at: '',
+        updated_at: '',
+      }),
+    )
+    expect(screen.queryByText(/Image Viewer 101/)).not.toBeInTheDocument()
+  })
+  it('falls back to Browse from a direct link when the flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: true, markers: false })
+    render(<App />)
+    await waitFor(() => expect(window.location.search).not.toContain('page=boards'))
+    expect(screen.queryByTestId('boards-page')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Shell Boards' })).not.toBeInTheDocument()
   })
 })

@@ -17,6 +17,16 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 
 ## Matrix
 
+### Changed Marker/Board schema or feature gating
+
+- Backend: `poetry run pytest tests/test_markers.py tests/test_markers_db.py tests/test_main.py tests/test_router_users.py tests/test_migrations_bootstrap.py`.
+- `tests/test_markers_db.py` requires `TEST_DATABASE_URL` pointing to a
+  migrated PostgreSQL database. Verify fresh bootstrap, upgrade/downgrade,
+  and autogenerate drift when changing the schema.
+- `MARKERS_ENABLED` (default false) / Helm `markers.enabled`:
+  `helm lint charts/backend` and `bash scripts/test-helm-chart-regressions.sh`.
+- See [Markers and Boards](markers-and-boards.md).
+
 ### Changed category visibility or program restrictions
 
 - backend: `poetry run pytest tests/test_visibility.py tests/test_categories.py tests/test_router_images.py`
@@ -103,6 +113,17 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   `visibility.py` also run the "Changed groups" set above. See
   [collections.md](collections.md).
 
+### Changed Boards page (#1771)
+
+- Frontend: `npm test -- boardUtils useBoardsData BoardsPage BoardEditDialog BoardOwnersDialog CollectionOwnersDialog markerApi useShareableImageState useNavigationHistory App.test AppShell`
+- Browser stories: `npm run test:storybook -- --run src/components/BoardsPage.stories.tsx src/components/BoardEditDialog.stories.tsx src/components/BoardOwnersDialog.stories.tsx`
+- Cover owned/shared lists, restricted attach authority, OCC reload,
+  full membership order, failed membership-read safety, last-Board removal,
+  orphan-deletion warning, thumbnail renewal and exact saved-view/back navigation.
+- The new DnD provider is separate from Browse. Verify handle-based Board
+  and member reorder and cross-Board save; retain
+  Browse's [feel-test contract](drag-and-drop.md).
+
 ### Changed image metadata / versioning (annotations, overlays, measurement)
 
 - backend: `poetry run pytest tests/test_router_images.py tests/test_images.py tests/test_schemas.py`
@@ -162,14 +183,8 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 
 ### Changed announcements
 
-- backend: `poetry run pytest tests/test_router_announcement.py`
-- frontend: `npm test -- useAnnouncementModal AnnouncementBanner`
-
-### Changed changelog notifications
-
-- backend: `poetry run pytest tests/test_router_changelog.py`
-- frontend: `npm test -- NotificationMenu ChangelogAdmin api AppShell`
-- If the migration changed too, also run: `poetry run pytest tests/test_database.py tests/test_migrations_bootstrap.py`
+- backend: `poetry run pytest tests/test_router_announcements.py tests/test_announcements_helpers.py`
+- frontend: `npm test -- announcement Announcement NoticesShelf LoginScreen AdminPage App`
 
 ### Changed maintenance mode / middleware / rate limiting
 
@@ -229,8 +244,6 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 ### Changed object counting (epic #1661 — stitch, count-job API, counting worker)
 
 - backend: `poetry run pytest tests/test_counting_stitch.py tests/test_router_counts.py tests/test_counting_worker.py tests/test_main.py tests/test_middleware.py`
-- Feature flag (`COUNTING_ENABLED`, `GET /api/features`, `CountingFeatureMiddleware`): also
-  `tests/test_database.py tests/test_schemas.py`.
 - pipeline/outliners/grouping/level rule (#1665):
   `poetry run pytest tests/test_counting_pipeline.py tests/test_counting_stitch.py`
 - frontend: `npm test -- useSelectionCounts countPalette CountObjectsButton
@@ -243,9 +256,62 @@ ImageViewer` (from `frontend/`).
 
 ## Notes
 
+### Marker viewer (#1772)
+
+- Feature/API/hooks: `npm test -- markerApi useImageMarkers useFeatures`.
+- Placement, modes, markers and form: `npm test -- ImageViewer Marker`.
+- App/collection viewer propagation: `npm test -- App.test CollectionsPage SequenceCollectionViewer SynchronizedCollectionViewer`.
+- Full frontend: `npm test`, `npm run build`, `npm run lint`,
+  `npm run format:check`, `npm run build-storybook`.
+- Visually verify constant CSS sizing while zooming/rotating, independent
+  marker/label visibility and create/edit in the viewer. See
+  [Markers and Boards](markers-and-boards.md#imageviewer-frontend-1772).
+
+### Markers drawer (#1773)
+
+- Preferences, groups, independent eyes/switches, remount/storage events:
+  `npm test -- useMarkerVisibilityPrefs ImageMarkersDrawer`.
+- OSD control portal, gating, navigation, single-fetch integration and embeds:
+  `npm test -- ImageViewer SequenceCollectionViewer SynchronizedCollectionViewer`.
+- Browser stories: `npm run test:storybook -- --run src/components/ImageMarkersDrawer.stories.tsx`.
+- Visually check open groups, label-only and collapsed Public, plus collection
+  pane placement and full-page behavior. Run the full frontend/build/lint/format
+  and Storybook checks listed above.
+
 - Vitest patterns match by path substring, so `npm test -- api.test` runs
   `api.test.ts`, and `npm test -- useImageActions` runs `useImageActions.test.ts`.
 - When in doubt about which files a feature touches, consult the
   [agent feature map](agent-feature-map.md).
 - This matrix lists the _most relevant_ tests, not an exhaustive set — always run
   the full suite before merging.
+
+## Board-seeded Collection slots (#1774)
+
+For slot identity, staging, source payloads, renewal or viewport/URL changes run
+from `frontend/`:
+
+```sh
+npm test -- collectionMembers collectionUtils useAddToCollection useCollectionsData useShareableImageState CollectionSlotViewers CollectionManageDialog SequenceCollectionViewer SynchronizedCollectionViewer BoardsPage CollectionsPage AddToCollectionDialog CollectionCoverPickerModal App.test
+npm run test:storybook -- --run src/components/BoardsPage.stories.tsx src/components/SequenceCollectionViewer.stories.tsx src/components/SynchronizedCollectionViewer.stories.tsx src/components/CollectionManageDialog.stories.tsx
+```
+
+Then run the full frontend suite, build, lint and format checks. Visually verify
+the Board selection toolbar, image-only same-image Sequence filmstrip with accessible labels and
+same-image Synchronized comparison. The feature-off stories and data-hook tests
+protect legacy payload compatibility; the slot stories use deterministic
+saved-coordinate snapshots.
+
+## Saved-view search and archive changes (#1775)
+
+- Run frontend SearchModal, SearchModalSavedViews, CollectionManageDialog,
+  collectionMembers and guideSearch tests. Cover feature-off requests/chips,
+  title/description search, Board/saved-view navigation, Board and individual-view
+  draft staging, empty results and request failures. Preview the SearchModal
+  SavedViews story and capture its Board/Marker results.
+- Run backend admin_ops, router_admin, collection_slots, snapshot_files and
+  processing tests. Exercise all saved-view table links and timestamps with the
+  flag off/on, old archives, selective JPEG restore and swap rollback, and retention
+  of restored snapshots across same-source tile rebuilds.
+- Finish with full backend/frontend suites, frontend build/lint/format and Helm
+  lint/regressions. Backup/restore-validation suites are required if their code or
+  recovery contracts change; adding admin archive records alone does not alter them.

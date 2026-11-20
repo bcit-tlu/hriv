@@ -116,32 +116,38 @@ export default function CollectionCoverPickerModal({
               {/* "Automatic" clears both states — the tile uses the
                   first member again. */}
               {optionRow('auto', 'Automatic', '— uses the first image')}
-              {images.map((image) => (
-                <TableRow
-                  key={image.id}
-                  hover
-                  selected={choice === image.id}
-                  sx={{ cursor: 'pointer' }}
-                  onClick={() => setChoice(image.id)}
-                >
-                  <TableCell padding="checkbox">
-                    <Radio
-                      size="small"
-                      checked={choice === image.id}
-                      onChange={() => setChoice(image.id)}
-                      inputProps={{ 'aria-label': `Use ${image.name} as the cover image` }}
-                    />
-                  </TableCell>
-                  <TableCell>{image.name}</TableCell>
-                </TableRow>
-              ))}
+              {images
+                .filter(
+                  (image, index) => images.findIndex((other) => other.id === image.id) === index,
+                )
+                .map((image) => (
+                  <TableRow
+                    key={image.id}
+                    hover
+                    selected={choice === image.id}
+                    sx={{ cursor: 'pointer' }}
+                    onClick={() => setChoice(image.id)}
+                  >
+                    <TableCell padding="checkbox">
+                      <Radio
+                        size="small"
+                        checked={choice === image.id}
+                        onChange={() => setChoice(image.id)}
+                        inputProps={{ 'aria-label': `Use ${image.name} as the cover image` }}
+                      />
+                    </TableCell>
+                    <TableCell>{image.name}</TableCell>
+                  </TableRow>
+                ))}
             </TableBody>
           </Table>
         </TableContainer>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={handleSave}>
+        <Button size="small" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button size="small" variant="contained" onClick={handleSave}>
           Save
         </Button>
       </DialogActions>

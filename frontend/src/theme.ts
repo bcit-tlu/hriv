@@ -1,4 +1,11 @@
-import { alpha, createTheme, type ThemeOptions } from '@mui/material/styles'
+import {
+  alpha,
+  createTheme,
+  darken,
+  type SxProps,
+  type Theme,
+  type ThemeOptions,
+} from '@mui/material/styles'
 
 // ---------------------------------------------------------------------------
 // Colour palettes – edit these values to adjust light / dark appearance.
@@ -44,6 +51,14 @@ const lightPalette = {
    * at 0.7 alpha (#3E3C3Ab3) giving ≈ 4.7 : 1 contrast on white — WCAG-AA.
    */
   visibility: { active: 'rgba(0,0,0,0.45)', inactive: '#3E3C3Ab3', inactiveChipBg: '#6B6966' },
+  /**
+   * Presentation pointer tools (epic #1876). A laser-green dot and bright
+   * cyan ink — both must read against stained-tissue imagery and a
+   * projection screen, so the values are identical across modes. The laser
+   * is green, not the classic red, because H&E slides are overwhelmingly
+   * red/pink and a red dot disappears into the tissue.
+   */
+  presentation: { laser: '#00CC00', ink: '#00E5FF' },
 }
 
 /** Dark-mode colours – a complementary set that keeps the same brand feel. */
@@ -88,6 +103,8 @@ const darkPalette = {
     inactive: '#E0DDD999',
     inactiveChipBg: '#6B6966',
   },
+  /** Presentation pointer tools — same values as light mode (see comment there). */
+  presentation: { laser: '#00CC00', ink: '#00E5FF' },
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +175,17 @@ export function getVisibilityColors(mode: HrivThemeMode): {
   return mode === 'dark' ? darkPalette.visibility : lightPalette.visibility
 }
 
+/**
+ * Presentation pointer-tool colours for the current mode: `laser` is the
+ * glowing dot/trail fill, `ink` the ephemeral freehand stroke colour.
+ */
+export function getPresentationColors(mode: HrivThemeMode): {
+  laser: string
+  ink: string
+} {
+  return mode === 'dark' ? darkPalette.presentation : lightPalette.presentation
+}
+
 // ---------------------------------------------------------------------------
 // App-bar control sizing. Compact on mobile (xs), a step up on tablet (sm),
 // full size on desktop (md+). Keyed by MUI breakpoints so the toolbar icons,
@@ -184,3 +212,30 @@ export const appBarAvatarSx = {
 
 /** Responsive gap between the app-bar's right-hand controls. */
 export const appBarClusterGap = { xs: 0.25, sm: 0.5, md: 1 } as const
+
+// ---------------------------------------------------------------------------
+// Marker accent + favourite-star face
+// ---------------------------------------------------------------------------
+
+/** Marker tile/pin accent — blue in both modes, deliberately distinct from
+ *  the red primary brand colour. */
+export function markerAccentColor(theme: Theme): string {
+  return theme.palette.mode === 'dark' ? '#2196F3' : '#4A78A7'
+}
+
+/** Marker favourite-star face, shared by the table cell, tile overlays, the
+ *  view-page info popover and the Marker dialog: on = white filled star over
+ *  the primary (red) disc; off = white outline star over a low-opacity black
+ *  disc — proportionally darker than whatever surface it floats over. */
+export function markerFavouriteButtonSx(favourite: boolean): SxProps<Theme> {
+  return favourite
+    ? (theme: Theme) => ({
+        bgcolor: markerAccentColor(theme),
+        '&:hover': { bgcolor: darken(markerAccentColor(theme), 0.2) },
+      })
+    : (theme: Theme) => ({
+        color: theme.palette.common.white,
+        bgcolor: alpha(theme.palette.common.black, 0.25),
+        '&:hover': { bgcolor: alpha(theme.palette.common.black, 0.45) },
+      })
+}

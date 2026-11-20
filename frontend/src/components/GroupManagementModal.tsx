@@ -63,6 +63,8 @@ interface GroupManagementModalProps {
   onEdit: (id: number, name: string, description: string | null) => void | Promise<void>
   onDelete: (id: number) => void | Promise<void>
   onCategoryNavigate?: (categoryId: number) => void
+  /** Announcements epic: contextual compose for one group. */
+  onPostToGroup?: (groupId: number) => void
   /** Propagates membership updates back to the parent app state. */
   onGroupUpdated?: (group: Group) => void
   /**
@@ -88,6 +90,7 @@ export default function GroupManagementModal({
   onEdit,
   onDelete,
   onCategoryNavigate,
+  onPostToGroup,
   canManage,
   onGroupUpdated,
 }: GroupManagementModalProps) {
@@ -550,6 +553,7 @@ export default function GroupManagementModal({
           >
             <Box sx={{ p: 2, pb: 1.5 }}>
               <Button
+                size="small"
                 variant="contained"
                 color="secondary"
                 fullWidth
@@ -929,6 +933,17 @@ export default function GroupManagementModal({
 
       <Menu anchorEl={menuAnchorEl} open={Boolean(menuAnchorEl)} onClose={closeGroupMenu}>
         <MenuItem onClick={startRename}>Rename</MenuItem>
+        {onPostToGroup && (
+          <MenuItem
+            onClick={() => {
+              const groupId = menuGroupId
+              closeGroupMenu()
+              if (groupId != null) onPostToGroup(groupId)
+            }}
+          >
+            Post to group
+          </MenuItem>
+        )}
         <MenuItem onClick={startDelete} sx={{ color: 'error.main' }}>
           Delete
         </MenuItem>
@@ -976,6 +991,7 @@ export default function GroupManagementModal({
         </DialogContent>
         <DialogActions>
           <Button
+            size="small"
             onClick={() => {
               setGroupDialogMode(null)
               setGroupActionError(null)
@@ -984,6 +1000,7 @@ export default function GroupManagementModal({
             Cancel
           </Button>
           <Button
+            size="small"
             variant="contained"
             disabled={!groupNameDraft.trim() || groupPending}
             onClick={() => void handleGroupDialogSubmit()}
@@ -1064,6 +1081,7 @@ export default function GroupManagementModal({
         </DialogContent>
         <DialogActions>
           <Button
+            size="small"
             onClick={() => {
               setDeleteDialogOpen(false)
               setGroupActionError(null)
@@ -1072,6 +1090,7 @@ export default function GroupManagementModal({
             Cancel
           </Button>
           <Button
+            size="small"
             color="error"
             variant="contained"
             disabled={groupPending}

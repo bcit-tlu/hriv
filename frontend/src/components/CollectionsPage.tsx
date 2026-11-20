@@ -1,3 +1,4 @@
+import type { CollectionMember, SlotViewport } from '../types'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -102,8 +103,10 @@ import CollectionManageDialog, { type StageAddImages } from './CollectionManageD
 import CollectionOwnersDialog from './CollectionOwnersDialog'
 import SequenceCollectionViewer from './SequenceCollectionViewer'
 import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
+import type { CanvasDraftHandle } from '../useCanvasAnnotations'
 
 export interface CollectionsPageProps {
+  markersEnabled?: boolean
   currentUser: User | null
   programs: Program[]
   groups: Group[]
@@ -139,24 +142,50 @@ export interface CollectionsPageProps {
   onOpenCollection: (id: number) => void
   onCloseCollection: () => void
   onOpenImage: (image: ImageItem) => void
+  /** Opens the Board dialog for a collection viewer's drawer group heading;
+   * carries the viewer's container for full-page mode. */
+  onOpenBoard?: (boardId: number, container?: HTMLElement | null) => void
+  /** Bumped when the in-place Board dialog mutates Marker/Board data so a
+   * mounted collection viewer reloads its markers. */
+  markersReloadSignal?: number
   /** Graph-view image clicks carry only an id (#1629) — the caller fetches
    *  the record and takes the normal `?image={id}` viewer path. */
   onOpenImageById?: (imageId: number) => void
   /** Sequence viewer state (`?item=` position) and mutations (#1416). */
   selectedCollectionItemId: number | null
-  onSelectCollectionItem: (imageId: number) => void
+  selectedCollectionSlotId?: number | null
+  onSelectCollectionItem: (imageId: number, slotId?: number) => void
   /**
    * Whole-replace member order — the Manage dialog's Done commits its staged
    * draft (reorder + removals + additions) through this one PUT (#1567).
    */
-  onReorderImages: (id: number, imageIds: number[]) => Promise<unknown>
+  onReorderImages: (
+    id: number,
+    imageIds: number[],
+    members?: CollectionMember[],
+  ) => Promise<unknown>
   onCollectionImageRenewed: (collectionId: number, image: ApiImage) => void
   onViewerError: (message: string) => void
+  /**
+   * `canEditContent` from auth (#1863) — admins/instructors get the
+   * sequence viewer's annotation/overlay editing; students stay read-only.
+   * Orthogonal to `collection.permissions.canEdit` (curation).
+   */
+  canAnnotateImages?: boolean
+  /**
+   * Shared handle the sequence viewer registers its canvas-draft state on
+   * (#1863) so App's navigation guards cover item switching and closing.
+   */
+  canvasDraftRef?: React.MutableRefObject<CanvasDraftHandle | null>
   /** Reports the current Cards/Table/Graph view so the shell can fill the
    *  viewport in graph view (#1630 feedback). */
   onViewChange?: (view: CollectionsView) => void
   /** Synchronized viewer mutation — whole-replace `viewport_state` (#1417). */
-  onSaveViewport: (id: number, viewportState: Record<string, unknown>) => Promise<unknown>
+  onSaveViewport: (
+    id: number,
+    viewportState: Record<string, unknown>,
+    slotViewports?: Record<string, SlotViewport | null>,
+  ) => Promise<unknown>
   /** Mutations — reject with an ApiError to surface the message in the dialog. */
   loadCollection: (id: number) => Promise<Collection>
   onCreate: (values: CollectionFormValues) => Promise<Collection>
@@ -246,7 +275,9 @@ export interface CollectionsPageProps {
 }
 
 // Icon + text label per view button (sentence case, like other buttons).
-const viewToggleSx = { gap: 0.75, px: 1.25, textTransform: 'none' } as const
+// py keeps the toggle group at the size="small" button height (30.75px) —
+// tops and bottoms align with the title row's other buttons.
+const viewToggleSx = { gap: 0.75, px: 1.25, py: '3px', textTransform: 'none' } as const
 
 function ownerFilterKey(owner: CollectionOwnerFilter): string {
   if (owner === 'any' || owner === 'orphaned') return owner
@@ -635,6 +666,7 @@ function CollectionDetailHeader({
 }
 
 export default function CollectionsPage({
+  markersEnabled = false,
   currentUser,
   programs,
   groups,
@@ -659,11 +691,16 @@ export default function CollectionsPage({
   onOpenCollection,
   onCloseCollection,
   onOpenImage,
+  onOpenBoard,
+  markersReloadSignal,
   selectedCollectionItemId,
+  selectedCollectionSlotId = null,
   onSelectCollectionItem,
   onReorderImages,
   onCollectionImageRenewed,
   onViewerError,
+  canAnnotateImages,
+  canvasDraftRef,
   onViewChange,
   onSaveViewport,
   loadCollection,
@@ -710,6 +747,26 @@ export default function CollectionsPage({
   }
 
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
+  // Details-drawer program/group names per member (#1862): same narrowing
+  // semantics as the browse breadcrumb, resolved against the member's filed
+  // category. Unfiled members and categories absent from the caller's tree
+  // resolve to empty lists — the drawer omits those rows.
+  const memberInfoNames = useMemo(() => {
+    const byId = new Map<number, { programNames: string[]; groupNames: string[] }>()
+    for (const image of detail?.images ?? []) {
+      const seg = image.categoryId != null ? categoryPaths.get(image.categoryId) : undefined
+      const path = seg ? [...seg.ancestors, seg.category] : []
+      byId.set(image.id, {
+        programNames: narrowProgramIds(path).map(
+          (id) => programs.find((program) => program.id === id)?.name ?? String(id),
+        ),
+        groupNames: narrowGroupIds(path).map(
+          (id) => groups.find((group) => group.id === id)?.name ?? String(id),
+        ),
+      })
+    }
+    return byId
+  }, [categoryPaths, detail?.images, programs, groups])
   const detailCategoryPath = useMemo(() => {
     if (detail?.categoryId == null) return []
     const seg = categoryPaths.get(detail.categoryId)
@@ -983,7 +1040,9 @@ export default function CollectionsPage({
     void fetchCollections({ mine: true })
       .then((rows) => {
         if (!cancelled) {
-          setTypesAtLimit(studentTypesAtCap(rows.map(apiCollectionSummaryToSummary), currentUser))
+          setTypesAtLimit(
+            studentTypesAtCap((rows ?? []).map(apiCollectionSummaryToSummary), currentUser),
+          )
         }
       })
       .catch(() => {
@@ -1179,13 +1238,20 @@ export default function CollectionsPage({
             />
           </Box>
           <SequenceCollectionViewer
+            markersEnabled={markersEnabled}
             collection={detail}
             itemId={selectedCollectionItemId}
+            slotId={selectedCollectionSlotId}
             onSelectItem={onSelectCollectionItem}
             onOpenImage={onOpenImage}
+            onOpenBoard={onOpenBoard}
+            markersReloadSignal={markersReloadSignal}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
+            memberInfoNames={memberInfoNames}
             hidden={detail.hidden || detailCategoryHidden}
+            canEditContent={canAnnotateImages ?? false}
+            canvasDraftRef={canvasDraftRef}
           />
         </Box>
       )
@@ -1211,11 +1277,19 @@ export default function CollectionsPage({
             />
           </Box>
           <SynchronizedCollectionViewer
+            markersEnabled={markersEnabled}
             collection={detail}
-            onSaveViewport={(viewportState) => onSaveViewport(detail.id, viewportState)}
+            onSaveViewport={(viewportState, slotViewports) =>
+              slotViewports
+                ? onSaveViewport(detail.id, viewportState, slotViewports)
+                : onSaveViewport(detail.id, viewportState)
+            }
             onOpenImage={onOpenImage}
+            onOpenBoard={onOpenBoard}
+            markersReloadSignal={markersReloadSignal}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
+            memberInfoNames={memberInfoNames}
             actionsContainer={syncActionsEl}
           />
         </Box>
@@ -1294,6 +1368,9 @@ export default function CollectionsPage({
             gap: 1,
             mb: 3,
             flexShrink: 0,
+            // Buttons are size="small" (30.75px) — keep the row at the
+            // historical 36.5px so the FilterBar position doesn't shift.
+            minHeight: 36.5,
           }}
         >
           <Typography variant="h5" component="h1">
@@ -1342,6 +1419,7 @@ export default function CollectionsPage({
               <span>
                 <Button
                   variant="contained"
+                  size="small"
                   startIcon={<AddIcon />}
                   onClick={openCreate}
                   disabled={typesAtLimit.size === 2}
@@ -1854,11 +1932,16 @@ export default function CollectionsPage({
           commits them through one whole-replace PUT — only then does the
           detail behind it change. */}
       <CollectionManageDialog
+        markersEnabled={markersEnabled}
         open={manageOpen}
         onClose={() => setManageOpen(false)}
         collection={detail}
-        onSaveMembers={(imageIds) =>
-          detail ? onReorderImages(detail.id, imageIds) : Promise.resolve()
+        onSaveMembers={(imageIds, members) =>
+          detail
+            ? members
+              ? onReorderImages(detail.id, imageIds, members)
+              : onReorderImages(detail.id, imageIds)
+            : Promise.resolve()
         }
         onAddImages={
           detail && onRequestCollectionImageSearch

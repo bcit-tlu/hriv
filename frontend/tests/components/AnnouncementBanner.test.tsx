@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import AnnouncementBanner from '../../src/components/AnnouncementBanner'
 
@@ -27,7 +27,7 @@ describe('AnnouncementBanner', () => {
   it('renders dismiss link when onDismiss is provided', () => {
     const onDismiss = vi.fn()
     renderWithTheme(<AnnouncementBanner message="Update tonight" onDismiss={onDismiss} />)
-    const link = screen.getByRole('button', { name: 'Dismiss' })
+    const link = screen.getByRole('button', { name: 'Close announcement' })
     expect(link).toBeInTheDocument()
     link.click()
     expect(onDismiss).toHaveBeenCalledTimes(1)
@@ -35,7 +35,7 @@ describe('AnnouncementBanner', () => {
 
   it('does not render dismiss link when onDismiss is not provided', () => {
     renderWithTheme(<AnnouncementBanner message="No dismiss" />)
-    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Close announcement' })).not.toBeInTheDocument()
   })
 
   it('does not render dismiss link for login variant', () => {
@@ -43,7 +43,7 @@ describe('AnnouncementBanner', () => {
     renderWithTheme(
       <AnnouncementBanner message="Login msg" variant="login" onDismiss={onDismiss} />,
     )
-    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Close announcement' })).not.toBeInTheDocument()
   })
 
   it('renders in dark mode without errors', () => {
@@ -54,5 +54,67 @@ describe('AnnouncementBanner', () => {
   it('renders login variant in dark mode', () => {
     renderWithTheme(<AnnouncementBanner message="Dark login" variant="login" />, 'dark')
     expect(screen.getByText('Dark login')).toBeInTheDocument()
+  })
+})
+
+describe('AnnouncementBanner (announcements epic)', () => {
+  it('shows the title, a "+N more" link and a close button in the app variant', () => {
+    const onMore = vi.fn()
+    const onDismiss = vi.fn()
+    renderWithTheme(
+      <AnnouncementBanner
+        title="Planned maintenance"
+        message="Saturday 06:00"
+        severity="warning"
+        moreCount={2}
+        onMore={onMore}
+        onDismiss={onDismiss}
+      />,
+    )
+    expect(screen.getByText('Planned maintenance')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '+2 more' }))
+    expect(onMore).toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Close announcement' }))
+    expect(onDismiss).toHaveBeenCalled()
+  })
+
+  it('clamps long bodies behind a More/Less toggle', () => {
+    renderWithTheme(<AnnouncementBanner message={'line one\nline two\nline three'} />)
+    const toggle = screen.getByRole('button', { name: 'More' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button', { name: 'Less' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.queryByRole('button', { name: /more/ })).not.toBeInTheDocument()
+  })
+
+  it('renders the body as markdown, resolving media via the supplied tokens', () => {
+    renderWithTheme(
+      <AnnouncementBanner
+        message={'**Bold** intro\n\n![diagram](/api/media/4)'}
+        mediaTokens={{ '4': 'tok123' }}
+      />,
+    )
+    expect(screen.getByText('Bold')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'diagram' })).toHaveAttribute(
+      'src',
+      expect.stringContaining('/api/media/4?token=tok123'),
+    )
+  })
+
+  it('shows a media placeholder when no token is supplied', () => {
+    const { container } = renderWithTheme(<AnnouncementBanner message="![diagram](/api/media/4)" />)
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByRole('img', { name: 'diagram' })).toHaveClass('md-media-missing')
+  })
+
+  it('shows the kind icon when a kind is given', () => {
+    renderWithTheme(<AnnouncementBanner title="Party" message="Cake at 3" kind="celebration" />)
+    expect(screen.getByRole('img', { name: 'Celebration' })).toBeInTheDocument()
+  })
+
+  it('never shows reactions (they live on the Announcements page only)', () => {
+    renderWithTheme(<AnnouncementBanner message="Welcome" kind="notice" variant="login" />)
+    expect(screen.getByRole('img', { name: 'Notice' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add reaction' })).toBeNull()
   })
 })

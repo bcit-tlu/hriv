@@ -117,7 +117,7 @@ export const WithDismissAction: Story = {
     const canvas = within(canvasElement)
 
     await expect(canvas.getByText(defaultMessage)).toBeVisible()
-    await userEvent.click(canvas.getByRole('button', { name: 'Dismiss' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Close announcement' }))
     await expect(canvas.getByText('Announcement dismissed for this session.')).toBeVisible()
     await expect(canvas.queryByText(defaultMessage)).toBeNull()
   },
@@ -168,4 +168,88 @@ export const EmptyMessage: Story = {
       </Paper>
     </StoryFrame>
   ),
+}
+
+export const WarningWithMore: Story = {
+  name: 'Warning With More',
+  args: {
+    title: 'Planned maintenance',
+    message: 'HRIV is offline Saturday 06:00-08:00 PT while the tile store is migrated.',
+    severity: 'warning',
+    variant: 'app',
+    alertVariant: 'standard',
+    moreCount: 2,
+    onMore: () => {},
+    onDismiss: () => {},
+  },
+  render: (args) => (
+    <StoryFrame>
+      <AnnouncementBanner {...args} />
+    </StoryFrame>
+  ),
+  play: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Planned maintenance')).toBeVisible()
+    await expect(canvas.getByRole('button', { name: '+2 more' })).toBeVisible()
+  },
+}
+
+export const LongBodyClamped: Story = {
+  name: 'Long Body Clamped',
+  args: {
+    title: 'Welcome to the new term',
+    message:
+      'Lab sessions start Monday. Please review the histology slide set before your first session, bring your student card for lab access, and remember that food and drink are not permitted in the microscopy room.\n\nSee the Announcements page for the full schedule.',
+    severity: 'info',
+    variant: 'app',
+    alertVariant: 'standard',
+    onDismiss: () => {},
+  },
+  render: (args) => (
+    <StoryFrame width={448}>
+      <AnnouncementBanner {...args} />
+    </StoryFrame>
+  ),
+  play: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'More' }))
+    await expect(canvas.getByRole('button', { name: 'Less' })).toBeVisible()
+  },
+}
+
+export const MarkdownBody: Story = {
+  name: 'Markdown Body',
+  args: {
+    title: 'Laser pointer in full-screen view',
+    message:
+      'Switch into **full-screen mode** and your cursor becomes a laser pointer — [read the guide](?page=guide) for the rest of the pointer tools.',
+    kind: 'release',
+    variant: 'app',
+    onDismiss: () => {},
+  },
+  render: (args) => (
+    <StoryFrame width={520}>
+      <AnnouncementBanner {...args} />
+    </StoryFrame>
+  ),
+}
+
+export const KindIcon: Story = {
+  name: 'Kind Icon',
+  args: {
+    title: 'Open house this Friday',
+    message: 'Drop by the lab between 13:00 and 15:00 — bring your questions and a friend.',
+    kind: 'celebration',
+    variant: 'app',
+    onDismiss: () => {},
+  },
+  render: (args) => (
+    <StoryFrame>
+      <AnnouncementBanner {...args} />
+    </StoryFrame>
+  ),
+  play: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('img', { name: 'Celebration' })).toBeVisible()
+  },
 }

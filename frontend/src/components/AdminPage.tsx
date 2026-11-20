@@ -77,7 +77,6 @@ import type {
 import { useAuth } from '../useAuth'
 import { emitEvent } from '../observability'
 import ConfirmImportDialog, { type ConfirmImportKind } from './ConfirmImportDialog'
-import ChangelogAdmin from './ChangelogAdmin'
 import RebuildJobsPanel from './RebuildJobsPanel'
 
 const POLL_INTERVAL = 2000 // ms
@@ -162,11 +161,7 @@ interface TaskNotification {
   task: AdminTask
 }
 
-interface AdminPageProps {
-  onChangelogEntriesChanged?: () => void
-}
-
-type AdminTabValue = 'changelog' | 'backups'
+type AdminTabValue = 'backups'
 
 interface AdminTabPanelProps {
   children: ReactNode
@@ -189,7 +184,7 @@ function AdminTabPanel({ children, value, currentValue }: AdminTabPanelProps) {
   )
 }
 
-export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps) {
+export default function AdminPage() {
   const { logout } = useAuth()
   const fileRef = useRef<HTMLInputElement>(null)
   const filesRef = useRef<HTMLInputElement>(null)
@@ -213,7 +208,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   const [notifications, setNotifications] = useState<TaskNotification[]>([])
   // Log viewer modal
   const [logTask, setLogTask] = useState<AdminTask | null>(null)
-  const [activeTab, setActiveTab] = useState<AdminTabValue>('changelog')
+  const [activeTab, setActiveTab] = useState<AdminTabValue>('backups')
 
   // One page-hit event per shown tab so dashboards can break admin traffic
   // down by section, matching the per-doc hits on the guide page. Deduped per
@@ -711,13 +706,16 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     }
   }
 
+  // Backups is the only (and default) section since the changelog moved into announcements (#1838).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loaders reset their panels before fetching
+    void loadRestoreSnapshots()
+    void loadFilesImportArchives()
+    void loadExportArchives()
+  }, [loadRestoreSnapshots, loadFilesImportArchives, loadExportArchives])
+
   const handleBackupsTabChange = (_event: React.SyntheticEvent, value: AdminTabValue) => {
     setActiveTab(value)
-    if (value === 'backups') {
-      void loadRestoreSnapshots()
-      void loadFilesImportArchives()
-      void loadExportArchives()
-    }
   }
 
   const handleRestoreSnapshotSelect = (snapshotName: string) => {
@@ -1054,22 +1052,12 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
 
       <Tabs value={activeTab} onChange={handleBackupsTabChange} aria-label="Admin sections">
         <Tab
-          label="Changelog"
-          value="changelog"
-          id="admin-tab-changelog"
-          aria-controls="admin-tabpanel-changelog"
-        />
-        <Tab
           label="Backups"
           value="backups"
           id="admin-tab-backups"
           aria-controls="admin-tabpanel-backups"
         />
       </Tabs>
-
-      <AdminTabPanel value="changelog" currentValue={activeTab}>
-        <ChangelogAdmin onEntriesChanged={onChangelogEntriesChanged} />
-      </AdminTabPanel>
 
       <AdminTabPanel value="backups" currentValue={activeTab}>
         <Stack spacing={3}>
@@ -1697,8 +1685,15 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRestoreConfirmOpen(false)}>Cancel</Button>
-          <Button color="warning" variant="contained" onClick={() => void handleConfirmRestore()}>
+          <Button size="small" onClick={() => setRestoreConfirmOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="small"
+            color="warning"
+            variant="contained"
+            onClick={() => void handleConfirmRestore()}
+          >
             Restore
           </Button>
         </DialogActions>
@@ -1860,6 +1855,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
                 logTask.status === 'pending' ||
                 logTask.status === 'running') && (
                 <Button
+                  size="small"
                   color="warning"
                   startIcon={<CancelIcon />}
                   onClick={() => handleCancel(logTask.id)}
@@ -1869,6 +1865,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
               )}
               {logTask.status === 'cancelling' && (
                 <Button
+                  size="small"
                   color="error"
                   startIcon={<CancelIcon />}
                   onClick={() => handleCancel(logTask.id, true)}
@@ -1878,13 +1875,16 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
               )}
               {logTask.status === 'completed' && logTask.result_filename && (
                 <Button
+                  size="small"
                   onClick={() => downloadAdminTaskResult(logTask.id)}
                   startIcon={<DownloadIcon />}
                 >
                   Download
                 </Button>
               )}
-              <Button onClick={() => setLogTask(null)}>Close</Button>
+              <Button size="small" onClick={() => setLogTask(null)}>
+                Close
+              </Button>
             </DialogActions>
           </>
         )}

@@ -64,6 +64,9 @@ _TILE_IMAGE_FILE_ROUTE = re.compile(
     r"/api/tiles/[0-9]+/image_files/[0-9]+/[0-9]+_[0-9]+\.[A-Za-z0-9]+"
 )
 _IMAGE_REPLACE_ROUTE = re.compile(r"/api/images/[0-9]+/replace")
+# Announcement media (#1835): the per-file video cap doubles as the spool
+# bound so an oversized upload is refused before FastAPI buffers it.
+MEDIA_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 _ADMIN_TASK_UPLOAD_ROUTE = re.compile(r"/api/admin/tasks/[^/]+/upload(?:/finalize)?")
 _CATCH_ALL_ROUTE_PARAM = re.compile(r"\{[^/{}:]+:path\}")
 _TILE_METRIC_ROUTES = frozenset({
@@ -481,19 +484,10 @@ class CollectionsFeatureMiddleware:
         await self.app(scope, receive, send)
 
 
-class CountingFeatureMiddleware:
-    """Return 404 for counting API paths while ``COUNTING_ENABLED`` is off.
+class MarkersFeatureMiddleware:
+    """Hide Board and Marker routes before request parsing while disabled."""
 
-    Covers ``/api/counts`` + subpaths and ``/api/images/<id>/counts`` — the
-    latter lives under the images prefix, so the gate cannot be a plain
-    path prefix like collections'. Runs before FastAPI parses the request
-    body (a disabled deployment answers a malformed POST with the same 404
-    as an unknown route, not a 422). ``require_counting_enabled`` on the
-    router is the second layer (docs/object-counting.md).
-    """
-
-    _COUNTS_PREFIX = "/api/counts"
-    _IMAGE_COUNTS_ROUTE = re.compile(r"^/api/images/-?\d+/counts$")
+    _PREFIXES = ("/api/boards", "/api/markers")
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -502,17 +496,14 @@ class CountingFeatureMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-
         path: str = scope["path"]
-        if not settings.counting_enabled and (
-            path == self._COUNTS_PREFIX
-            or path.startswith(self._COUNTS_PREFIX + "/")
-            or self._IMAGE_COUNTS_ROUTE.match(path) is not None
+        if not settings.markers_enabled and any(
+            path == prefix or path.startswith(prefix + "/")
+            for prefix in self._PREFIXES
         ):
             response = JSONResponse(status_code=404, content={"detail": "Not Found"})
             await response(scope, receive, send)
             return
-
         await self.app(scope, receive, send)
 
 
@@ -577,6 +568,9 @@ def _upload_body_limits(path: str) -> tuple[int, int] | None:
     ):
         limit = UPLOAD_MAX_BYTES + _MULTIPART_OVERHEAD_BYTES
         return limit, limit
+    if path in ("/api/media", "/api/media/"):
+        limit = MEDIA_UPLOAD_MAX_BYTES + _MULTIPART_OVERHEAD_BYTES
+        return limit, limit
     if path.startswith("/api/admin/bulk-import"):
         return (
             BULK_IMPORT_MAX_UPLOAD_BYTES + _MULTIPART_OVERHEAD_BYTES,
@@ -610,6 +604,11 @@ def _upload_body_limit_detail(path: str, per_part: bool) -> str:
         return (
             "Bulk import request exceeds the size limit of "
             f"{BULK_IMPORT_MAX_REQUEST_BYTES / (1024 ** 3):g} GiB"
+        )
+    if path in ("/api/media", "/api/media/"):
+        return (
+            "Media file exceeds the size limit of "
+            f"{MEDIA_UPLOAD_MAX_BYTES // (1024 ** 2)} MB"
         )
     return (
         "File exceeds the per-upload size limit of "

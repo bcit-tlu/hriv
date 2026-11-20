@@ -21,7 +21,7 @@ import TableHead from '@mui/material/TableHead'
 import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
-import { fetchUsersPaged, userMessage } from '../api'
+import { ApiError, fetchUsersPaged, userMessage } from '../api'
 import type { ApiUser } from '../api'
 import { AuthContext } from '../authContextValue'
 import { describeCollectionOwners } from '../collectionUtils'
@@ -35,7 +35,9 @@ export interface CollectionOwnersDialogProps {
   open: boolean
   onClose: () => void
   /** Collection being managed (a summary is enough — the hook resolves the version). */
-  collection: CollectionSummary | null
+  collection: Pick<CollectionSummary, 'id' | 'name' | 'owners'> | null
+  entityLabel?: string
+  onReloadConflict?: () => Promise<void>
   /** All programs; instructors are narrowed to their own inside this dialog. */
   programs?: Program[]
   /**
@@ -92,6 +94,8 @@ export default function CollectionOwnersDialog({
   programs = EMPTY_PROGRAMS,
   onSaveOwners,
   onTransfer,
+  entityLabel = 'collection',
+  onReloadConflict,
 }: CollectionOwnersDialogProps) {
   const auth = useContext(AuthContext)
   const currentUser = auth?.currentUser ?? null
@@ -145,6 +149,7 @@ export default function CollectionOwnersDialog({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [conflict, setConflict] = useState(false)
 
   const programNameById = useMemo(() => {
     const names = new Map<number, string>()
@@ -262,6 +267,7 @@ export default function CollectionOwnersDialog({
   const canConfirm =
     collection != null &&
     !saving &&
+    !conflict &&
     (mode === 'program' ? programChanged && !programWouldOrphan : ownersChanged && !userWouldOrphan)
 
   const handleConfirm = () => {
@@ -275,7 +281,12 @@ export default function CollectionOwnersDialog({
         : () => onSaveOwners(id, [...selectedUserIds])
     job()
       .then(() => onClose())
-      .catch((err) => setError(userMessage(err, 'Failed to update ownership.')))
+      .catch((err) => {
+        if (onReloadConflict && err instanceof ApiError && err.status === 409) {
+          setConflict(true)
+          setError('Ownership changed. Reload the latest version before saving.')
+        } else setError(userMessage(err, 'Failed to update ownership.'))
+      })
       .finally(() => setSaving(false))
   }
 
@@ -369,8 +380,11 @@ export default function CollectionOwnersDialog({
       <DialogContent>
         {collection && (
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            <strong>{collection.name}</strong> is currently owned by{' '}
-            {describeCollectionOwners(collection.owners)}.
+            <strong>
+              {collection.name}
+              {entityLabel === 'Board' && ' Board'}
+            </strong>{' '}
+            is currently owned by {describeCollectionOwners(collection.owners)}.
           </Typography>
         )}
 
@@ -405,7 +419,7 @@ export default function CollectionOwnersDialog({
             }}
           >
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-              Select a program to own this collection.
+              Select a program to own this {entityLabel}.
             </Typography>
             <Stack direction="row" flexWrap="wrap" gap={1}>
               {programChips.map((program) => {
@@ -444,8 +458,8 @@ export default function CollectionOwnersDialog({
               flexDirection: 'column',
             }}
           >
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              Users who may manage this collection together.
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+              Users who may manage this {entityLabel} together.
             </Typography>
             <FilterBar
               ariaLabel="Filter users"
@@ -652,21 +666,40 @@ export default function CollectionOwnersDialog({
         )}
 
         {error && (
-          <Alert severity="error" sx={{ mt: 2 }} data-testid="owners-error">
+          <Alert
+            severity="error"
+            sx={{ mt: 2 }}
+            data-testid="owners-error"
+            action={
+              conflict && onReloadConflict ? (
+                <Button
+                  size="small"
+                  onClick={() => {
+                    void onReloadConflict().catch((err) =>
+                      setError(userMessage(err, 'Unable to reload ownership.')),
+                    )
+                  }}
+                >
+                  Reload latest
+                </Button>
+              ) : undefined
+            }
+          >
             {error}
           </Alert>
         )}
         {collection != null && collection.owners.length === 0 && (
           <Alert severity="info" sx={{ mt: 2 }}>
-            This collection is orphaned — assigning an owner restores normal management.
+            This {entityLabel} is orphaned — assigning an owner restores normal management.
           </Alert>
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={saving}>
+        <Button size="small" onClick={onClose} disabled={saving}>
           Cancel
         </Button>
         <Button
+          size="small"
           variant="contained"
           color="secondary"
           onClick={handleConfirm}

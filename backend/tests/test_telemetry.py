@@ -92,8 +92,10 @@ def test_sanitize_error_message_redacts_paths_after_opening_punctuation(
     assert _sanitize_error_message(raw) == expected
 
 
+@pytest.mark.parametrize("page", ["browse", "boards"])
 async def test_telemetry_events_accepted_and_logged(
     caplog: pytest.LogCaptureFixture,
+    page: str,
 ) -> None:
     """Valid batches are accepted as 202 and emitted as structured logs."""
     caplog.set_level("INFO", logger="app.routers.telemetry")
@@ -110,7 +112,7 @@ async def test_telemetry_events_accepted_and_logged(
                 unit="ms",
             ),
             TelemetryEvent(
-                event="navigation.page_changed", action="navigate", page="browse"
+                event="navigation.page_changed", action="navigate", page=page, from_page=page
             ),
         ]
     )
@@ -142,7 +144,8 @@ async def test_telemetry_events_accepted_and_logged(
     assert getattr(first, "browser.tab.session_id") == "test-session"
 
     assert getattr(second, "event.name") == "navigation.page_changed"
-    assert getattr(second, "event.page") == "browse"
+    assert getattr(second, "event.page") == page
+    assert getattr(second, "event.from_page") == page
 
 
 async def test_telemetry_drops_unknown_events(

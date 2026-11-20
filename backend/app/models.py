@@ -293,6 +293,18 @@ class SourceImage(Base):
         # ``alembic revision --autogenerate`` does not propose dropping
         # and recreating this index under a different name.
         Index("idx_source_images_status", "status"),
+        # Exactly-once source-image creation per bulk-import manifest entry
+        # (#1173): a resumed coordinator must never create a second
+        # SourceImage for the same staged file, even when two coordinators
+        # briefly overlap after a lease takeover. Partial so ordinary
+        # (non-bulk) uploads are unaffected.
+        Index(
+            "uq_source_images_bulk_import_entry",
+            "bulk_import_job_id",
+            "stored_path",
+            unique=True,
+            postgresql_where=text("bulk_import_job_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -320,6 +332,13 @@ class SourceImage(Base):
     file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     uploaded_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Originating bulk-import job (#1173). Lets a resumed coordinator
+    # distinguish manifest entries already converted into SourceImage rows
+    # from untouched ones, and enforces one SourceImage per staged file via
+    # ``uq_source_images_bulk_import_entry``.
+    bulk_import_job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("bulk_import_jobs.id", ondelete="SET NULL"), nullable=True
     )
     # Tile-cache provenance (see app/tile_provenance.py and docs/tile-cache-provenance.md).
     # Recorded when tiles are generated so currentness can be evaluated after a
@@ -415,6 +434,14 @@ class BulkImportJob(Base):
         default=list,
         server_default=text("'[]'::jsonb"),
     )
+    # Durable supervisor link (#1173): points at the generic ``Job`` row
+    # (``job_type="bulk_import"``) whose ``JobItem`` snapshot makes the import
+    # resumable across API restarts. ``NULL`` for rows created before the
+    # durable path shipped; those keep the legacy finalize-on-stale
+    # reconciliation behaviour.
+    job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True
+    )
     requested_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -429,14 +456,86 @@ class BulkImportJob(Base):
     requester: Mapped["User | None"] = relationship("User")
 
 
+ANNOUNCEMENT_KINDS: tuple[str, ...] = (
+    "notice",
+    "event",
+    "reminder",
+    "celebration",
+    "release",
+    "warning",
+)
+ANNOUNCEMENT_AUDIENCES: tuple[str, ...] = ("everyone", "staff", "targeted")
+# ``audience='staff'`` resolves dynamically to these roles (no junction rows).
+ANNOUNCEMENT_STAFF_ROLES: tuple[str, ...] = ("admin", "instructor", "staff")
+
+announcement_programs = Table(
+    "announcement_programs",
+    Base.metadata,
+    Column(
+        "announcement_id",
+        Integer,
+        ForeignKey("announcements.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("program_id", Integer, ForeignKey("programs.id", ondelete="CASCADE"), primary_key=True),
+)
+
+announcement_groups = Table(
+    "announcement_groups",
+    Base.metadata,
+    Column(
+        "announcement_id",
+        Integer,
+        ForeignKey("announcements.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("group_id", Integer, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class Announcement(Base):
+    """A message posted to an audience (notice, event, release note, …).
+
+    Replaces both the former singleton banner row and ``changelog_entries``
+    (migration ``0042_announcements``).  ``publish_at IS NULL`` means draft;
+    a row is *live* when ``publish_at <= now()`` and ``expires_at`` is NULL
+    or in the future.  ``notified_at`` is the version marker compared against
+    ``users.metadata_["announcement_seen"][str(id)]`` for unseen badges.
+    """
+
     __tablename__ = "announcements"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('notice','event','reminder','celebration','release','warning')",
+            name="ck_announcements_kind",
+        ),
+        CheckConstraint(
+            "audience IN ('everyone','staff','admins','instructors','staff_only','targeted')",
+            name="ck_announcements_audience",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     message: Mapped[str] = mapped_column(
         Text, nullable=False, default="", server_default=text("''")
     )
-    enabled: Mapped[bool] = mapped_column(
+    kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="notice", server_default=text("'notice'")
+    )
+    author_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    audience: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="targeted", server_default=text("'targeted'")
+    )
+    publish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pinned: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    banner: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -446,21 +545,64 @@ class Announcement(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    author: Mapped["User | None"] = relationship("User", lazy="selectin")
+    programs: Mapped[list["Program"]] = relationship(
+        "Program", secondary=announcement_programs, lazy="selectin", passive_deletes=True
+    )
+    groups: Mapped[list["Group"]] = relationship(
+        "Group", secondary=announcement_groups, lazy="selectin", passive_deletes=True
+    )
+    reactions: Mapped[list["AnnouncementReaction"]] = relationship(
+        "AnnouncementReaction",
+        back_populates="announcement",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
-class ChangelogEntry(Base):
-    __tablename__ = "changelog_entries"
+
+class AnnouncementReaction(Base):
+    """One emoji reaction by one user on one announcement."""
+
+    __tablename__ = "announcement_reactions"
+    __table_args__ = (
+        # One reaction per reader per post (product decision, round 3 of #1832); the
+        # database enforces it so concurrent PUTs cannot leave two.
+        UniqueConstraint("announcement_id", "user_id", name="uq_announcement_reactions_user"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
-    body: Mapped[str] = mapped_column(Text, nullable=False)
-    published_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+    announcement_id: Mapped[int] = mapped_column(
+        ForeignKey("announcements.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    emoji: Mapped[str] = mapped_column(String(20), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+
+    announcement: Mapped["Announcement"] = relationship(
+        "Announcement", back_populates="reactions"
+    )
+
+
+class ContentMedia(Base):
+    """An uploaded image/video referenced from announcement Markdown (#1835)."""
+
+    __tablename__ = "content_media"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    stored_name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    original_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    uploader_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
 
 
@@ -521,6 +663,208 @@ SYNCHRONIZED_COLLECTION_MAX_IMAGES = 4
 # Student collection caps (#1583).
 STUDENT_SEQUENCE_MAX_IMAGES = 20
 STUDENT_MAX_COLLECTIONS_PER_TYPE = 10
+STUDENT_MAX_BOARDS = 10
+STUDENT_MAX_MARKERS = 200
+
+
+marker_owners = Table(
+    "marker_owners", Base.metadata,
+    Column("marker_id", Integer, ForeignKey("markers.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Index("idx_marker_owners_user", "user_id"),
+)
+
+board_owners = Table(
+    "board_owners", Base.metadata,
+    Column("board_id", Integer, ForeignKey("boards.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Index("idx_board_owners_user", "user_id"),
+)
+
+board_programs = Table(
+    "board_programs", Base.metadata,
+    Column("board_id", Integer, ForeignKey("boards.id", ondelete="CASCADE"), primary_key=True),
+    Column("program_id", Integer, ForeignKey("programs.id", ondelete="CASCADE"), primary_key=True),
+)
+
+board_groups = Table(
+    "board_groups", Base.metadata,
+    Column("board_id", Integer, ForeignKey("boards.id", ondelete="CASCADE"), primary_key=True),
+    Column("group_id", Integer, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class Marker(Base):
+    __tablename__ = "markers"
+    __table_args__ = (Index("idx_markers_image", "image_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    image_id: Mapped[int] = mapped_column(
+        ForeignKey("images.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    x: Mapped[float] = mapped_column(Float, nullable=False)
+    y: Mapped[float] = mapped_column(Float, nullable=False)
+    zoom: Mapped[float] = mapped_column(Float, nullable=False)
+    rotation: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    thumb: Mapped[str | None] = mapped_column(Text, nullable=True)
+    favourite: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    image: Mapped["Image"] = relationship("Image")
+    creator: Mapped["User | None"] = relationship("User", lazy="selectin")
+    owners: Mapped[list["User"]] = relationship(
+        "User",
+        secondary=marker_owners,
+        lazy="selectin",
+    )
+
+
+class Board(Base):
+    __tablename__ = "boards"
+    __table_args__ = (
+        CheckConstraint("visibility IN ('private', 'public', 'restricted')", name="ck_boards_visibility"),
+        Index("idx_boards_creator", "created_by_user_id"),
+        Index("idx_boards_owner_program", "owner_program_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    visibility: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="private",
+        server_default=text("'private'"),
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
+    # Pinned tile cover: a member marker picked via the tile's cover picker.
+    # NULL = the tile falls back to the first member. SET NULL so deleting
+    # the marker row clears the pin; the serializer also falls back when
+    # the pinned marker is not a visible member.
+    cover_marker_id: Mapped[int | None] = mapped_column(
+        ForeignKey("markers.id", ondelete="SET NULL"), nullable=True,
+    )
+    # Explicit "no cover" state from the cover picker: the tile renders the
+    # Board-icon placeholder instead of falling back to the first member.
+    # Mutually exclusive with a pinned cover — writes to one clear the other.
+    cover_blank: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    owner_program_id: Mapped[int | None] = mapped_column(
+        ForeignKey("programs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    creator: Mapped["User | None"] = relationship("User", lazy="selectin")
+    owners: Mapped[list["User"]] = relationship(
+        "User",
+        secondary=board_owners,
+        lazy="selectin",
+    )
+    owner_program: Mapped["Program | None"] = relationship("Program", lazy="selectin")
+    programs: Mapped[list["Program"]] = relationship(
+        "Program",
+        secondary=board_programs,
+        lazy="selectin",
+    )
+    groups: Mapped[list["Group"]] = relationship(
+        "Group",
+        secondary=board_groups,
+        lazy="selectin",
+    )
+    marker_links: Mapped[list["BoardMarker"]] = relationship(
+        "BoardMarker",
+        back_populates="board",
+        cascade="all, delete-orphan",
+        order_by="BoardMarker.sort_order",
+        lazy="selectin",
+    )
+
+
+class BoardMarker(Base):
+    __tablename__ = "board_markers"
+    __table_args__ = (
+        Index("idx_board_markers_order", "board_id", "sort_order"),
+    )
+
+    board_id: Mapped[int] = mapped_column(
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    marker_id: Mapped[int] = mapped_column(
+        ForeignKey("markers.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    board: Mapped["Board"] = relationship("Board", back_populates="marker_links")
+    marker: Mapped["Marker"] = relationship("Marker", lazy="selectin")
 
 
 class Collection(Base):
@@ -640,15 +984,20 @@ class CollectionImage(Base):
     __tablename__ = "collection_images"
     __table_args__ = (
         Index("idx_collection_images_order", "collection_id", "sort_order"),
+        Index("idx_collection_images_image", "collection_id", "image_id"),
     )
 
+    id: Mapped[int] = mapped_column(primary_key=True)
     collection_id: Mapped[int] = mapped_column(
-        ForeignKey("collections.id", ondelete="CASCADE"), primary_key=True,
+        ForeignKey("collections.id", ondelete="CASCADE"), nullable=False,
     )
     image_id: Mapped[int] = mapped_column(
-        ForeignKey("images.id", ondelete="CASCADE"), primary_key=True,
+        ForeignKey("images.id", ondelete="CASCADE"), nullable=False,
     )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    viewport_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    thumb: Mapped[str | None] = mapped_column(Text, nullable=True)
+    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     collection: Mapped["Collection"] = relationship("Collection", back_populates="image_links")
     image: Mapped["Image"] = relationship("Image", lazy="selectin")
@@ -718,6 +1067,20 @@ class Job(Base):
     )
     requested_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
+    # API-coordinator lease (#1173). Bulk-import supervisors are claimed by
+    # whichever API replica wins this CAS-guarded lease; heartbeat/expiry
+    # mirror the JobItem claim contract so a crashed coordinator's job can be
+    # taken over exactly once. Unused by tile-rebuild jobs (their pump is
+    # arq-scheduled) but kept generic on the shared supervisor row.
+    coordinator_token: Mapped[str | None] = mapped_column(
+        String(64), nullable=True,
+    )
+    coordinator_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    coordinator_lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -926,6 +1289,8 @@ class MeasurementFinding(Base):
     evidence: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True, default=dict, server_default=text("'{}'::jsonb")
     )
+    # Instructor-tuned detection values (DetectionTuning); NULL = defaults.
+    params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     detector_version: Mapped[str] = mapped_column(String(50), nullable=False)
     approved_scale: Mapped[float | None] = mapped_column(Float, nullable=True)
     approved_unit: Mapped[str | None] = mapped_column(String(10), nullable=True)

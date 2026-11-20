@@ -21,7 +21,10 @@ export function useMyCollectionsShelf(enabled: boolean): {
     let cancelled = false
     fetchCollections({ mine: true, limit: 8 })
       .then((rows) => {
-        if (!cancelled) setCollections(rows.map(apiCollectionSummaryToSummary))
+        // A revalidated 304 resolves `undefined` — treat a non-array as a
+        // no-op so the loaded shelf is not blanked by a partial read (#1892).
+        if (!cancelled && Array.isArray(rows))
+          setCollections(rows.map(apiCollectionSummaryToSummary))
       })
       .catch(() => {
         if (!cancelled) setCollections([])

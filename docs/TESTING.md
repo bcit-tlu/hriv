@@ -1,5 +1,15 @@
 # HRIV Test Plan
 
+## Markers and Boards dark launch
+
+`MARKERS_ENABLED` defaults to false (Helm `markers.enabled`); local
+Compose defaults it to true. `GET /api/features` must report `markers`
+accordingly. With the flag off, all methods on `/api/boards` and
+`/api/markers` (including descendants and malformed writes) return 404;
+maintenance takes precedence with 503. With it on, requests pass to routing
+(no CRUD endpoints exist in the schema-only release). See
+[Markers and Boards](markers-and-boards.md) for automated checks.
+
 This document describes the manual test cases used to verify the HRIV application. All tests assume the app is running via `docker compose up --build` with a freshly seeded database (`docker compose down -v` first if needed).
 
 ## Prerequisites
@@ -108,25 +118,20 @@ regardless of source address (see `docs/deployment-proxy-chain.md`).
 
 ---
 
-## Test Case 3a: Changelog Notifications (Admin + Instructor)
+## Test Case 3b: Announcements (all roles)
 
-**Purpose:** Verify the bell badge, What's New feed, and admin-only changelog management.
+**Purpose:** Verify the unified announcements stream — bell for every role, single-stream page with filters, composer rules, reactions and seen-state (epic #1832; see `docs/announcements.md`).
 
-1. Login as `admin@example.ca` / `password`.
-2. Open the `Admin` tab.
-3. **Assert:** The `Changelog` sub-tab is selected by default.
-4. Create a new entry with title `v2.5` and a short Markdown body.
-5. **Assert:** The new entry appears in the changelog table.
-6. **Assert:** A notification bell is visible in the AppBar with an unread dot.
-7. Open the bell menu.
-8. **Assert:** The unread dot remains until `What's New` is opened.
-9. Click `What's New`.
-10. **Assert:** The dialog lists the new entry and renders the Markdown content.
-11. Close the dialog.
-12. **Assert:** The unread dot is cleared.
-13. Logout and login as `instructor@example.ca` / `password`.
-14. **Assert:** The bell is visible and the entry is readable from `What's New`.
-15. **Assert:** The instructor still has no `Admin` tab and therefore cannot access changelog management controls.
+1. Start the stack and login as `instructor@example.ca` / `password`.
+2. Open the bell → **See all**. **Assert:** `?page=announcements` shows one list with filter chips (All · My announcements · Draft · Scheduled · Live · Expired) and a `New announcement` button.
+3. Click `New announcement`. **Assert:** `To:` lists only the instructor's programs and managed groups (no Audience group); the kind picker (first field) has no `Release` / `Important`; `Post` is disabled until a target is picked.
+4. Pick a group, choose `Reminder`, enter a title and a Markdown body, upload a PNG from the toolbar. **Assert:** `![name](/api/media/{id})` is inserted; `Preview` renders the image.
+5. Click `Post`. **Assert:** The post appears in the stream with the Actions menu (no status chip — only drafts/scheduled/expired get one); `My announcements` narrows the list to it.
+6. Open `Manage → Groups`, use a group's row menu → `Post to group`. **Assert:** The composer opens with that group pre-selected.
+7. Logout, login as a student in that group. **Assert:** The bell shows a badge; the peek lists the post; clicking it opens the page focused on the card; the badge clears but the card stays listed (quieter). Add a 👍 reaction. **Assert:** the pill count increments.
+8. Login as `admin@example.ca`. **Assert:** The composer offers `Everyone` / `Admins, Instructors, and Staff` / `Admins` / `Instructors` / `Staff` (picking one clears targets), hides the reserved `Administration` / `Synthetic Monitoring` programs, offers all six kinds, and `Show as banner` / `Pin to top` carry a hint line. Edit the instructor's post straight from the stream (admins can edit any post) → `Notify readers again` → `Save`. **Assert:** The student sees it unseen again.
+9. **Assert:** The post shows `Seen by N of M`; Duplicate prefills with "(copy)" and no schedule; Delete asks for confirmation.
+10. **Assert:** Documentation and About are in the profile popover; the bell menu has no `What's New`.
 
 ---
 
@@ -473,6 +478,35 @@ true; local compose needs no override outside this test.
 
 ---
 
+## Test Case 9c: Image Viewer — Full-Screen Presentation Tools (#1876)
+
+**Purpose:** Verify the ephemeral laser pointer and ink tools arm only in
+OSD full-page mode, track the image through pan/zoom, and leave nothing
+behind. Any role works — presenting is a student activity too.
+
+1. Open any image in the viewer. **Assert:** no laser/ink buttons in the
+   bottom-left dock; zoom +/- and rotate buttons are present.
+2. Enter full-page (diagonal-arrows button). **Assert:** the laser
+   auto-arms — the native cursor hides and a green dot with a short fading
+   trail follows the pointer; laser + ink buttons appear in the dock and
+   zoom/rotate buttons hide.
+3. Drag-pan and scroll-zoom while the laser is armed. **Assert:**
+   navigation still works normally.
+4. Press **I** (or the ink button) and draw a stroke across a structure.
+   **Assert:** a cyan ~4.6px line follows the pen; the stroke stays glued to
+   the structure while panning and zooming; it holds full opacity ~8s, then
+   fades out by ~10s. Reload the page — no strokes persist.
+5. Press **B** and drag a selection box; press **H**. **Assert:** the view
+   returns home.
+6. Exit full-page. **Assert:** the tools disarm, all ink clears, and the
+   zoom/rotate buttons come back.
+7. Keys mirror the toolbar: **L** laser, **I** ink, **B** selection box,
+   **H** home (L/I only respond in full-page, and all keys are ignored
+   while typing in a field). OSD's own bindings still work: arrows/WASD
+   pan, **F** flips, **R** rotates, **0** homes.
+
+---
+
 ## Test Case 10: Collection Orphaned by Program Deletion → Admin Reassign (API)
 
 **Purpose:** Verify that deleting a program leaves its collections in place as
@@ -512,7 +546,7 @@ ownership-management UI (#1419, #1554, #1629). Requires `COLLECTIONS_ENABLED=tru
 
 1. Login as `instructor@example.ca` and click the **Collections** tab. **Assert:** it navigates directly (no sub-menu) to `?page=collections` with the header "Collections" and all collections on the **Cards** view. Click the **Synchronized** Type chip — **Assert:** only synchronized collections render and the URL gains `?type=synchronized`; click **All** — **Assert:** the param drops. Open `?page=collections&type=sequence` directly — **Assert:** the Sequence chip is preselected. Switch the toolbar toggle to **Table** — **Assert:** a dense table with sortable headers, a cover thumbnail, the "You" chip on owned rows, and row-click opening the collection; sorting persists per column click and the rows-per-page choice survives reload. Switch to **Graph** — **Assert:** a canvas hub-and-spoke renders (hub "Collections" → collection nodes), the order overlay offers **1st · 2nd · 3rd**, **Shared only** disables at 1st order, and the stats caption counts collections/images/shared (plus categories and "without a collection" at 3rd order, where a category with images but no collection sits as an isolated node). Type in the **Search** field on each view — **Assert:** Cards and Table drop non-matching rows while the Graph keeps every node and dims the non-matches (helper text says so). Reload in Graph view — **Assert:** the view, order and Shared-only choice persist per user.
 2. With the **Synchronized** Type chip selected: **New collection** → name "Skull study", type **Synchronized** (preselected by the chip), visibility **Public** → choose a category as the instructor, then **Create**. **Assert:** create is disabled until a category is selected, the filed collection opens immediately, and the card appears with the Synchronized type icon immediately left of the name (#1567) and a Public visibility chip in the metadata area. **Assert:** **Move** and **Set cover image** sit in a top-right cover overlay, **Edit** is a pencil right of the title, and no Delete affordance or owner text exists on the card. As a student or staff member, create without a category and verify the collection opens unfiled.
-3. Open the collection; add images via an image's **Add to Collection** viewer action (or select images in **Search** → **Add to collection**). **Assert:** the synchronized viewer shows the panes and the restore/save controls beside the description (#1683), each pane has a **link** icon at its top-right corner (all start linked — pan/zoom/rotate on one mirrors to the others; click it to unlink that pane — the icon flips to link-off — and move it independently, then re-link to rejoin without snapping; #1564, #1567), **Restore default view** is disabled until **Set as default view** has been clicked (#1567), and the header leads with a **Home** breadcrumb — no `<h1>` title; the actions sit on the same line (the collection is unfiled) instead of the old "All collections" link (#1559, #1564). With three or four images added, **Assert:** all render in a 2×2 grid (up to the four-member cap), any linked pane's pan/zoom/rotate mirrors to every other linked pane, and **Set as default view** stores the layout without resetting the current view (#1561, #1566, #1567).
+3. Open the collection; add images via an image's **Add to Collection** viewer action (or select images in **Search** → **Add to collection**). **Assert:** the synchronized viewer shows the panes and the restore/save controls beside the description (#1683), each pane has a **link** icon at its top-right corner (all start linked — pan/zoom/rotate on one mirrors to the others; click it to unlink that pane — the icon flips to link-off — and move it independently, then re-link to rejoin without snapping; #1564, #1567), **Restore default view** is disabled until **Set as default view** has been clicked (#1567) and, once enabled, re-links any unlinked pane and returns every pane to its saved position (#1684), and the header leads with a **Home** breadcrumb — no `<h1>` title; the actions sit on the same line (the collection is unfiled) instead of the old "All collections" link (#1559, #1564). With three or four images added, **Assert:** all render in a 2×2 grid (up to the four-member cap), any linked pane's pan/zoom/rotate mirrors to every other linked pane, and **Set as default view** stores the layout without resetting the current view (#1561, #1566, #1567).
 4. Switch to the library and copy the address bar (`?collection={id}`); open the URL in an incognito window logged in as a student. **Assert:** the public collection opens directly on the same view.
 5. Back as the instructor, file the collection into a category: click the **pencil** at the end of the header breadcrumb (#1567) and pick a category in the dialog's **Category** picker (e.g. _Hematology → Lab 3_; #1566) → **Save**. Reopen it and **Assert:** the header breadcrumb reads _Home : Hematology : Lab 3 : ‹collection name› (N images)_ — the name and muted count trail the last link, like the image view (#1564) — and each link navigates Browse to that spot (#1559). **Assert:** the action buttons sharing the breadcrumb line on the right are Hide / Graph View / Manage Images only (#1630) — no Edit button (the breadcrumb pencil), no Move, Owners, or Delete (Owners is the transfer-horizontal icon beside the "Managed by …" line; #1559, #1566, #1567). **Assert:** the edit dialog is the wider variant with the **Category** picker under the **Type** section and the **Hide Collection** link in the title row (#1566, #1567); change the description and save. **Assert:** the detail header updates; below the breadcrumb row the pills order **Synchronized** type chip then the **Public** visibility chip, left of the owner line, with the description below the pills (#1564, #1567).
 6. Delete path: reopen the editor via the breadcrumb **pencil** → **Delete Collection** at the bottom of the dialog. **Assert:** the first click only arms ("This action cannot be undone. Click again to confirm."); cancel instead, then recreate the flow later — or confirm on a throwaway collection and **Assert:** it disappears from the list (deleting the open collection returns to the list).
@@ -530,6 +564,8 @@ ownership-management UI (#1419, #1554, #1629). Requires `COLLECTIONS_ENABLED=tru
 18. **Graph View dialog (#1630):** open a sequence collection that shares images with another collection and click **Graph View** in the header — **Assert:** it sits between **Hide collection** and **Manage Images**, appears for a student viewer (no edit rights needed), and opens a dialog titled "‹name› — graph" with a single-item breadcrumb. **Assert:** 1st order draws the collection as the central hub with member-image spokes; switch the overlay toggle to **2nd** — **Assert:** related collections join with image→collection edges and shared images render accent-filled; **3rd** adds the members' category nodes. Click a related collection node — **Assert:** the title and breadcrumb move to it (`A › B`), the URL/detail do **not** change, and an **Open collection** action appears in the title row. Click the first breadcrumb crumb — **Assert:** the perspective pops back to the original collection. Click an image node — **Assert:** the dialog closes and the image opens in the normal viewer; navigate to a related collection and click **Open collection** — **Assert:** the dialog closes and the detail view jumps to that collection. Close and reopen — **Assert:** the stack resets to the page's collection and the order toggle defaults to 1st.
 19. **Student-curated marker:** open the **Collections** tab where a student-created collection exists (e.g. one from step 11). **Assert:** its Cards tile rides the scope cluster with the marble-disc badge — right of the Public/Private pill, or left of the top-most program/group chip on a restricted tile — its Table **Scope** cell shows the same badge right of the scope pill, and in **Graph** view the node draws as the badge artwork — paper disc, `#5B7A8A` marbling, slate rim — with a matching "Student collection" row in the legend. Open the collection — **Assert:** the same badge sits right of the visibility pill on the detail header (or in the pill's slot between the type chip and the owner line when a restricted collection's scope chips suppress the pill). Also **Assert:** the smaller tile in the **My Collections** drawer shows no badge. In the **Filter by** bar pick **Scope → Student-curated** — **Assert:** only badged rows remain and a `Scope: Student-curated` chip shows; switch to **Instructor/admin-curated** — **Assert:** only badge-free rows remain (both selections together match everything).
 20. **Manage images Collections column:** on the **Images** tab (Manage), open **Choose columns** — **Assert:** no `Collections` option while collections are disabled, and with the feature on tick it and **Done** — **Assert:** a **Collections** column lists each image's memberships as chips (empty `—` for unaffiliated rows) and a **Collection** facet appears in the **Filter by** bar. Tick a collection in the facet (or click a row's membership chip) — **Assert:** only that collection's member images remain and a `Collection: <name>` chip shows; hide the column — **Assert:** the facet and its selection clear with it.
+21. **Image details in the viewers (#1862):** open a sequence collection whose members are filed in a program/group-restricted category. **Assert:** an **Image details** ("i") button sits in the viewer toolbar like the image viewer's; clicking it slides in the metadata drawer with the member's Copyright, **Program(s)**/**Group(s)** (the names the browse breadcrumb shows), dates, dimensions and source-file rows. Step to the next member — **Assert:** the drawer closes; reopen it — **Assert:** it shows the new member's metadata. Open an unfiled member's drawer — **Assert:** the Program/Group rows are absent. Open a synchronized collection and click a pane's "i" — **Assert:** only that pane's drawer opens; open a second pane's — **Assert:** both stay open independently, each showing its own member's metadata.
+22. **Annotation editing in the sequence viewer (#1863):** as the instructor, open a sequence collection and click the canvas-edit (annotate) action in the member's viewer. **Assert:** the annotation toolbar appears, the **Image details** trigger disables (an open drawer or Notes dialog closes), and drawing/placing an annotation marks the draft dirty. Click **Save & Exit** — **Assert:** the save completes, the annotation persists after a reload, and the same image in the regular `?image={id}` view (and any other collection containing it) shows the annotation. With unsaved edits, click the next thumbnail or a chevron — **Assert:** the "Discard annotation changes?" dialog appears; **Keep Editing** stays on the member with the draft intact, and a retry → **Discard Changes** switches and drops the draft. While a save is in flight — **Assert:** member navigation instead shows the "Please wait for the annotation save to finish." snack, and reloading the tab prompts the browser's leave confirmation. Draw rectangles and use the lock/unlock/clear overlay controls — **Assert:** they persist via the same member refresh. As a student (even one who can edit the collection itself) — **Assert:** no annotate/lock controls appear anywhere in the viewer.
 
 ---
 
@@ -748,14 +784,32 @@ themes. See [password management](password-setup.md#frontend-password-management
 | POST   | /api/images/                                                                                              | Yes           | instructor                                                                                                                                                                                                                                  |
 | GET    | /api/images/{id}                                                                                          | Yes           | student                                                                                                                                                                                                                                     |
 | GET    | /api/images/{id}/source-info                                                                              | Yes           | student (uploaded_by_name is admin/instructor-only)                                                                                                                                                                                         |
+| GET    | /api/images/{id}/markers                                                                                  | Yes           | student (image visibility plus source-tagged Markers; 404 when image invisible or `MARKERS_ENABLED=false`)                                                                                                                                  |
+| GET    | /api/boards                                                                                               | Yes           | student (visible Boards only; q/visibility/sort/order/paging; all Board/Marker reads require `MARKERS_ENABLED=true`)                                                                                                                        |
+| GET    | /api/boards/{id}                                                                                          | Yes           | student (404 when invisible; only visible Markers in Board order)                                                                                                                                                                           |
+| GET    | /api/markers                                                                                              | Yes           | student (image + ownership/Board visibility; board/image/favourite/scope filters)                                                                                                                                                           |
+| GET    | /api/markers/{id}                                                                                         | Yes           | student (404 when missing, image invisible, or neither owned nor on a visible Board; renewing thumbnail and conditional ETag)                                                                                                               |
+| POST   | /api/boards                                                                                               | Yes           | student (own cap 10; restricted only admin/instructor with attachable scopes)                                                                                                                                                               |
+| PATCH  | /api/boards/{id}                                                                                          | Yes           | Board editor; scope changes require scope authority; version or If-Match required                                                                                                                                                           |
+| DELETE | /api/boards/{id}                                                                                          | Yes           | Board delete authority; If-Match; orphan Markers/files cleaned after commit                                                                                                                                                                 |
+| PUT    | /api/boards/order                                                                                         | Yes           | editor of every listed Board; per-item versions                                                                                                                                                                                             |
+| PUT    | /api/boards/{id}/owners                                                                                   | Yes           | Board transfer authority (admin or owning/program instructor)                                                                                                                                                                               |
+| POST   | /api/boards/{id}/transfer                                                                                 | Yes           | Board transfer authority; instructors may target own programs                                                                                                                                                                               |
+| POST   | /api/markers                                                                                              | Yes           | student (own cap 200; image visible and every assignment Board editable)                                                                                                                                                                    |
+| PATCH  | /api/markers/{id}                                                                                         | Yes           | Marker owner/admin; assignments preserve non-editable-Board links; version or If-Match                                                                                                                                                      |
+| DELETE | /api/markers/{id}                                                                                         | Yes           | Marker owner/admin; If-Match                                                                                                                                                                                                                |
+| PUT    | /api/markers/order                                                                                        | Yes           | Marker owner/admin for every listed item; per-item versions                                                                                                                                                                                 |
+| PUT    | /api/markers/{id}/owners                                                                                  | Yes           | Marker owner/admin; nonempty active-user owners                                                                                                                                                                                             |
+| PUT    | /api/boards/{id}/markers/order                                                                            | Yes           | Board editor (need not own Markers); parent Board version                                                                                                                                                                                   |
+| DELETE | /api/boards/{id}/markers/{marker_id}                                                                      | Yes           | Board editor; parent If-Match; last-Board removal 422                                                                                                                                                                                       |
 | GET    | /api/images/{id}/collections                                                                              | Yes           | student (visibility-filtered; 404 if image invisible, `COLLECTIONS_ENABLED=false`, or student with `COLLECTIONS_STUDENT_ACCESS=false`)                                                                                                      |
 | GET    | /api/images/collections-map                                                                               | Yes           | student (bulk membership; collection and image visibility-filtered; 404 when `COLLECTIONS_ENABLED=false`, or student with `COLLECTIONS_STUDENT_ACCESS=false`)                                                                               |
 | PATCH  | /api/images/{id}                                                                                          | Yes           | instructor                                                                                                                                                                                                                                  |
 | DELETE | /api/images/{id}                                                                                          | Yes           | instructor                                                                                                                                                                                                                                  |
 | DELETE | /api/images/bulk                                                                                          | Yes           | instructor                                                                                                                                                                                                                                  |
-| POST   | /api/images/{id}/counts                                                                                   | Yes           | student (all roles; same image visibility gate as `GET /api/images/{id}`; 404 when `COUNTING_ENABLED=false`, 409 `tiles_not_ready`, 422 `invalid_selection`/`selection_too_large`, 429 cap, 503 no live counting worker)                    |
-| GET    | /api/counts/{job_id}                                                                                      | Yes           | student (all roles; job owner only — 404 for other users and after Redis TTL expiry; 404 when `COUNTING_ENABLED=false`)                                                                                                                     |
-| DELETE | /api/counts/{job_id}                                                                                      | Yes           | student (all roles; job owner only — 404 for other users; idempotent 204; 404 when `COUNTING_ENABLED=false`)                                                                                                                                |
+| POST   | /api/images/{id}/counts                                                                                   | Yes           | student (all roles; same image visibility gate as `GET /api/images/{id}`; 409 `tiles_not_ready`, 422 `invalid_selection`/`selection_too_large`, 429 cap, 503 no live counting worker)                                                       |
+| GET    | /api/counts/{job_id}                                                                                      | Yes           | student (all roles; job owner only — 404 for other users and after Redis TTL expiry)                                                                                                                                                        |
+| DELETE | /api/counts/{job_id}                                                                                      | Yes           | student (all roles; job owner only — 404 for other users; idempotent 204)                                                                                                                                                                   |
 | GET    | /api/tile-order                                                                                           | Yes           | instructor                                                                                                                                                                                                                                  |
 | PUT    | /api/tile-order                                                                                           | Yes           | instructor                                                                                                                                                                                                                                  |
 | GET    | /api/tiles/{source_image_id}/{path}                                                                       | Yes           | valid tile token (image-scoped `purpose="tile"`, or `purpose="thumb"` for `thumbnail.jpeg` only — from `card_thumb` URLs, #1609)                                                                                                            |
@@ -795,21 +849,27 @@ themes. See [password management](password-setup.md#frontend-password-management
 | GET    | /api/collections/{id}                                                                                     | Yes           | student (404 if not visible)                                                                                                                                                                                                                |
 | GET    | /api/collections/graph                                                                                    | Yes           | student (server-side visibility-filtered; `order=1`, `2` or `3`, other values 422)                                                                                                                                                          |
 | GET    | /api/collections/{id}/graph                                                                               | Yes           | student (404 if not visible; `order=1`, `2` or `3`, other values 422)                                                                                                                                                                       |
-| POST   | /api/collections                                                                                          | Yes           | student (all roles; `visibility=restricted`: instructor, with attach authority)                                                                                                                                                             |
+| POST   | /api/collections                                                                                          | Yes           | student (all roles; `visibility=restricted`: instructor, with attach authority); slot/seeding fields require `MARKERS_ENABLED` and visible sources                                                                                          |
 | PATCH  | /api/collections/{id}                                                                                     | Yes           | student (co-owner for content fields — staff included; scope fields need admin / instructor / sole student-or-staff owner)                                                                                                                  |
 | DELETE | /api/collections/{id}                                                                                     | Yes           | student (sole user-owner, no program owner — staff follow the same rule / instructor of owning program / admin; 404 if not visible)                                                                                                         |
 | PATCH  | /api/collections/bulk                                                                                     | Yes           | admin / instructor (curatorial fields only: `hidden`, `category_id` refile)                                                                                                                                                                 |
 | DELETE | /api/collections/bulk                                                                                     | Yes           | student (`can_delete_collection` on every id — sole user-owner / instructor of owning program / admin; 404 if not visible)                                                                                                                  |
-| PUT    | /api/collections/{id}/images                                                                              | Yes           | student (owner or co-owner — staff included / instructor of owning program / admin; 404 if not visible)                                                                                                                                     |
-| PUT    | /api/collections/{id}/viewport                                                                            | Yes           | student (owner or co-owner — staff included / instructor of owning program / admin; 404 if not visible)                                                                                                                                     |
+| PUT    | /api/collections/{id}/images                                                                              | Yes           | student (owner/co-owner, owning-program instructor, admin); slot/seeding payloads additionally require MARKERS_ENABLED; source Board/Marker visibility is rechecked                                                                         |
+| PUT    | /api/collections/{id}/viewport                                                                            | Yes           | student (owner/co-owner, owning-program instructor, admin); OCC version required; slot_viewports additionally require MARKERS_ENABLED and visible member slots                                                                              |
 | POST   | /api/collections/{id}/move                                                                                | Yes           | admin / instructor (any — filing is curatorial, not ownership-bound)                                                                                                                                                                        |
 | PUT    | /api/collections/{id}/owners                                                                              | Yes           | admin / instructor (co-owner or in owning program) — replaces the user-owner set ¤                                                                                                                                                          |
 | POST   | /api/collections/{id}/transfer                                                                            | Yes           | admin / instructor (co-owner or in owning program, to own program) — program owner only ¤                                                                                                                                                   |
-| GET    | /api/changelog/                                                                                           | Yes           | instructor                                                                                                                                                                                                                                  |
-| POST   | /api/changelog/                                                                                           | Yes           | admin                                                                                                                                                                                                                                       |
-| POST   | /api/changelog/mark-read                                                                                  | Yes           | instructor                                                                                                                                                                                                                                  |
-| PATCH  | /api/changelog/{id}                                                                                       | Yes           | admin                                                                                                                                                                                                                                       |
-| DELETE | /api/changelog/{id}                                                                                       | Yes           | admin                                                                                                                                                                                                                                       |
+| GET    | /api/announcements/broadcast                                                                              | No            | — (live `everyone` banner posts)                                                                                                                                                                                                            |
+| GET    | /api/announcements/?scope=inbox                                                                           | Yes           | student (audience-filtered)                                                                                                                                                                                                                 |
+| GET    | /api/announcements/?scope=mine                                                                            | Yes           | instructor (own + co-managed-group posts; admin sees all)                                                                                                                                                                                   |
+| POST   | /api/announcements/                                                                                       | Yes           | instructor (targeted to own programs/managed groups; `everyone`/`staff`/`release`/`warning` admin only)                                                                                                                                     |
+| PATCH  | /api/announcements/{id}                                                                                   | Yes           | instructor (author or admin)                                                                                                                                                                                                                |
+| DELETE | /api/announcements/{id}                                                                                   | Yes           | instructor (author or admin)                                                                                                                                                                                                                |
+| PUT    | /api/announcements/{id}/seen                                                                              | Yes           | student (404 if not visible)                                                                                                                                                                                                                |
+| PUT    | /api/announcements/{id}/reactions/{emoji}                                                                 | Yes           | student (live + visible posts; allowlisted emoji else 422)                                                                                                                                                                                  |
+| DELETE | /api/announcements/{id}/reactions/{emoji}                                                                 | Yes           | student (live + visible posts)                                                                                                                                                                                                              |
+| POST   | /api/media/                                                                                               | Yes           | instructor (images ≤10 MB jpeg/png/webp/gif, video ≤50 MB mp4/webm; 415/413 otherwise)                                                                                                                                                      |
+| GET    | /api/media/{id}                                                                                           | Token         | — (signed media token in `?token=`; 401 missing/invalid, 403 wrong id, 404 unknown/traversal)                                                                                                                                               |
 | GET    | /api/admin/version                                                                                        | Yes           | instructor                                                                                                                                                                                                                                  |
 | GET    | /api/admin/export                                                                                         | Yes           | admin                                                                                                                                                                                                                                       |
 | POST   | /api/admin/import                                                                                         | Yes           | admin                                                                                                                                                                                                                                       |
@@ -837,6 +897,8 @@ themes. See [password management](password-setup.md#frontend-password-management
 | POST   | /api/measurement-findings/{id}/reject                                                                     | Yes           | instructor (admin/instructor)                                                                                                                                                                                                               |
 | GET    | /api/measurement-findings/scan-remaining                                                                  | Yes           | instructor (admin/instructor; unprocessed scan-candidate count for whole-library scans)                                                                                                                                                     |
 | POST   | /api/measurement-findings/{id}/reset                                                                      | Yes           | instructor (admin/instructor; returns approved/rejected to pending; reverts the approval's scale)                                                                                                                                           |
+| POST   | /api/measurement-findings/{id}/preview                                                                    | Yes           | instructor (admin/instructor; read-only detection preview under candidate tuning; `include=outline` also returns the component-mask PNG)                                                                                                    |
+| PATCH  | /api/measurement-findings/{id}                                                                            | Yes           | instructor (admin/instructor; persist tuned detection params on a pending finding and re-propose under them)                                                                                                                                |
 | POST   | /api/measurement-findings/{id}/rescan                                                                     | Yes           | instructor (admin/instructor; re-runs detection, superseding the image's live findings)                                                                                                                                                     |
 | POST   | /api/measurement-findings/approve                                                                         | Yes           | instructor (admin/instructor; bulk approve at proposed scale)                                                                                                                                                                               |
 | GET    | /api/jobs/ (list, read-only)                                                                              | Yes           | admin                                                                                                                                                                                                                                       |
@@ -997,7 +1059,7 @@ and collection-page dialog (#1628). Requires `COLLECTIONS_ENABLED=true`.
 ## Test Case 15: Object Counting — Results and Selection Lifecycle (UI)
 
 **Purpose:** Verify Cells/Nuclei results and independent ephemeral selections.
-Start with `COUNTING_ENABLED=true docker compose --profile counting up -d --build`;
+Start with `docker compose --profile counting up -d --build`;
 wait for `seed-media` to finish and the counting-worker heartbeat to appear.
 Use **Synthetic Monitoring Image** (ID 5 on a fresh seed) for workflow checks,
 then real smear/tissue images with local tiles for visual accuracy checks.
@@ -1027,7 +1089,7 @@ The synthetic fixture is not expected to produce the epic's ~72 / 4 / 1 counts.
    rectangles and their jobs/results disappear. The viewer has no
    per-rectangle remove control.
 
-## Test Case 16: Object Counting — Visibility, Flag and Limits (UI/API)
+## Test Case 16: Object Counting — Visibility and Limits (UI/API)
 
 **Purpose:** Verify backend enforcement independently of the viewer affordance.
 Use the enabled stack from Test Case 15 and authenticated API tokens for the
@@ -1040,11 +1102,7 @@ named users. Restore all temporary configuration changes after testing.
    this restricted category, POST the same request directly — **Assert:**
    404, not 403; a hidden UI alone is not proof of access control. Use the
    actual image ID if testing an existing database.
-2. Recreate the API with `COUNTING_ENABLED=false`, then reload the viewer.
-   **Assert:** `/api/features` reports `counting: false`, the Count affordance
-   is hidden, and direct POST/GET/DELETE counting requests return 404.
-   Re-enable and recreate the API before the remaining checks.
-3. On a sufficiently large local-tiled image, select a box that exceeds the
+2. On a sufficiently large local-tiled image, select a box that exceeds the
    configured outliner budget at every permitted downsample. **Assert:**
    POST returns 422 `selection_too_large`, the UI offers a smaller-selection
    error, and no job is enqueued. For a reproducible local boundary test,
@@ -1053,14 +1111,14 @@ named users. Restore all temporary configuration changes after testing.
    a box whose stitched pixels including margin exceed that cap. Restore
    API/worker settings together afterward. A later worker `too_large`
    failure is a distinct size-driven planning case, not this pre-flight check.
-4. Keep `COUNTING_MAX_ACTIVE_PER_USER` jobs queued/running for one user
+3. Keep `COUNTING_MAX_ACTIVE_PER_USER` jobs queued/running for one user
    (default 3), then submit another small valid selection as that user.
    **Assert:** 429 `too_many_active_counts` with `Retry-After: 10`; an
    independent user's request is not blocked by this user's cap. If jobs
    finish too quickly, briefly pause the compose counting worker immediately
    after a heartbeat, submit within the heartbeat TTL, then unpause it;
    a 503 means the heartbeat expired and does not exercise the cap.
-5. Cancel one active job or wait for completion, then retry. **Assert:**
+4. Cancel one active job or wait for completion, then retry. **Assert:**
    the user's slot is released and POST returns 202. Clean up remaining
    jobs, unpause the worker and restore defaults even if a check fails.
 
@@ -1140,3 +1198,37 @@ Separately verify the browser acceptance cases above: copy link into a fresh
 session and land signed in, force-screen navigation/reload and central 403
 handling, OIDC menu/action exclusions, and a real SSO login. Curl proves API
 session issuance and guards, not those visual or external-provider outcomes.
+
+### Collection slot backend regressions (#1770)
+
+`tests/test_collection_slots.py` covers duplicate-image saved views, independent
+viewport writes/OCC, student filtering, Board ordering, legacy matching and
+flag-off payload/response compatibility, copied/regenerated snapshots, cleanup,
+backup round-trips, strict viewport validation and exact-path token isolation.
+Its PostgreSQL cases require `TEST_DATABASE_URL` at revision 0047 or later.
+The migration regression upgrades/downgrades an isolated temporary schema,
+checking member and legacy viewport preservation and deterministic deduplication.
+Run the full backend `poetry run pytest` and
+`bash scripts/test-helm-chart-regressions.sh` after token/cache-class changes.
+
+### Markers close-out search and recovery (#1775)
+
+Enable `MARKERS_ENABLED=true` on the API and reload the SPA's `/api/features`.
+Helm keeps `markers.enabled: false`; local compose already defaults the variable
+to true. Neither default is changed by this close-out.
+
+`GET /api/boards?q=term` and `GET /api/markers?q=term` require authentication
+and the feature flag. They search title/name and description only after backend
+Board/Marker visibility checks. Search does not grant source-image access.
+Verify as a student that private or restricted results never appear; open a visible
+Marker and check position, zoom and rotation, then check Board deep-link/back behavior.
+From Manage Collection's picker, choose each saved-view result kind and verify that
+only the draft changes until Save. Include multiple slots on one image and an empty Board.
+
+Focused regressions: `frontend/tests/components/SearchModalSavedViews.test.tsx`,
+existing SearchModal and CollectionManageDialog tests; backend
+`tests/test_collection_slots.py`, `tests/test_admin_ops.py`,
+`tests/test_snapshot_files.py` and `tests/test_processing.py`.
+Round-trip all eight saved-view tables with the flag both on and off; legacy dumps
+without them remain accepted. Filesystem exports include saved-view JPEGs but no DZI
+pyramid. Rebuilding tiles after restore must keep both snapshot namespaces.

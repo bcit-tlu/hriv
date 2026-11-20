@@ -1,14 +1,30 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import type { CanvasAnnotation } from './components/CanvasOverlay'
 import { updateImage, userMessage } from './api'
+import type { ApiImage } from './api'
 import type { ImageItem } from './types'
 
 /** Dependencies injected by the host component. */
 export interface UseCanvasAnnotationsDeps {
   selectedImage: ImageItem | null
-  loadCategories: () => Promise<boolean>
-  loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => Promise<boolean>
+  /**
+   * Called with the freshly-saved image after every successful write so the
+   * host can refresh its model — App reloads categories/uncategorized, the
+   * collection viewer swaps the member via `renewCollectionImage` (#1863).
+   */
+  onImageSaved: (image: ApiImage) => unknown
   setErrorSnack: React.Dispatch<React.SetStateAction<string | null>>
+}
+
+/**
+ * Mutable handle a host registers so a parent (App) can guard navigation
+ * while an edit draft is dirty or saving — discard runs the host's
+ * `discardCanvasAnnotations` (#1863).
+ */
+export interface CanvasDraftHandle {
+  dirty: boolean
+  saving: boolean
+  discard: () => void
 }
 
 function annotationsFromMetadata(
@@ -29,7 +45,7 @@ function annotationsEqual(left: CanvasAnnotation[], right: CanvasAnnotation[]): 
  * explicit Save & Exit action in CanvasOverlay.
  */
 export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
-  const { selectedImage, loadCategories, loadUncategorizedImages, setErrorSnack } = deps
+  const { selectedImage, onImageSaved, setErrorSnack } = deps
 
   const latestVersionRef = useRef<number>(selectedImage?.version ?? 0)
   const latestMetadataRef = useRef<Record<string, unknown> | null | undefined>(
@@ -128,8 +144,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         } else {
           setCanvasDraftDirty(!annotationsEqual(draftAnnotationsRef.current, annotations))
         }
-        void loadCategories()
-        void loadUncategorizedImages()
+        void onImageSaved(updated)
         return true
       } catch (err) {
         console.error('Failed to save canvas annotations', err)
@@ -140,7 +155,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         setCanvasSaving(false)
       }
     },
-    [loadCategories, loadUncategorizedImages, selectedImage, setErrorSnack],
+    [onImageSaved, selectedImage, setErrorSnack],
   )
 
   const discardCanvasAnnotations = useCallback(() => {

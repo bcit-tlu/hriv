@@ -17,10 +17,10 @@ describe('useFeatures', () => {
     expect(result.current).toBeNull()
     await waitFor(() =>
       expect(result.current).toEqual({
+        markers: false,
         collections: true,
         collectionsStudentAccess: true,
         collectionsHomeShelf: true,
-        counting: false,
       }),
     )
     expect(fetchFeatures).toHaveBeenCalledTimes(1)
@@ -31,10 +31,10 @@ describe('useFeatures', () => {
     const { result } = renderHook(() => useFeatures())
     await waitFor(() =>
       expect(result.current).toEqual({
+        markers: false,
         collections: false,
         collectionsStudentAccess: true,
         collectionsHomeShelf: false,
-        counting: false,
       }),
     )
   })
@@ -44,33 +44,10 @@ describe('useFeatures', () => {
     const { result } = renderHook(() => useFeatures())
     await waitFor(() =>
       expect(result.current).toEqual({
+        markers: false,
         collections: false,
         collectionsStudentAccess: true,
         collectionsHomeShelf: false,
-        counting: false,
-      }),
-    )
-  })
-
-  it('exposes the counting flag only when it is true', async () => {
-    fetchFeatures.mockResolvedValue({ counting: true })
-    const { result } = renderHook(() => useFeatures())
-    await waitFor(() =>
-      expect(result.current).toEqual({
-        collections: false,
-        collectionsStudentAccess: true,
-        collectionsHomeShelf: false,
-        counting: true,
-      }),
-    )
-    fetchFeatures.mockResolvedValue({ counting: false })
-    const second = renderHook(() => useFeatures())
-    await waitFor(() =>
-      expect(second.result.current).toEqual({
-        collections: false,
-        collectionsStudentAccess: true,
-        collectionsHomeShelf: false,
-        counting: false,
       }),
     )
   })
@@ -83,6 +60,16 @@ describe('useFeatures', () => {
     const { result } = renderHook(() => useFeatures())
     await waitFor(() => expect(result.current?.collectionsStudentAccess).toBe(studentAccess))
   })
+
+  it.each([true, false, undefined, 'true'])(
+    'only enables Markers for boolean true (%s)',
+    async (value) => {
+      fetchFeatures.mockResolvedValue({ markers: value })
+      const { result } = renderHook(() => useFeatures())
+      await waitFor(() => expect(result.current?.markers).toBe(value === true))
+      expect(DEFAULT_FEATURES.markers).toBe(false)
+    },
+  )
 
   it('resolves to DEFAULT_FEATURES (everything off) when the request fails', async () => {
     fetchFeatures.mockRejectedValue(new Error('network'))

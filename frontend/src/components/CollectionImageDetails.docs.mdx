@@ -1,0 +1,41 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as CollectionImageDetailsStories from './CollectionImageDetails.stories'
+
+<Meta of={CollectionImageDetailsStories} />
+
+<Title />
+
+<Subtitle>
+  Per-pane provider that wires the image-details trigger and drawer into a collection viewer.
+</Subtitle>
+
+## When to use
+
+`ImageViewer` exposes two slots — `viewportControl` (an OSD toolbar control) and
+`viewportOverlay` (portaled inside the viewport). `CollectionImageDetails` holds the shared
+open state, focus ref and lazy source-info fetch so the
+`<CollectionImageDetailsTrigger/>` and `<CollectionImageDetailsDrawer/>` can mount in those
+separate slots without prop drilling. The collection viewers wrap each `ImageViewer` in a
+provider — one per synchronized pane — so every pane's drawer opens independently and fetches
+source info only when first opened. Wrap the provider in a `key={image.id}` (sequence viewer)
+or give each pane its own instance (synchronized viewer) so a member change resets the drawer
+closed. The story renders two fake panes to show the independence; the drawer itself is
+`ImageDetailsDrawer`.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={CollectionImageDetailsStories.Basic} />
+
+## Stories
+
+<Stories includePrimary={false} />

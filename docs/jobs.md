@@ -181,6 +181,37 @@ Two small metadata timestamps drive the latency measurements below:
   moves the supervisor to `cancelling`; the difference to the terminal
   `cancelled` transition is the cancellation-latency histogram.
 
+## Durable bulk imports
+
+Bulk imports use `job_type="bulk_import"` supervisors linked from
+`bulk_import_jobs.job_id` (added in `0041_bulk_import_resume`, issue #1173).
+The POST endpoint snapshots one `JobItem` per staged file inside the same
+transaction as the `BulkImportJob` row, so the work list survives an API
+restart, crash, rolling deploy, or OOM kill.
+
+Unlike tile rebuilds, the coordinator stays API-hosted
+(`BackgroundTasks`) so it never occupies an arq worker slot while waiting on
+child image jobs. What changed is that coordination state is now durable:
+the supervisor `Job` row carries a CAS-guarded coordinator lease
+(`coordinator_token` / `coordinator_heartbeat_at` /
+`coordinator_lease_expires_at`) and every API replica runs a periodic sweep
+(`bulk_import_coordinator_sweep_loop`) that nudges lease-free imports. At
+most one coordinator wins the lease per import; a crashed coordinator's
+lease expires, the next claim requeues its orphaned `running` items, and
+per-file `SourceImage` creation is idempotent through the
+`uq_source_images_bulk_import_entry` partial unique index on
+`(bulk_import_job_id, stored_path)`. Child processing dispatches use
+deterministic arq job IDs (`process-source-image:{id}`) so a resumed
+dispatch deduplicates against a still-queued submission.
+
+Item and supervisor finalization fold outcomes into both the `JobItem`
+ledger and the `BulkImportJob` counters atomically; a crash-looping import
+is abandoned once `metadata_.coordinator_claims` reaches
+`max_coordinator_claims`, which also cancels remaining items and removes
+staged files that never became `SourceImage` rows. `BulkImportJob` rows
+with `job_id IS NULL` (pre-#1173 imports) keep the legacy
+finalize-on-stale reconciliation path.
+
 ## Observability
 
 Issue #1189 added the `hriv.tile_rebuild.*` instrument contract, emitted from

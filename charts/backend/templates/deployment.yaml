@@ -257,6 +257,8 @@ spec:
             - name: REDIS_URL
               value: {{ .Values.redis.url | quote }}
             {{- end }}
+            - name: MARKERS_ENABLED
+              value: {{ .Values.markers.enabled | quote }}
             - name: COLLECTIONS_ENABLED
               value: {{ .Values.collections.enabled | quote }}
             - name: COLLECTIONS_STUDENT_ACCESS
@@ -287,8 +289,6 @@ spec:
             # concurrency used by local-mode bulk imports.
             - name: WORKER_MAX_JOBS
               value: {{ .Values.redis.worker.maxJobs | quote }}
-            - name: COUNTING_ENABLED
-              value: {{ .Values.counting.enabled | quote }}
             - name: COUNTING_QUEUE_NAME
               value: {{ .Values.counting.queueName | quote }}
             - name: COUNTING_MAX_PIXELS

@@ -88,12 +88,14 @@ export type TelemetryErrorCode =
 export type FrontendPerformanceMetric = 'application_load' | 'lcp' | 'inp' | 'cls' | 'image_ready'
 export type FrontendPage =
   | 'browse'
+  | 'boards'
   | 'collections'
   | 'manage'
   | 'measurement'
   | 'people'
   | 'admin'
   | 'guide'
+  | 'announcements'
   | 'other'
   | 'unknown'
 export type TelemetryNavDirection = 'down' | 'up' | 'jump'
@@ -247,7 +249,8 @@ function currentPage(): FrontendPage {
     page === 'measurement' ||
     page === 'people' ||
     page === 'admin' ||
-    page === 'guide'
+    page === 'guide' ||
+    page === 'announcements'
   ) {
     return page
   }

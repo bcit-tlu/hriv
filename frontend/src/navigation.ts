@@ -8,7 +8,6 @@ export type NavigationIcon =
   | 'categories'
   | 'programs'
   | 'groups'
-  | 'announcement'
   | 'measurement'
   | 'people'
   | 'admin'
@@ -68,13 +67,6 @@ const navigationItems: readonly NavigationItem[] = [
     label: 'Groups',
     section: 'manage',
     icon: 'groups',
-    requiresEditContent: true,
-  },
-  {
-    id: 'announcement',
-    label: 'Announcement',
-    section: 'manage',
-    icon: 'announcement',
     requiresEditContent: true,
   },
   {

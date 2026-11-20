@@ -111,7 +111,7 @@ const sortableDrag = (sourceId: string, index: number, initialIndex: number) => 
 /** Tile order as rendered — the draft's visible state. */
 const draftOrder = () =>
   screen
-    .getAllByTestId(/^manage-tile-\d+$/)
+    .getAllByTestId(/^manage-tile--?\d+$/)
     .map((el) => Number(el.getAttribute('data-testid')!.replace('manage-tile-', '')))
 
 beforeEach(() => {
@@ -269,6 +269,35 @@ describe('CollectionManageDialog', () => {
     act(() => {
       expect(stageFull([makeImage({ id: 300 })]).status).toBe('full')
     })
+  })
+
+  it('deduplicates whole-image picks by image id while allowing Board views of that image', () => {
+    const image = {
+      ...makeImage({ id: 100 }),
+      slot: { id: 11, viewport_state: null, thumb: null, label: null },
+    }
+    const { props } = renderDialog({
+      markersEnabled: true,
+      collection: manageCollection({ images: [image] }),
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Choose images' }))
+    const stageAdd = props.onAddImages.mock.calls[0][0] as StageAddImages
+    act(() => {
+      expect(stageAdd([makeImage({ id: 100 })])).toEqual({ status: 'already' })
+      expect(stageAdd([makeImage({ id: 11 })])).toEqual({ status: 'added', addedCount: 1 })
+      expect(stageAdd([makeImage({ id: 200 }), makeImage({ id: 200 })])).toEqual({
+        status: 'added',
+        addedCount: 1,
+      })
+      expect(stageAdd([makeImage({ id: 200 })])).toEqual({ status: 'already' })
+      expect(
+        stageAdd([
+          { ...makeImage({ id: 100 }), markerId: 88 },
+          { ...makeImage({ id: 100 }), markerId: 89 },
+        ]),
+      ).toEqual({ status: 'added', addedCount: 2 })
+    })
+    expect(draftOrder()).toEqual([11, -1, -2, -3, -4])
   })
 
   it('counts hidden restricted members toward the synchronized cap (#1567)', () => {
@@ -652,4 +681,54 @@ describe('CollectionManageDialog — synchronized position map (#1614)', () => {
       '0',
     )
   })
+})
+
+it('reorders same-image slots independently and keeps their ids when saving', async () => {
+  const images = [11, 12].map((id) => ({
+    ...makeImage({ id: 100 }),
+    slot: { id, viewport_state: null, thumb: null, label: 'View ' + id },
+  }))
+  const { props } = renderDialog({
+    markersEnabled: true,
+    collection: manageCollection({ images }),
+  })
+  act(() =>
+    capturedOnDragEnd!({
+      operation: {
+        source: sortableDrag('cmi-11', 1, 0),
+        target: sortableDrag('cmi-12', 1, 1),
+        canceled: false,
+      },
+    }),
+  )
+  expect(draftOrder()).toEqual([12, 11])
+  fireEvent.click(screen.getByTestId('manage-done'))
+  await vi.waitFor(() =>
+    expect(props.onSaveMembers).toHaveBeenCalledWith([12, 11], [images[1], images[0]]),
+  )
+})
+
+it('merges a concurrent slot removal without removing another view of the same image', async () => {
+  const images = [11, 12].map((id) => ({
+    ...makeImage({ id: 100 }),
+    slot: { id, viewport_state: null, thumb: null, label: 'View ' + id },
+  }))
+  const { props, rerender } = renderDialog({
+    markersEnabled: true,
+    collection: manageCollection({ images }),
+  })
+  act(() =>
+    capturedOnDragEnd!({
+      operation: {
+        source: sortableDrag('cmi-11', 1, 0),
+        target: sortableDrag('cmi-12', 1, 1),
+        canceled: false,
+      },
+    }),
+  )
+  rerender(
+    <CollectionManageDialog {...props} collection={manageCollection({ images: [images[0]] })} />,
+  )
+  fireEvent.click(screen.getByTestId('manage-done'))
+  await vi.waitFor(() => expect(props.onSaveMembers).toHaveBeenCalledWith([11], [images[0]]))
 })

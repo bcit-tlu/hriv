@@ -56,7 +56,7 @@ released semver (`synthetic-monitoring-pin.yaml`) that must be bumped when a
 | Push to `main`                    | commits since last component tag | `release-please.yaml` opens/updates one chore release PR per component whose path has a release-triggering commit                                                       | —                                                          |
 | Merge of a release PR             |                                  | `release-please.yaml` cuts a GitHub Release with tag `<component>-v<ver>`, then `dispatch-publish` job workflow-dispatches the two release workflows below              | release created                                            |
 | Release published (via dispatch)  | release tag                      | `release-retag.yaml` waits for the `sha-<fullsha>` image of the release commit, then aliases it                                                                         | image: `<ver>`, `latest` (retag — same digest, no rebuild) |
-| Release published (via dispatch)  | release tag                      | `helm-publish.yaml` packages `charts/<component>/` and pushes to OCI                                                                                                    | chart: `hriv-<component>:<ver>.tgz`                        |
+| Release published (via dispatch)  | release tag                      | `helm-publish.yaml` waits for the `<ver>` image alias(es) the chart pulls (backend: API + counting worker), then packages `charts/<component>/` and pushes to OCI       | chart: `hriv-<component>:<ver>.tgz`                        |
 
 **Charts are published on every main push _and_ on release.** Main pushes
 produce rc charts (`<ver>-rc.<ts>.g<short>`, cosign-signed); releases produce
@@ -162,6 +162,9 @@ missed deliveries — it is not the rollout path.
   `<ver>` charts, so every chart change reaches production when the
   component is next released.
 - **Long-running features ship dark behind a chart flag, not on a branch.**
+  Markers and Boards similarly use `markers.enabled` →
+  `MARKERS_ENABLED` (default false); see
+  [Markers and Boards](markers-and-boards.md).
   Work that spans more than one release (e.g. the collections epic,
   `collections.enabled` → `COLLECTIONS_ENABLED`, see
   [collections.md](collections.md)) merges to `main` in small PRs behind a
@@ -198,12 +201,20 @@ missed deliveries — it is not the rollout path.
   when adopting this behaviour, because the orchestrator rejects a
   `validation-select` payload with fields it does not know.
 - **`pr-title-lint` skips only release-please's PRs.** Its `lint` job is a
-  required check, and `pr-title-lint` is the only `pull_request_target`
-  workflow in the repo, so release-please's PRs (author
-  `bcit-tlu-release-please[bot]`) skip it to avoid being held under "1
+  required check. release-please's PRs (author
+  `bcit-tlu-release-please[bot]`) skip it, which dates from when the
+  workflow used `pull_request_target` and their runs were held under "1
   workflow awaiting approval". Every other author — including app-authored
   PRs such as Devin's — is linted; skipping all `Bot` authors left their
   required `lint` check permanently unsatisfied.
+- **`pr-title-lint` runs on `pull_request` with a read-only token.** GitHub
+  blocks `pull_request_target` on public repositories by default
+  ([policy](https://gh.io/securely-using-pull_request_target)), so the
+  workflow must not move back to it. Because the token cannot comment, a
+  failing title or a scope/changed-files mismatch is reported in the run's
+  job summary and as an annotation, not as a PR comment. On
+  `pull_request` the workflow file comes from the PR branch, so changes to
+  it are reviewed like any other code.
 - **`release-as` is a one-shot override, not a pinning mechanism.** If
   you use it to unstick release-please, remove it once the manifest
   catches up — the staleness guard in `release-please.yaml` will fail

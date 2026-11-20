@@ -1,0 +1,40 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as AnnouncementsPageStories from './AnnouncementsPage.stories'
+
+<Meta of={AnnouncementsPageStories} />
+
+<Title />
+
+<Subtitle>
+  `?page=announcements`: the one reading surface for every role (Inbox) and, for admins and
+  instructors, the Mine record with status filters, edit / duplicate / delete and the "New
+  announcement" composer.
+</Subtitle>
+
+<Primary />
+<Controls />
+
+## Behaviour
+
+- **Inbox** lists everything the viewer may see (`GET /api/announcements/?scope=inbox`) via the
+  shared `useAnnouncements` feed the bell also uses. Live, unseen posts are marked seen once they
+  are on screen — once per `(id, notified_at)` — and stay in the list, rendered quieter.
+- **Mine** (`canCompose` only) loads `?scope=mine`: Draft / Scheduled / Live / Expired chips filter
+  the list; rows with `can_edit` get Edit / Duplicate / Delete, co-managed rows are read-only.
+- Delete always confirms first. Duplicate opens the composer with "(copy)" and no schedule.
+- `focusId` (from `?id=` or the bell peek) scrolls to and highlights one card.
+- `composeGroupId` ("Post to group" in the Groups dialog) opens the composer with that group
+  pre-selected once the instructor's programs and groups have loaded.
+
+Staff stories are omitted here because Mine and the composer need `/api/programs` and
+`/api/groups`; see `AnnouncementComposer` for the authoring states.
+
+<Stories includePrimary={false} />

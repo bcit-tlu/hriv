@@ -83,10 +83,10 @@ docker compose up -d --build frontend   # or backend, worker, etc.
 
 Backend API, counting worker (#1665: classical cells + InstanSeg nuclei, built from the `counting-worker` Docker target) and the viewer UI
 (Count objects pop-up, progress snackbar, report modal) are all available.
-Enable the flag and the dedicated worker via the `counting` compose profile:
+Start the dedicated worker via the `counting` compose profile:
 
 ```bash
-COUNTING_ENABLED=true docker compose --profile counting up -d --build
+docker compose --profile counting up -d --build
 ```
 
 Then exercise the API with the synthetic student (whose Administration
@@ -119,11 +119,30 @@ UI steps (frontend landed with #1667/#1668):
 3. Choose **Cells** or **Nuclei**. A progress snackbar shows the queue
    position; the report dialog opens on completion with outlines, an
    unnamed **Group n** legend and a total.
-4. Close the report — outlines stay on the viewer. Reopen with **View
-   results (N)** on the rectangle's button; **Cancel count** lives in its
-   dropdown. Clear-all removes selections, outlines and results.
+4. The report opens in adjust mode (#1746): click an outline to remove it
+   (click again to restore), click a missed object or drag to add an
+   outline, **Reset** restores, **Done** leaves view-only. Close the
+   report — outlines stay on the viewer. Reopen with **View results (N)**
+   on the rectangle's button; **Cancel count** lives in its dropdown.
+   Clear-all removes selections, outlines and results.
 
 ## Devin Secrets Needed
 
 None for local testing — seed users are created automatically.
 Backup-service S3/Azure testing needs credentials; see `testing-backup-service`.
+
+## Markers and Boards close-out checks
+
+Set `MARKERS_ENABLED=true` on the API and recreate it when changing the flag;
+reload the SPA so `/api/features` refreshes. Local compose already defaults it to
+true; Helm's `markers.enabled` and the backend default remain false. Do not remove
+the flag or change defaults as part of close-out work.
+
+Create a Board with two saved views on one image. Search by title and
+description, use both new chips, open the Board and reopen a Marker's coordinates.
+As a student, check that private/restricted results stay absent. From Collection
+Manage's search picker, stage a Board and an individual Marker, then save and check
+independent same-image slots. Run SearchModalSavedViews and existing SearchModal/
+CollectionManageDialog tests; the SavedViews story is a deterministic screenshot target.
+For admin recovery, pair DB/files exports and check Board associations, timestamps,
+Marker and slot JPEGs after restore and the automatic same-source tile rebuild.

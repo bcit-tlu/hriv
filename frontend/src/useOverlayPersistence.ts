@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react'
 import type { OverlayRect, MeasurementConfig } from './components/imageViewerUtils'
 import { updateImage, userMessage } from './api'
+import type { ApiImage } from './api'
 import type { ImageItem } from './types'
 
 /** Dependencies injected by the host component. */
@@ -8,8 +9,12 @@ export interface UseOverlayPersistenceDeps {
   selectedImage: ImageItem | null
   latestVersionRef: React.MutableRefObject<number>
   latestMetadataRef: React.MutableRefObject<Record<string, unknown> | null | undefined>
-  loadCategories: () => Promise<unknown>
-  loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => void
+  /**
+   * Called with the freshly-saved image after every successful write so the
+   * host can refresh its model — App reloads categories/uncategorized, the
+   * collection viewer swaps the member via `renewCollectionImage` (#1863).
+   */
+  onImageSaved: (image: ApiImage) => unknown
   setLockEngaged: React.Dispatch<React.SetStateAction<boolean>>
   setErrorSnack: React.Dispatch<React.SetStateAction<string | null>>
 }
@@ -26,8 +31,7 @@ export function useOverlayPersistence(deps: UseOverlayPersistenceDeps) {
     selectedImage,
     latestVersionRef,
     latestMetadataRef,
-    loadCategories,
-    loadUncategorizedImages,
+    onImageSaved,
     setLockEngaged,
     setErrorSnack,
   } = deps
@@ -54,8 +58,7 @@ export function useOverlayPersistence(deps: UseOverlayPersistenceDeps) {
         latestVersionRef.current = updated.version
         latestMetadataRef.current = updated.metadata_extra ?? {}
         setLockEngaged(true)
-        await loadCategories()
-        loadUncategorizedImages()
+        await onImageSaved(updated)
       } catch (err) {
         console.error('Failed to lock overlays', err)
         setErrorSnack(userMessage(err, 'Failed to lock overlays.'))
@@ -65,8 +68,7 @@ export function useOverlayPersistence(deps: UseOverlayPersistenceDeps) {
       selectedImage,
       latestVersionRef,
       latestMetadataRef,
-      loadCategories,
-      loadUncategorizedImages,
+      onImageSaved,
       setLockEngaged,
       setErrorSnack,
     ],
@@ -87,20 +89,12 @@ export function useOverlayPersistence(deps: UseOverlayPersistenceDeps) {
       )
       latestVersionRef.current = updated.version
       latestMetadataRef.current = updated.metadata_extra ?? {}
-      await loadCategories()
-      loadUncategorizedImages()
+      await onImageSaved(updated)
     } catch (err) {
       console.error('Failed to clear locked overlays', err)
       setErrorSnack(userMessage(err, 'Failed to clear locked overlays.'))
     }
-  }, [
-    selectedImage,
-    latestVersionRef,
-    latestMetadataRef,
-    loadCategories,
-    loadUncategorizedImages,
-    setErrorSnack,
-  ])
+  }, [selectedImage, latestVersionRef, latestMetadataRef, onImageSaved, setErrorSnack])
 
   return {
     selectedImageMeasurement,

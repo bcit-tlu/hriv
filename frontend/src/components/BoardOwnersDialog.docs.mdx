@@ -1,0 +1,16 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as BoardStories from './BoardOwnersDialog.stories'
+
+<Meta of={BoardStories} />
+
+<Title />
+
+The Board adapter reuses the Collections owner/transfer picker, including user
+search, role and Program filters, assignable Programs, and orphan prevention.
+Only callers with `permissions.can_transfer` get the entry point. Both writes
+use the Board version; conflicts offer explicit reload before another save.
+Assigning a Program clears user owners, exactly as in Collections.
+
+<Primary />
+
+<Stories />

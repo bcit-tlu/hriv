@@ -1,0 +1,141 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as BoardStories from './BoardsPage.stories'
+
+<Meta of={BoardStories} />
+
+<Title />
+
+The feature-gated Boards utility opens `?page=boards`. A short, horizontally
+scrollable Board row starts with New Board (a compact ~136px tile split evenly
+between its icon block and a regular-weight body2 name); elevated tiles fixed at
+260px carry a thick 2px accent-blue border (#4A78A7 light / #2196F3 dark, the
+Marker blue), a square cover/renewing thumbnail or placeholder flush left, a
+larger one-line h6 name in the Image-tile title colour that truncates with an
+ellipsis, and a metadata row with the Marker count left-aligned and the shared
+scope pill right-aligned. The row hugs the marker grid closely below.
+The chip row contains only editable owned Boards; read-only owned/program Boards are
+discoverable through the All Boards dialog's Public & Shared filter for every role, with no
+instructor or admin exemption.
+Only personally owned Markers appear below the Board row — there is no My
+Markers heading; the Cards/Table toggle sits in the title row immediately left
+of All Boards, and the Filter by bar renders under the title like Manage
+Images.
+There is no overview Select; Marker selection lives in the Board dialog's Saved
+views toolbar, where starting a selection keeps every action, including Cancel
+Selection, on the same row.
+Selection offers exactly two concise actions — a contained Create Collection (the
+Board dialog's flow, opening CollectionEditDialog seeded with the selected
+Markers) and an outlined Add to Collection listing every editable collection —
+full collections are disabled with the cap tooltip — and the pair only appears
+once at least one Marker is selected.
+In select mode each Marker card carries a top-left checkbox overlay on its
+thumbnail and a primary outline when checked, matching the Collection Manage
+Images tiles.
+The Boards and Markers h5/h1 heading matches Collections' unpadded flex header.
+The Boards & Markers navigation label is unchanged. Cards are 234px wide with 96px covers,
+including in Board dialogs. Program ownership follows program membership.
+Card rows size to their content without a minimum-height floor, as in Collections.
+Table titles are plain text; clicking a row opens its saved view. Row actions do not navigate.
+Rows are keyboard-focusable and open with Enter or Space; nested controls keep their own activation.
+Read-only Markers hide the favourite toggle; existing favourites keep a non-interactive star.
+All Boards is outlined at the right of the title row for admins, instructors and
+staff; students have no discovery action. Its large dialog lists all
+API-returned Boards, including private ones, under a horizontal row of filter
+chips beneath the title: Public & Shared keeps public, restricted or
+co-owned/program-member Boards outside the chip row (never other users'
+private Boards), and Instructor Boards keeps program-owned or
+admin/instructor-owned Boards. Chips toggle independently and combine; no
+active chip restores the full list. Tiles carry title, the shared
+scope pill and Collections-style Managed by owner text (No owner when orphaned).
+Tile selection opens the existing Board dialog. An editable Board tile also
+carries a top-right image-icon overlay opening `BoardCoverPickerModal` — the
+collection-style radio picker (None / Automatic / pinned member) that PATCHes
+`cover_marker_id`/`cover_blank`. The discovery list is independent
+of overview filters. Choosing one opens the existing Board dialog.
+The hook fetches every page in batches of 200 rather than truncating at 60.
+The overview sorts all those pages together by case-insensitive title, then numeric ID.
+Favourite/membership changes do not reorder it; renames follow alphabetical order.
+Filled favourite stars are white on Cards and Table, against a contrasting background.
+Collections' filter components provide title/description and owner/Mine popovers
+plus visible toggle chips for scope (Private/Restricted/Public, multi-select) and
+Favourites — styled like the Search dialog's chips (outlined by default,
+filled/primary with `aria-pressed` when active) — for both surfaces. A Board
+matches Favourite when it contains
+a favourite view. Scope matches any visible Board membership of a Marker.
+
+Selecting a Board opens a large dialog (full-screen on mobile). Its fixed heading
+retains the title, authorized edit pencil, count and Select. The Collections scope
+pill sits beside the Collections-style Managed by owner line; its transfer icon
+opens owner management when permitted. The title uses the Collections dialog's h6
+size, with its count in smaller secondary body2 text. Create Collection is an outlined
+button immediately before Close. There is no Board overflow menu; Delete lives at
+the bottom of Edit Board with an explicit confirmation and orphan-deletion warning.
+The collage scrolls
+below it. Overview filters do not hide members inside the opened Board. The
+page has its own dnd-kit provider, separate from Browse: reorder
+owned Boards, overview Markers, or members inside the opened Board, or drag an
+editable overview Marker onto an editable
+Board tab to add a membership without removing the others. The dragged tile
+dims and gains a 3px solid primary outline; a valid drop target carries the shared
+Category/Image drop-zone treatment — a 3px dashed outline with a 3px offset, a
+slight scale-up, and an opaque "Add here" overlay that swaps the tile face
+while hovering. A Board the Marker already belongs to instead shows a muted
+dashed outline with a "not allowed" Block icon and an "Already saved" caption,
+so the denied target explains itself rather than staying silent. Accepted reorders surface an "Order saved" success snackbar
+with an Undo action restoring the previous order, like Images/Categories. A
+success snackbar acknowledges the save; read-only Boards never accept drops.
+Filtered overview views keep Marker drag-to-board but pause marker reordering
+until filters clear, matching the Board reorder gate.
+Notifications use the app's bottom-centre Snackbar with a filled Alert: success
+for saves, info for existing membership and warning for other refusals.
+Rejected drops still reach the page: `Already in {Board name}` or
+`You can't add Markers to {Board name}` explains the rejection, with no highlight or write.
+Move/Save to… is the explicit copy/move flow;
+failed reads never result in
+partial assignment replacement. Conflicts require reloading the current data.
+Successful mutations refresh silently with the collage and covers kept mounted.
+Board dialog navigation fetches detail without reloading the overview. Opening
+a Marker editor loads its Board picker without reloading the page.
+
+Cards open the existing shareable image viewer with the exact saved viewport;
+browser Back restores the Board URL. Board deletion warns that
+otherwise orphaned Markers will be deleted. Board removal instead preserves
+the backend's last-Board guard.
+
+The pin replaces the Collection icon and Category (Uncategorized fallback) replaces
+the item count; Marker cards carry no scope pill — the reused
+CollectionVisibilityChip lives on the Board tiles instead, leaving Marker tiles
+correspondingly shorter.
+Star/StarBorder Favourite and Move/Save sit top-right, in the Collections cover/move
+positions. The pencil beside the title opens the existing editor: Delete stays there
+and Remove from this Board moves there from the old menu. Card clicks open the view;
+there is no per-card overflow or drag glyph. Board chip reorder uses its surface;
+Marker titles use h6 in the same accent blue (#4A78A7 light / #2196F3 dark), the
+pin icon matches, and the category line's tooltip reads "In category {name}".
+Markers drag by their card surface. Table follows Collections' outlined table/header
+pattern, with Select, Thumbnail, Title, Image, Description, Category, Boards,
+Favourite, Owner, Created, Modified and a fixed trailing Actions. Every labelled
+column header is a TableSortLabel (Title sorts the persisted order client-side);
+rows paginate through TablePagination with a per-user rows-per-page preference.
+A Select column of checkboxes feeds the same Create/Add Collection actions as
+select mode, plus a Select-all header checkbox for the current page. Row clicks
+(and Enter/Space on a focused row) open the Marker edit dialog; the Thumbnail
+cell's button navigates to the saved view, while Boards/Favourite/Actions cells
+stop propagation so their controls stay independent. A Choose columns
+action on the filter row (Table view only) opens the shared reorderable
+visibility dialog; visibility and order persist per user
+(`hrivpref:table-columns:markers` / `hrivpref:table-column-order:markers`), and
+Actions stays a fixed trailing column. View choice starts
+on Cards each mount; filters and selection survive switching. There is no Graph view.
+
+<Primary />
+
+<Stories />
+
+## Collection saved views
+
+With `features.markers`, collection members have independent slot identities.
+Several slots can show one source image without sharing selection, drag order,
+or viewport state. The new saved-view story exercises this feature; legacy stories
+keep the feature disabled. Slot crops and labels are snapshots, not editable links
+to the original Markers.

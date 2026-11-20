@@ -21,8 +21,7 @@ function makeDeps(overrides: Partial<UseOverlayPersistenceDeps> = {}): UseOverla
     selectedImage: null,
     latestVersionRef: { current: 0 },
     latestMetadataRef: { current: undefined },
-    loadCategories: vi.fn().mockResolvedValue(undefined),
-    loadUncategorizedImages: vi.fn(),
+    onImageSaved: vi.fn(),
     setLockEngaged: vi.fn(),
     setErrorSnack: vi.fn(),
     ...overrides,
@@ -143,9 +142,8 @@ describe('useOverlayPersistence', () => {
         current: undefined,
       }
       const setLockEngaged = vi.fn()
-      const loadCategories = vi.fn().mockResolvedValue(undefined)
-      const loadUncategorizedImages = vi.fn()
-      mockUpdateImage.mockResolvedValue({
+      const onImageSaved = vi.fn()
+      const updated = {
         id: 1,
         name: 'img-1',
         thumb: '/t',
@@ -162,14 +160,14 @@ describe('useOverlayPersistence', () => {
         width: null,
         height: null,
         file_size: null,
-      })
+      }
+      mockUpdateImage.mockResolvedValue(updated)
       const deps = makeDeps({
         selectedImage: image,
         latestVersionRef,
         latestMetadataRef,
         setLockEngaged,
-        loadCategories,
-        loadUncategorizedImages,
+        onImageSaved,
       })
       const { result } = renderHook(() => useOverlayPersistence(deps))
 
@@ -185,8 +183,8 @@ describe('useOverlayPersistence', () => {
       expect(latestVersionRef.current).toBe(6)
       expect(latestMetadataRef.current).toEqual({ locked_overlays: rects })
       expect(setLockEngaged).toHaveBeenCalledWith(true)
-      expect(loadCategories).toHaveBeenCalled()
-      expect(loadUncategorizedImages).toHaveBeenCalled()
+      // Host refresh gets the saved record (#1863).
+      expect(onImageSaved).toHaveBeenCalledWith(updated)
     })
 
     it('is a no-op when no image is selected', async () => {
@@ -237,9 +235,8 @@ describe('useOverlayPersistence', () => {
       const latestMetadataRef: { current: Record<string, unknown> | null | undefined } = {
         current: undefined,
       }
-      const loadCategories = vi.fn().mockResolvedValue(undefined)
-      const loadUncategorizedImages = vi.fn()
-      mockUpdateImage.mockResolvedValue({
+      const onImageSaved = vi.fn()
+      const updated = {
         id: 1,
         name: 'img-1',
         thumb: '/t',
@@ -256,13 +253,13 @@ describe('useOverlayPersistence', () => {
         width: null,
         height: null,
         file_size: null,
-      })
+      }
+      mockUpdateImage.mockResolvedValue(updated)
       const deps = makeDeps({
         selectedImage: image,
         latestVersionRef,
         latestMetadataRef,
-        loadCategories,
-        loadUncategorizedImages,
+        onImageSaved,
       })
       const { result } = renderHook(() => useOverlayPersistence(deps))
 
@@ -277,8 +274,7 @@ describe('useOverlayPersistence', () => {
       )
       expect(latestVersionRef.current).toBe(8)
       expect(latestMetadataRef.current).toEqual({})
-      expect(loadCategories).toHaveBeenCalled()
-      expect(loadUncategorizedImages).toHaveBeenCalled()
+      expect(onImageSaved).toHaveBeenCalledWith(updated)
     })
 
     it('is a no-op when no image is selected', async () => {

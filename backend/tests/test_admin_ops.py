@@ -1031,7 +1031,9 @@ async def test_run_db_export_task_not_found() -> None:
     # Should not raise — just logs and returns
 
 
-async def test_run_db_export_success(tmp_path) -> None:
+@pytest.mark.parametrize("slots_enabled", [False, True])
+async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> None:
+    monkeypatch.setattr(settings, "markers_enabled", slots_enabled)
     now = datetime.now(timezone.utc)
     task = SimpleNamespace(
         id=1, task_type="db_export", status="pending", progress=0, log="",
@@ -1149,17 +1151,39 @@ async def test_run_db_export_success(tmp_path) -> None:
             updated_at=now,
         ),
     ]
-    changelog_entries = [
+    announcements = [
         SimpleNamespace(
             id=1,
             title="Release 1",
-            body="Body text",
-            published_at=now,
+            message="Body text",
+            kind="release",
+            author_id=None,
+            audience="staff",
+            publish_at=now,
+            expires_at=None,
+            notified_at=now,
+            pinned=False,
+            banner=False,
+            programs=[SimpleNamespace(id=2)],
+            groups=[],
             created_at=now,
             updated_at=now,
         )
     ]
-    announcement = SimpleNamespace(message="", enabled=False, created_at=now, updated_at=now)
+    announcement_reactions = [
+        SimpleNamespace(id=1, announcement_id=1, user_id=1, emoji="rocket", created_at=now)
+    ]
+    content_media = [
+        SimpleNamespace(
+            id=1,
+            stored_name="abc.png",
+            original_name="shot.png",
+            content_type="image/png",
+            size_bytes=1234,
+            uploader_id=1,
+            created_at=now,
+        )
+    ]
 
     groups = []
     collections = [
@@ -1181,7 +1205,7 @@ async def test_run_db_export_success(tmp_path) -> None:
             owners=[SimpleNamespace(id=1), SimpleNamespace(id=2)],
             # 9_400_000 is a rebuild-fixture image (not exported) → dropped.
             image_links=[
-                SimpleNamespace(image_id=9_400_005, sort_order=0),
+                SimpleNamespace(image_id=9_400_005, sort_order=0, viewport_state={"x": .5, "y": .3, "zoom": 2}, thumb="/api/tiles/42/collection_slots/8.jpg", label="saved"),
                 SimpleNamespace(image_id=9_400_000, sort_order=1),
             ],
             programs=[SimpleNamespace(id=2)],
@@ -1201,6 +1225,8 @@ async def test_run_db_export_success(tmp_path) -> None:
             objective="40",
             confidence=0.8,
             evidence={"rbc_diameter_px": 54.8},
+            params={"sensitivity": 0.9, "min_cell_size": 5.0,
+                    "exclude_nuclei": True, "advanced": None},
             detector_version="rbc-1",
             approved_scale=7.3,
             approved_unit="um",
@@ -1221,13 +1247,11 @@ async def test_run_db_export_success(tmp_path) -> None:
         result = MagicMock()
         data_map = {
             1: programs, 2: groups, 3: categories, 4: images,
-            5: users, 6: source_images, 7: collections, 8: changelog_entries,
-            9: measurement_findings,
+            5: users, 6: source_images, 7: collections, 8: announcements,
+            9: measurement_findings, 10: announcement_reactions, 11: content_media,
         }
-        if call_count <= 9:
-            result.scalars.return_value.all.return_value = data_map[call_count]
-        else:
-            result.scalar_one_or_none.return_value = announcement
+        result.scalars.return_value.all.return_value = data_map.get(call_count, [])
+        result.mappings.return_value.all.return_value = []
         return result
 
     # Status/progress and table reads use separate sessions; keep them apart so
@@ -1274,6 +1298,7 @@ async def test_run_db_export_success(tmp_path) -> None:
     export_path = os.path.join(tasks_dir, task.result_filename)
     with open(export_path) as f:
         dump = json.load(f)
+    assert all(name in dump for name in ("boards", "markers", "board_owners", "board_programs", "board_groups", "marker_owners", "board_markers"))
     for user_entry in dump["users"]:
         assert "oidc_subject" not in user_entry, "oidc_subject is PII and must not appear in exports"
         assert "password_hash" not in user_entry, "password_hash must not appear in exports"
@@ -1304,6 +1329,7 @@ async def test_run_db_export_success(tmp_path) -> None:
             "version": 2,
             "owner_ids": [1, 2],
             "image_ids": [9_400_005],
+            "slots": [{"image_id": 9_400_005, "viewport_state": {"x": .5, "y": .3, "zoom": 2}, "thumb": "/api/tiles/42/collection_slots/8.jpg", "label": "saved"}],
             "cover_image_id": 9_400_005,
             "cover_blank": False,
             "program_ids": [2],
@@ -1324,6 +1350,8 @@ async def test_run_db_export_success(tmp_path) -> None:
             "objective": "40",
             "confidence": 0.8,
             "evidence": {"rbc_diameter_px": 54.8},
+            "params": {"sensitivity": 0.9, "min_cell_size": 5.0,
+                       "exclude_nuclei": True, "advanced": None},
             "detector_version": "rbc-1",
             "approved_scale": 7.3,
             "approved_unit": "um",
@@ -1334,16 +1362,37 @@ async def test_run_db_export_success(tmp_path) -> None:
             "updated_at": now.isoformat(),
         }
     ]
-    assert dump["changelog_entries"] == [
+    assert "changelog_entries" not in dump
+    assert "announcement" not in dump
+    assert dump["announcements"] == [
         {
             "id": 1,
             "title": "Release 1",
-            "body": "Body text",
-            "published_at": now.isoformat(),
+            "message": "Body text",
+            "kind": "release",
+            "author_id": None,
+            "audience": "staff",
+            "publish_at": now.isoformat(),
+            "expires_at": None,
+            "notified_at": now.isoformat(),
+            "pinned": False,
+            "banner": False,
+            "program_ids": [2],
+            "group_ids": [],
             "created_at": now.isoformat(),
             "updated_at": now.isoformat(),
         }
     ]
+    assert dump["announcement_reactions"] == [
+        {
+            "id": 1,
+            "announcement_id": 1,
+            "user_id": 1,
+            "emoji": "rocket",
+            "created_at": now.isoformat(),
+        }
+    ]
+    assert dump["content_media"][0]["stored_name"] == "abc.png"
 
 
 # ── run_db_import tests ────────────────────────────────────
@@ -1567,9 +1616,22 @@ def _full_dump() -> dict:
                 "source": "rbc",
                 "proposed_scale": 7.3,
                 "confidence": 0.8,
+                "params": {"sensitivity": 0.9},
                 "detector_version": "rbc-1",
                 "created_at": "2025-01-02T00:00:00+00:00",
-            }
+            },
+            # Pre-0045 dump shape: no params key → imports as NULL.
+            # (Different image: pending findings are unique per image.)
+            {
+                "id": 4,
+                "image_id": 2,
+                "status": "pending",
+                "source": "rbc",
+                "proposed_scale": 4.0,
+                "confidence": 0.5,
+                "detector_version": "rbc-1",
+                "created_at": "2025-01-02T00:00:00+00:00",
+            },
         ],
         "changelog_entries": [
             {
@@ -1585,10 +1647,19 @@ def _full_dump() -> dict:
     }
 
 
-async def test_run_db_import_happy_path(tmp_path) -> None:
+@pytest.mark.parametrize("slots_enabled, slot_dump", [(False, False), (True, False), (False, True), (True, True)])
+async def test_run_db_import_happy_path(tmp_path, monkeypatch, slots_enabled, slot_dump) -> None:
     """Full import drives all flush/commit calls and marks the task completed."""
+    monkeypatch.setattr(settings, "markers_enabled", slots_enabled)
     input_file = tmp_path / "dump.json"
-    input_file.write_text(json.dumps(_full_dump()))
+    dump = _full_dump()
+    if slot_dump:
+        dump["collections"][0]["slots"] = [
+            {"image_id": image_id, "viewport_state": {"x": .5, "y": .3, "zoom": 2},
+             "thumb": f"/api/tiles/42/collection_slots/{position + 8}.jpg", "label": f"slot-{position}"}
+            for position, image_id in enumerate([2, 1])
+        ]
+    input_file.write_text(json.dumps(dump))
     task = _make_import_task(str(input_file))
 
     mock_session, factory = _make_import_session(task)
@@ -1630,10 +1701,19 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     # Exactly one atomic data-session commit + a handful of status commits.
     assert mock_session.commit.await_count >= 2
     add_calls = [c.args[0] for c in mock_session.add.call_args_list]
-    assert any(type(obj).__name__ == "ChangelogEntry" for obj in add_calls)
+    releases = [obj for obj in add_calls if type(obj).__name__ == "Announcement"]
+    assert [(a.id, a.kind, a.audience, a.title, a.message) for a in releases] == [
+        (1, "release", "staff", "Release 1", "Body text"),
+        (2, "notice", "everyone", None, "hello"),
+    ]
+    assert releases[1].banner is True
     findings = [obj for obj in add_calls if type(obj).__name__ == "MeasurementFinding"]
-    assert [(f.id, f.image_id, f.status, f.proposed_unit) for f in findings] == [
-        (3, 1, "pending", "um")
+    assert [
+        (f.id, f.image_id, f.status, f.proposed_unit, f.params)
+        for f in findings
+    ] == [
+        (3, 1, "pending", "um", {"sensitivity": 0.9}),
+        (4, 2, "pending", "um", None),
     ]
     imported_users = [obj for obj in add_calls if type(obj).__name__ == "User"]
     assert len(imported_users) == 2
@@ -1658,6 +1738,10 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     assert seq.user_id == 1 and seq.version == 3
     assert seq.category_id == 2 and seq.sort_order == 4
     assert [(l.image_id, l.sort_order) for l in seq.image_links] == [(2, 0), (1, 1)]
+    if slot_dump:
+        assert [link.label for link in seq.image_links] == ["slot-0", "slot-1"]
+        assert seq.image_links[0].viewport_state == {"x": .5, "y": .3, "zoom": 2}
+        assert seq.image_links[0].thumb == "/api/tiles/42/collection_slots/8.jpg"
     # Pinned cover round-trips when it names an imported member.
     assert seq.cover_image_id == 2
     # owner_ids [1, 2] → two owner rows on the collection (#1531).
@@ -1693,7 +1777,7 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
 
 
 async def test_run_db_import_without_optional_sections(tmp_path) -> None:
-    """`programs`, `source_images`, `changelog_entries`, and `announcement` are optional."""
+    """`programs`, `source_images`, `announcements` (and the legacy keys) are optional."""
     dump = {
         "users": [{"id": 1, "name": "U", "email": "u@e.com"}],
         "categories": [{"id": 1, "label": "root", "parent_id": None}],
@@ -1716,10 +1800,9 @@ async def test_run_db_import_without_optional_sections(tmp_path) -> None:
         await run_db_import(1)
 
     assert task.status == "completed"
-    # When `announcement` is absent the importer still inserts a default
-    # empty row so the singleton exists.
+    # No announcement keys at all → nothing is inserted (no singleton anymore).
     add_calls = [c.args[0] for c in mock_session.add.call_args_list]
-    assert any(type(obj).__name__ == "Announcement" for obj in add_calls)
+    assert not any(type(obj).__name__ == "Announcement" for obj in add_calls)
 
 
 async def test_run_db_import_circular_categories(tmp_path) -> None:
@@ -3300,28 +3383,34 @@ async def test_run_db_export_includes_groups(tmp_path) -> None:
         instructors=[SimpleNamespace(id=1)],
         created_at=now, updated_at=now,
     )
-    changelog_entry = SimpleNamespace(
+    release = SimpleNamespace(
         id=1,
         title="Release 1",
-        body="Body text",
-        published_at=now,
+        message="Body text",
+        kind="release",
+        author_id=None,
+        audience="staff",
+        publish_at=now,
+        expires_at=None,
+        notified_at=now,
+        pinned=False,
+        banner=False,
+        programs=[],
+        groups=[SimpleNamespace(id=1)],
         created_at=now,
         updated_at=now,
     )
-    announcement = SimpleNamespace(message="", enabled=False, created_at=now, updated_at=now)
     call_count = 0
 
     async def mock_execute(stmt):
         nonlocal call_count
         call_count += 1
         result = MagicMock()
-        data_map = {1: [], 2: [group], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [changelog_entry], 9: []}
-        if call_count <= 9:
-            rows = data_map[call_count]
-            result.scalars.return_value.all.return_value = rows
-            result.scalars.return_value.unique.return_value.all.return_value = rows
-        else:
-            result.scalar_one_or_none.return_value = announcement
+        data_map = {1: [], 2: [group], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [release], 9: [], 10: [], 11: []}
+        rows = data_map.get(call_count, [])
+        result.scalars.return_value.all.return_value = rows
+        result.mappings.return_value.all.return_value = []
+        result.scalars.return_value.unique.return_value.all.return_value = rows
         return result
 
     mock_session = AsyncMock()
@@ -3353,7 +3442,8 @@ async def test_run_db_export_includes_groups(tmp_path) -> None:
         dump = json.load(f)
     assert dump["groups"][0]["member_ids"] == [2]
     assert dump["groups"][0]["instructor_ids"] == [1]
-    assert dump["changelog_entries"][0]["title"] == "Release 1"
+    assert dump["announcements"][0]["title"] == "Release 1"
+    assert dump["announcements"][0]["group_ids"] == [1]
 
 
 # ── run_rebuild_tiles tests (issue #735) ───────────────────
@@ -3943,3 +4033,131 @@ async def test_run_with_cancel_poll_poller_error_grace_timeout() -> None:
         )
     await asyncio.wait([worker_task])
     assert worker_task.cancelled()
+
+
+# ── _announcement_rows_from_dump (#1833) ──────────────────────
+
+
+def test_announcement_rows_from_new_dump_passthrough() -> None:
+    from app.admin_ops import _announcement_rows_from_dump
+
+    rows = [{"id": 3, "kind": "event", "audience": "targeted", "program_ids": [1]}]
+    dump = {"announcements": rows, "changelog_entries": [{"id": 9}], "announcement": {"message": "x"}}
+    assert _announcement_rows_from_dump(dump) == rows
+    assert _announcement_rows_from_dump({"announcements": []}) == []
+
+
+def test_announcement_rows_from_legacy_dump_maps_changelog_and_banner() -> None:
+    from app.admin_ops import _announcement_rows_from_dump
+
+    dump = {
+        "changelog_entries": [
+            {
+                "id": 2,
+                "title": "Release 2",
+                "body": "Notes",
+                "published_at": "2025-01-02T00:00:00+00:00",
+                "created_at": None,
+                "updated_at": "2025-01-03T00:00:00+00:00",
+            }
+        ],
+        "announcement": {
+            "message": "Maintenance tonight",
+            "enabled": True,
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "updated_at": "2025-01-01T00:00:00+00:00",
+        },
+    }
+    rows = _announcement_rows_from_dump(dump)
+    assert rows[0] == {
+        "id": 2,
+        "title": "Release 2",
+        "message": "Notes",
+        "kind": "release",
+        "audience": "staff",
+        "author_id": None,
+        "publish_at": "2025-01-02T00:00:00+00:00",
+        "notified_at": "2025-01-02T00:00:00+00:00",
+        "created_at": "2025-01-02T00:00:00+00:00",
+        "updated_at": "2025-01-03T00:00:00+00:00",
+    }
+    banner = rows[1]
+    assert banner["id"] == 3  # next free id after the release notes
+    assert banner["kind"] == "notice"
+    assert banner["audience"] == "everyone"
+    assert banner["banner"] is True
+    assert banner["publish_at"] == "2025-01-01T00:00:00+00:00"
+
+
+def test_announcement_rows_from_legacy_dump_skips_blank_or_disabled_banner() -> None:
+    from app.admin_ops import _announcement_rows_from_dump
+
+    assert _announcement_rows_from_dump({"announcement": {"message": "  ", "enabled": True}}) == []
+    (row,) = _announcement_rows_from_dump(
+        {"announcement": {"message": "Draft", "enabled": False, "created_at": "2025-01-01T00:00:00+00:00"}}
+    )
+    assert row["id"] == 1
+    assert row["publish_at"] is None
+    assert row["notified_at"] is None
+    assert _announcement_rows_from_dump({}) == []
+
+
+def test_seed_announcement_seen_mirrors_migration_for_legacy_dumps() -> None:
+    from app.admin_ops import _seed_announcement_seen
+
+    rows = [
+        {"id": 1, "kind": "release", "notified_at": "2025-01-02T00:00:00+00:00"},
+        {"id": 2, "kind": "release", "notified_at": "2025-02-01T00:00:00+00:00"},
+        {"id": 3, "kind": "notice", "notified_at": "2025-01-01T00:00:00+00:00"},
+    ]
+    meta = {"theme": "dark", "changelog_last_read_at": "2025-01-15T00:00:00+00:00"}
+    out = _seed_announcement_seen(meta, rows)
+    assert out == {
+        "theme": "dark",
+        "changelog_last_read_at": "2025-01-15T00:00:00+00:00",
+        "announcement_seen": {"1": "2025-01-02T00:00:00+00:00"},
+    }
+    # Untouched when there is no watermark / nothing to seed.
+    assert _seed_announcement_seen({"theme": "light"}, rows) == {"theme": "light"}
+    assert _seed_announcement_seen(None, rows) is None
+    assert _seed_announcement_seen(
+        {"changelog_last_read_at": "2024-01-01T00:00:00+00:00"}, rows
+    ) == {"changelog_last_read_at": "2024-01-01T00:00:00+00:00"}
+
+
+async def test_run_db_import_legacy_dump_seeds_announcement_seen(tmp_path) -> None:
+    """Old dumps: users' ``changelog_last_read_at`` seeds ``announcement_seen``."""
+    dump = _full_dump()
+    dump["users"][0]["metadata"] = {
+        "theme": "dark",
+        "changelog_last_read_at": "2025-01-10T00:00:00+00:00",
+    }
+    input_file = tmp_path / "legacy.json"
+    input_file.write_text(json.dumps(dump))
+    task = _make_import_task(str(input_file))
+    mock_session, factory = _make_import_session(task)
+
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_db_import(1)
+
+    assert task.status == "completed"
+    add_calls = [c.args[0] for c in mock_session.add.call_args_list]
+    user = next(
+        obj for obj in add_calls
+        if type(obj).__name__ == "User" and obj.id == dump["users"][0]["id"]
+    )
+    assert user.metadata_["theme"] == "dark"
+    assert user.metadata_["announcement_seen"] == {"1": "2025-01-02T00:00:00+00:00"}
+
+
+def test_one_reaction_per_reader_keeps_newest_row_per_reader() -> None:
+    from app.admin_ops import one_reaction_per_reader
+
+    rows = [
+        {"id": 1, "announcement_id": 10, "user_id": 5, "emoji": "heart"},
+        {"id": 3, "announcement_id": 10, "user_id": 5, "emoji": "hooray"},
+        {"id": 2, "announcement_id": 10, "user_id": 6, "emoji": "heart"},
+        {"id": 4, "announcement_id": 11, "user_id": 5, "emoji": "eyes"},
+    ]
+    kept = one_reaction_per_reader(rows)
+    assert [(r["id"], r["emoji"]) for r in kept] == [(2, "heart"), (3, "hooray"), (4, "eyes")]

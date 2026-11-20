@@ -237,6 +237,10 @@ collections:
   # collections surfaces from students (404); non-students retain access.
   studentAccess: true
 
+# Markers and Boards dark launch (epic #1765), API pod only.
+markers:
+  enabled: false
+
 api:
   # SQLAlchemy pool sizing for the API process (DB_POOL_SIZE /
   # DB_MAX_OVERFLOW).  The defaults match the backend code defaults in
@@ -379,7 +383,6 @@ redis:
 # selections against these budgets; jobs and results live ephemerally in
 # Redis on the dedicated arq:counting queue.
 counting:
-  enabled: false # COUNTING_ENABLED — dark-launch flag for the whole surface
   queueName: arq:counting
   maxPixels: 750000 # stitched level pixels per job (pre-flight cap, ML outliners)
   classicalMaxPixels: 2000000 # larger budget for the ~20x-faster classical outliners (#1719)
@@ -389,6 +392,10 @@ counting:
   resultTtlSeconds: 600
   jobTimeoutSeconds: 60
   maxObjects: 3000
+  # Ops-level kill-switch for the classical-mask flat-field (#1870).
+  # The only preprocessing knob — per-image tuning arrives via
+  # metadata.detection_params, never through env.
+  preprocess: true
 
 # Dedicated arq worker for the counting queue.  Counting jobs run ML
 # inference (InstanSeg / classical scikit-image) so they get their own

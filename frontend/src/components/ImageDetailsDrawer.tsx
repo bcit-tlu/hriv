@@ -20,6 +20,12 @@ export interface ImageDetailsTriggerProps {
   disabled?: boolean
   /** Shared with the panel so it can restore focus on close. */
   triggerRef: RefObject<HTMLButtonElement | null>
+  /**
+   * `id` of the drawer it controls — defaults to the canonical
+   * `image-details-drawer`; collections panes pass a unique one (#1862) so
+   * two open drawers never share an id.
+   */
+  drawerId?: string
 }
 
 /**
@@ -33,6 +39,7 @@ export function ImageDetailsTrigger({
   onOpenChange,
   disabled = false,
   triggerRef,
+  drawerId = 'image-details-drawer',
 }: ImageDetailsTriggerProps) {
   return (
     <Box
@@ -43,7 +50,7 @@ export function ImageDetailsTrigger({
       title="Image details"
       aria-label="Image details"
       aria-expanded={open}
-      aria-controls="image-details-drawer"
+      aria-controls={drawerId}
       disabled={disabled}
       onClick={() => onOpenChange(!open)}
       sx={{
@@ -92,6 +99,19 @@ export interface ImageDetailsDrawerProps {
   onOpenChange: (open: boolean) => void
   /** Shared with `ImageDetailsTrigger` so the panel can restore focus on close. */
   triggerRef: RefObject<HTMLButtonElement | null>
+  /**
+   * `id` for the panel — defaults to `image-details-drawer`; collections
+   * panes pass a unique one (#1862) so two open drawers never share an id.
+   * The title and viewer-controls ids derive from it.
+   */
+  drawerId?: string
+  /**
+   * Member context label (e.g. the image name) qualifying the landmark
+   * names — collection panes pass it (#1862) so two open drawers are
+   * distinguishable to assistive tech (`landmark-unique`). Unset, the
+   * landmarks keep their plain `aria-labelledby` names.
+   */
+  drawerLabel?: string
 }
 
 function DetailField({
@@ -99,16 +119,19 @@ function DetailField({
   value,
   title,
   tooltip,
+  dense = false,
 }: {
   label: string
   value: string
   title?: string
   /** Tooltip shown on hover, tap or focus (touch-friendly timestamps). */
   tooltip?: string
+  dense?: boolean
 }) {
   const text = (
     <Typography
-      variant="body2"
+      variant={dense ? 'caption' : 'body2'}
+      component="p"
       color="text.secondary"
       noWrap
       title={tooltip ? undefined : (title ?? `${label} ${value}`)}
@@ -150,61 +173,14 @@ export default function ImageDetailsDrawer({
   open,
   onOpenChange,
   triggerRef,
+  drawerId = 'image-details-drawer',
+  drawerLabel,
 }: ImageDetailsDrawerProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
-
-  const fields: { label: string; value: string; title?: string; tooltip?: string }[] = []
-  if (image.copyright) fields.push({ label: 'Copyright:', value: image.copyright })
-  if (programNames.length > 0)
-    fields.push({
-      label: `Program${programNames.length > 1 ? 's' : ''}:`,
-      value: programNames.join(', '),
-    })
-  if (groupNames.length > 0)
-    fields.push({
-      label: `Group${groupNames.length > 1 ? 's' : ''}:`,
-      value: groupNames.join(', '),
-    })
-  // Dates show the long-form date; the native title keeps the exact timestamp.
-  if (image.createdAt)
-    fields.push({
-      label: 'Created:',
-      value: new Date(image.createdAt).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      }),
-      tooltip: `Created: ${new Date(image.createdAt).toLocaleString()}`,
-    })
-  if (image.updatedAt)
-    fields.push({
-      label: 'Modified:',
-      value: new Date(image.updatedAt).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      }),
-      tooltip: `Modified: ${new Date(image.updatedAt).toLocaleString()}`,
-    })
-  if (image.width != null && image.height != null)
-    fields.push({ label: 'Dimensions:', value: `${image.width} × ${image.height}` })
-  if (image.fileSize != null) fields.push({ label: 'Size:', value: formatFileSize(image.fileSize) })
-  if (measurement) {
-    const value =
-      measurement.scale && measurement.unit
-        ? `${measurement.scale} px/${measurement.unit}`
-        : measurement.scale
-          ? `${measurement.scale} px`
-          : (measurement.unit ?? '')
-    if (value) fields.push({ label: 'Measurement:', value })
-  }
-  const objective = objectiveFromMetadata(image.metadataExtra)
-  if (objective) fields.push({ label: 'Objective:', value: objectiveLabel(objective) })
-  if (sourceInfo?.originalFilename != null)
-    fields.push({ label: 'Original file:', value: sourceInfo.originalFilename })
-  if (sourceInfo?.fileType != null) fields.push({ label: 'File type:', value: sourceInfo.fileType })
-  if (sourceInfo?.uploadedByName != null)
-    fields.push({ label: 'Uploaded by:', value: sourceInfo.uploadedByName })
+  const titleId = `${drawerId}-title`
+  const controlsId = `${drawerId}-viewer-controls`
+  const asideLabel = drawerLabel ? `Image details — ${drawerLabel}` : undefined
+  const controlsLabel = drawerLabel ? `Viewer controls — ${drawerLabel}` : undefined
 
   const close = () => {
     onOpenChange(false)
@@ -221,8 +197,9 @@ export default function ImageDetailsDrawer({
     >
       <Paper
         component="aside"
-        id="image-details-drawer"
-        aria-labelledby="image-details-drawer-title"
+        id={drawerId}
+        aria-label={asideLabel}
+        aria-labelledby={asideLabel ? undefined : titleId}
         elevation={8}
         square
         data-hriv-canvas-ui
@@ -257,7 +234,7 @@ export default function ImageDetailsDrawer({
             borderColor: 'divider',
           }}
         >
-          <Typography variant="subtitle1" component="h2" id="image-details-drawer-title">
+          <Typography variant="subtitle1" component="h2" id={titleId}>
             Image details
           </Typography>
           <IconButton ref={closeRef} aria-label="Close image details" size="small" onClick={close}>
@@ -266,29 +243,20 @@ export default function ImageDetailsDrawer({
         </Box>
         {/* tabIndex makes the scroll region keyboard-scrollable (a11y). */}
         <Box tabIndex={0} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 2, py: 1.5 }}>
-          <Stack spacing={0.75}>
-            {fields.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No details available.
-              </Typography>
-            ) : (
-              fields.map((field) => (
-                <DetailField
-                  key={field.label}
-                  label={field.label}
-                  value={field.value}
-                  title={field.title}
-                  tooltip={field.tooltip}
-                />
-              ))
-            )}
-          </Stack>
+          <ImageDetailsContent
+            image={image}
+            programNames={programNames}
+            groupNames={groupNames}
+            measurement={measurement}
+            sourceInfo={sourceInfo}
+          />
         </Box>
         {/* Footer instructions. `contain: inline-size` keeps the wrapping
               text out of the drawer's max-content width calculation. */}
         <Box
           role="region"
-          aria-labelledby="image-details-viewer-controls"
+          aria-label={controlsLabel}
+          aria-labelledby={controlsLabel ? undefined : controlsId}
           tabIndex={0}
           sx={{
             flexShrink: 0,
@@ -301,34 +269,127 @@ export default function ImageDetailsDrawer({
             contain: 'inline-size',
           }}
         >
-          <Typography
-            variant="subtitle2"
-            component="h3"
-            id="image-details-viewer-controls"
-            sx={{ mb: 0.5 }}
-          >
+          <Typography variant="subtitle2" component="h3" id={controlsId} sx={{ mb: 0.5 }}>
             Viewer controls
           </Typography>
-          <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
-            {[
-              'Scroll or tap to zoom',
-              'Drag to move/pan',
-              'Bottom left buttons control view',
-              'Bottom right mini-map shows current view',
-            ].map((item) => (
-              <Typography
-                key={item}
-                component="li"
-                variant="body2"
-                color="text.secondary"
-                sx={{ '& + li': { mt: 0.5 } }}
-              >
-                {item}
-              </Typography>
-            ))}
-          </Box>
+          <ViewerControlHints />
         </Box>
       </Paper>
     </Slide>
+  )
+}
+
+export function ImageDetailsContent({
+  image,
+  programNames,
+  groupNames,
+  measurement,
+  sourceInfo,
+  dense = false,
+  showAll = false,
+}: Pick<
+  ImageDetailsDrawerProps,
+  'image' | 'programNames' | 'groupNames' | 'measurement' | 'sourceInfo'
+> & {
+  dense?: boolean
+  /** List every field, marking absent values "—" instead of omitting them. */
+  showAll?: boolean
+}) {
+  const fields: { label: string; value: string; title?: string; tooltip?: string }[] = []
+  const add = (
+    label: string,
+    value: string | null | undefined,
+    extra: { title?: string; tooltip?: string } = {},
+  ) => {
+    if (value) fields.push({ label, value, ...extra })
+    else if (showAll) fields.push({ label, value: '—', title: `${label} not recorded` })
+  }
+  const longDate = (iso: string) =>
+    new Date(iso).toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+  add('Copyright:', image.copyright)
+  add(
+    `Program${programNames.length > 1 ? 's' : ''}:`,
+    programNames.length > 0 ? programNames.join(', ') : null,
+  )
+  add(
+    `Group${groupNames.length > 1 ? 's' : ''}:`,
+    groupNames.length > 0 ? groupNames.join(', ') : null,
+  )
+  // Dates show the long-form date; the tooltip keeps the exact timestamp.
+  add('Created:', image.createdAt ? longDate(image.createdAt) : null, {
+    tooltip: image.createdAt ? `Created: ${new Date(image.createdAt).toLocaleString()}` : undefined,
+  })
+  add('Modified:', image.updatedAt ? longDate(image.updatedAt) : null, {
+    tooltip: image.updatedAt
+      ? `Modified: ${new Date(image.updatedAt).toLocaleString()}`
+      : undefined,
+  })
+  add(
+    'Dimensions:',
+    image.width != null && image.height != null ? `${image.width} × ${image.height}` : null,
+  )
+  add('Size:', image.fileSize != null ? formatFileSize(image.fileSize) : null)
+  add(
+    'Measurement:',
+    !measurement
+      ? null
+      : measurement.scale && measurement.unit
+        ? `${measurement.scale} px/${measurement.unit}`
+        : measurement.scale
+          ? `${measurement.scale} px`
+          : measurement.unit,
+  )
+  const objective = objectiveFromMetadata(image.metadataExtra)
+  add('Objective:', objective ? objectiveLabel(objective) : null)
+  add('Original file:', sourceInfo?.originalFilename)
+  add('File type:', sourceInfo?.fileType)
+  add('Uploaded by:', sourceInfo?.uploadedByName)
+
+  return (
+    <Stack spacing={dense ? 0.5 : 0.75}>
+      {fields.length === 0 ? (
+        <Typography variant={dense ? 'caption' : 'body2'} component="p" color="text.secondary">
+          No details available.
+        </Typography>
+      ) : (
+        fields.map((field) => (
+          <DetailField
+            key={field.label}
+            label={field.label}
+            value={field.value}
+            title={field.title}
+            tooltip={field.tooltip}
+            dense={dense}
+          />
+        ))
+      )}
+    </Stack>
+  )
+}
+
+export function ViewerControlHints({ dense = false }: { dense?: boolean }) {
+  return (
+    <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+      {[
+        'Scroll or tap to zoom',
+        'Drag to move/pan',
+        'Bottom left buttons control view',
+        'Bottom right mini-map shows current view',
+      ].map((item) => (
+        <Typography
+          key={item}
+          component="li"
+          variant={dense ? 'caption' : 'body2'}
+          color="text.secondary"
+          sx={{ '& + li': { mt: dense ? 0.25 : 0.5 } }}
+        >
+          {item}
+        </Typography>
+      ))}
+    </Box>
   )
 }

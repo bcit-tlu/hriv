@@ -1,5 +1,24 @@
 import { getClientSyntheticMode } from './syntheticMode'
 import type { ImageSourceInfo, User, Role } from './types'
+import type { CollectionSlot, SlotViewport } from './types'
+import type {
+  ApiBoard,
+  ApiBoardSummary,
+  ApiMarker,
+  BoardAssignment,
+  BoardVisibility,
+  MarkerSource,
+  MarkerView,
+} from './types'
+export type {
+  ApiBoard,
+  ApiBoardSummary,
+  ApiMarker,
+  BoardAssignment,
+  BoardVisibility,
+  MarkerSource,
+  MarkerView,
+} from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -181,7 +200,11 @@ export function isAuthFailure(err: unknown): err is ApiError {
 // Converts an API-layer error into a user-facing string. When the caller is
 // about to surface the message to the user, this helper also notifies the
 // optional observability hook so we can record user-visible API failures.
-export function userMessage(err: unknown, fallback: string): string {
+export function userMessage(
+  err: unknown,
+  fallback: string,
+  options: { includeServerDetail?: boolean } = {},
+): string {
   if (err instanceof ApiError) {
     notifyVisibleApiFailure(err, {
       method: err.method ?? 'GET',
@@ -214,7 +237,7 @@ export function userMessage(err: unknown, fallback: string): string {
       }
       return 'Not enough free space is available to upload this file.'
     }
-    if (err.status >= 400 && err.status < 500) {
+    if (err.status >= 400 && (err.status < 500 || options.includeServerDetail)) {
       if (usable) {
         return detail
       }
@@ -328,7 +351,8 @@ async function requestRaw<T>(path: string, init?: RequestInit): Promise<RequestR
     res = await fetch(`${BASE}/api${path}`, {
       ...restInit,
       headers: {
-        'Content-Type': 'application/json',
+        // Multipart bodies need the browser-generated boundary, so let fetch set the type.
+        ...(restInit.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
         ...authHeaders(),
         ...initHeaders,
       },
@@ -750,7 +774,7 @@ export interface ApiCollectionSummary {
 
 export interface ApiCollection extends ApiCollectionSummary {
   /** Ordered, visible-to-caller members with tokenized `thumb` / `tile_sources`. */
-  images: ApiImage[]
+  images: ApiCollectionMember[]
   viewport_state: Record<string, unknown>
   /**
    * Nominal member count including members hidden from the caller
@@ -813,9 +837,12 @@ function collectionsQueryString(filters: CollectionFilters): string {
 export function fetchCollections(
   filters: CollectionFilters = {},
   init?: RequestInit,
-): Promise<ApiCollectionSummary[]> {
+): Promise<ApiCollectionSummary[] | undefined> {
   const qs = collectionsQueryString(filters)
-  return request(`/collections${qs ? `?${qs}` : ''}`, init)
+  // no-store (as in fetchCollectionsPaged): these callers never opt into
+  // conditional requests, so a browser-synthesized If-None-Match → 304
+  // would resolve `undefined` and crash their `.map(...)` (#1892).
+  return request(`/collections${qs ? `?${qs}` : ''}`, { cache: 'no-store', ...init })
 }
 
 export interface PaginatedCollections {
@@ -1012,16 +1039,36 @@ export function fetchImageCollectionsMap(
   return request(`/images/collections-map`, init)
 }
 
-export function createCollection(body: {
-  name: string
-  description?: string | null
-  type: ApiCollectionType
-  visibility: ApiCollectionVisibility
-  category_id?: number
-  image_ids: number[]
-  program_ids?: number[]
-  group_ids?: number[]
-}): Promise<ApiCollection> {
+export interface CollectionSlotInput {
+  id?: number
+  image_id: number
+  marker_id?: number
+  viewport_state?: SlotViewport | null
+  label?: string | null
+}
+
+export interface CollectionSources {
+  slots?: CollectionSlotInput[]
+  marker_ids?: number[]
+  source_board_id?: number
+}
+
+export interface ApiCollectionMember extends ApiImage {
+  slot?: CollectionSlot | null
+}
+
+export function createCollection(
+  body: CollectionSources & {
+    name: string
+    description?: string | null
+    type: ApiCollectionType
+    visibility: ApiCollectionVisibility
+    category_id?: number
+    image_ids?: number[]
+    program_ids?: number[]
+    group_ids?: number[]
+  },
+): Promise<ApiCollection> {
   return request('/collections', { method: 'POST', body: JSON.stringify(body) })
 }
 
@@ -1052,14 +1099,18 @@ export function deleteCollection(id: number): Promise<void> {
 /** Replaces the whole ordered member list (add / remove / reorder in one call). */
 export function replaceCollectionImages(
   id: number,
-  body: { image_ids: number[]; version: number },
+  body: CollectionSources & { image_ids?: number[]; version: number },
 ): Promise<ApiCollection> {
   return request(`/collections/${id}/images`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
 export function saveCollectionViewport(
   id: number,
-  body: { viewport_state: Record<string, unknown>; version: number },
+  body: {
+    viewport_state: Record<string, unknown>
+    slot_viewports?: Record<string, SlotViewport | null>
+    version: number
+  },
 ): Promise<ApiCollection> {
   return request(`/collections/${id}/viewport`, { method: 'PUT', body: JSON.stringify(body) })
 }
@@ -1470,69 +1521,139 @@ export function removeGroupInstructorsBulk(groupId: number, userIds: number[]): 
 
 // ── Announcement ────────────────────────────────────────
 
+// ── Announcements (epic #1832) ───────────────────────────
+
+export type AnnouncementKind =
+  'notice' | 'event' | 'reminder' | 'celebration' | 'release' | 'warning'
+export type AnnouncementAudience =
+  'everyone' | 'staff' | 'admins' | 'instructors' | 'staff_only' | 'targeted'
+export type AnnouncementStatus = 'draft' | 'scheduled' | 'live' | 'expired'
+export type AnnouncementScope = 'inbox' | 'mine'
+
 export interface ApiAnnouncement {
   id: number
+  title: string
   message: string
-  enabled: boolean
+  kind: AnnouncementKind
+  icon: string
+  severity: 'info' | 'success' | 'warning' | 'error'
+  audience: AnnouncementAudience
+  author_id: number | null
+  author_name: string
+  program_ids: number[]
+  program_names: string[]
+  group_ids: number[]
+  group_names: string[]
+  publish_at: string | null
+  expires_at: string | null
+  notified_at: string | null
+  pinned: boolean
+  banner: boolean
+  status: AnnouncementStatus
+  seen: boolean
+  reactions: Record<string, number>
+  my_reactions: string[]
+  media_tokens: Record<string, string>
+  can_edit: boolean
+  /** Present only for admin/instructor/staff viewers (counts, never identities). */
+  seen_count?: number | null
+  audience_size?: number | null
   created_at: string
   updated_at: string
 }
 
-export function fetchAnnouncement(): Promise<ApiAnnouncement> {
-  return request('/announcement/')
-}
-
-export function updateAnnouncement(body: {
-  message?: string
-  enabled?: boolean
-}): Promise<ApiAnnouncement> {
-  return request('/announcement/', {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  })
-}
-
-// ── Changelog ────────────────────────────────────────────
-
-export interface ApiChangelogEntry {
+export interface ApiAnnouncementBroadcast {
   id: number
   title: string
-  body: string
-  published_at: string
-  created_at: string
+  message: string
+  kind: AnnouncementKind
+  icon: string
+  severity: string
+  publish_at: string | null
+  expires_at: string | null
   updated_at: string
+  /** Stateless `/api/media/{id}` tokens so the login banner can render media. */
+  media_tokens: Record<string, string>
 }
 
-export function fetchChangelogEntries(): Promise<ApiChangelogEntry[]> {
-  return request('/changelog/')
-}
-
-export function createChangelogEntry(body: {
+export interface AnnouncementInput {
   title: string
-  body: string
-}): Promise<ApiChangelogEntry> {
-  return request('/changelog/', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
+  message: string
+  kind: AnnouncementKind
+  audience: AnnouncementAudience
+  program_ids: number[]
+  group_ids: number[]
+  /** ISO timestamp; `null` publishes now (unless `draft`). */
+  publish_at: string | null
+  expires_at: string | null
+  draft: boolean
+  pinned: boolean
+  banner: boolean
 }
 
-export function updateChangelogEntry(
+export interface AnnouncementUpdateInput extends Partial<AnnouncementInput> {
+  clear_expires_at?: boolean
+  /** Re-surface the post to readers (resets their seen state). */
+  notify_again?: boolean
+}
+
+export interface ApiReactions {
+  reactions: Record<string, number>
+  my_reactions: string[]
+}
+
+export interface ApiMediaUpload {
+  id: number
+  url: string
+  tokenized_url: string
+  content_type: string
+  size_bytes: number
+  original_name: string
+}
+
+export function fetchAnnouncements(scope: AnnouncementScope = 'inbox'): Promise<ApiAnnouncement[]> {
+  return request(`/announcements/?scope=${scope}`)
+}
+
+/** Public (unauthenticated) banner posts for the login screen. */
+export function fetchAnnouncementBroadcast(): Promise<ApiAnnouncementBroadcast[]> {
+  return request('/announcements/broadcast')
+}
+
+export function createAnnouncement(body: AnnouncementInput): Promise<ApiAnnouncement> {
+  return request('/announcements/', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateAnnouncement(
   id: number,
-  body: { title?: string; body?: string },
-): Promise<ApiChangelogEntry> {
-  return request(`/changelog/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(body),
+  body: AnnouncementUpdateInput,
+): Promise<ApiAnnouncement> {
+  return request(`/announcements/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteAnnouncement(id: number): Promise<void> {
+  return request(`/announcements/${id}`, { method: 'DELETE' })
+}
+
+export function markAnnouncementSeen(id: number): Promise<void> {
+  return request(`/announcements/${id}/seen`, { method: 'PUT' })
+}
+
+export function addAnnouncementReaction(id: number, emoji: string): Promise<ApiReactions> {
+  return request(`/announcements/${id}/reactions/${encodeURIComponent(emoji)}`, { method: 'PUT' })
+}
+
+export function removeAnnouncementReaction(id: number, emoji: string): Promise<ApiReactions> {
+  return request(`/announcements/${id}/reactions/${encodeURIComponent(emoji)}`, {
+    method: 'DELETE',
   })
 }
 
-export function deleteChangelogEntry(id: number): Promise<void> {
-  return request(`/changelog/${id}`, { method: 'DELETE' })
-}
-
-export function markChangelogRead(): Promise<{ changelog_last_read_at: string }> {
-  return request('/changelog/mark-read', { method: 'POST' })
+/** Upload an announcement image/video; the body is multipart so no JSON content type. */
+export function uploadMedia(file: File): Promise<ApiMediaUpload> {
+  const form = new FormData()
+  form.append('file', file)
+  return request('/media/', { method: 'POST', body: form })
 }
 
 // ── Source Images ───────────────────────────────────────
@@ -2548,14 +2669,186 @@ export interface VersionsResponse {
 
 /** ``GET /api/features`` — deployment feature flags (docs/collections.md). */
 export interface ApiFeatures {
+  markers?: boolean
   collections_student_access?: boolean
   collections: boolean
   collections_home_shelf: boolean
-  counting: boolean
+  /** Epic #1832 — announcements stream, page and bell for all roles. */
 }
 
 export function fetchFeatures(): Promise<ApiFeatures> {
   return request('/features')
+}
+
+export interface BoardFilters {
+  q?: string
+  visibility?: BoardVisibility[]
+  sort?:
+    | 'id'
+    | 'name'
+    | 'description'
+    | 'visibility'
+    | 'owner'
+    | 'marker_count'
+    | 'sort_order'
+    | 'created_at'
+    | 'updated_at'
+  order?: 'asc' | 'desc'
+  limit?: number
+  page?: number
+  page_size?: number
+}
+export interface MarkerFilters extends Omit<BoardFilters, 'visibility' | 'sort'> {
+  board_id?: number
+  image_id?: number
+  favourite?: boolean
+  scope?: MarkerSource
+  sort?:
+    | 'id'
+    | 'title'
+    | 'description'
+    | 'image_id'
+    | 'favourite'
+    | 'sort_order'
+    | 'created_at'
+    | 'updated_at'
+}
+export interface BoardCreate {
+  name: string
+  description?: string | null
+  visibility?: BoardVisibility
+  program_ids?: number[]
+  group_ids?: number[]
+}
+export interface MarkerCreate extends MarkerView {
+  image_id: number
+  title: string
+  description?: string | null
+  favourite?: boolean
+  board_assignments: BoardAssignment[]
+}
+type Versioned = { version: number }
+function markerQuery(filters: BoardFilters | MarkerFilters): string {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) {
+    if (value === undefined) continue
+    for (const entry of Array.isArray(value) ? value : [value]) query.append(key, String(entry))
+  }
+  return query.size ? '?' + query.toString() : ''
+}
+export function fetchBoards(
+  filters: BoardFilters = {},
+  init?: RequestInit,
+): Promise<ApiBoardSummary[]> {
+  return request('/boards' + markerQuery(filters), init)
+}
+export function fetchBoard(id: number, init?: RequestInit): Promise<ApiBoard> {
+  return request(`/boards/${id}`, init)
+}
+export function fetchMarker(id: number, init?: RequestInit): Promise<ApiMarker> {
+  return request(`/markers/${id}`, init)
+}
+export function createBoard(body: BoardCreate): Promise<ApiBoard> {
+  return request('/boards', { method: 'POST', body: JSON.stringify(body) })
+}
+export interface BoardUpdate extends Partial<BoardCreate> {
+  /** Pinned cover member; `null` clears the pin (first-member fallback). */
+  cover_marker_id?: number | null
+  /** Explicit "no cover" pick — the tile renders the placeholder icon. */
+  cover_blank?: boolean
+  version?: number
+}
+export function updateBoard(id: number, body: BoardUpdate & Versioned): Promise<ApiBoard> {
+  return request(`/boards/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+export function deleteBoard(id: number, version: number): Promise<void> {
+  return request(`/boards/${id}`, { method: 'DELETE', headers: { 'If-Match': `"${version}"` } })
+}
+export function reorderBoards(items: { board_id: number; version: number }[]): Promise<ApiBoard[]> {
+  return request('/boards/order', { method: 'PUT', body: JSON.stringify({ items }) })
+}
+export function replaceBoardOwners(
+  id: number,
+  body: { user_ids: number[] } & Versioned,
+): Promise<ApiBoard> {
+  return request(`/boards/${id}/owners`, { method: 'PUT', body: JSON.stringify(body) })
+}
+export function transferBoard(
+  id: number,
+  body: { program_id: number | null } & Versioned,
+): Promise<ApiBoard> {
+  return request(`/boards/${id}/transfer`, { method: 'POST', body: JSON.stringify(body) })
+}
+export function reorderBoardMarkers(
+  id: number,
+  body: { items: { marker_id: number }[] } & Versioned,
+): Promise<ApiBoard> {
+  return request(`/boards/${id}/markers/order`, { method: 'PUT', body: JSON.stringify(body) })
+}
+export function removeBoardMarker(
+  id: number,
+  markerId: number,
+  version: number,
+): Promise<ApiBoard> {
+  return request(`/boards/${id}/markers/${markerId}`, {
+    method: 'DELETE',
+    headers: { 'If-Match': `"${version}"` },
+  })
+}
+export function fetchMarkers(
+  filters: MarkerFilters = {},
+  init?: RequestInit,
+): Promise<ApiMarker[]> {
+  return request('/markers' + markerQuery(filters), init)
+}
+export function fetchImageMarkers(imageId: number, init?: RequestInit): Promise<ApiMarker[]> {
+  return request(`/images/${imageId}/markers`, init)
+}
+export function createMarker(body: MarkerCreate): Promise<ApiMarker> {
+  return request('/markers', { method: 'POST', body: JSON.stringify(body) })
+}
+export function updateMarker(
+  id: number,
+  body: Partial<Omit<MarkerCreate, 'image_id'>> & Versioned,
+): Promise<ApiMarker> {
+  return request(`/markers/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+export function deleteMarker(id: number, version: number): Promise<void> {
+  return request(`/markers/${id}`, { method: 'DELETE', headers: { 'If-Match': `"${version}"` } })
+}
+export function reorderMarkers(
+  items: { marker_id: number; version: number }[],
+): Promise<ApiMarker[]> {
+  return request('/markers/order', { method: 'PUT', body: JSON.stringify({ items }) })
+}
+export function replaceMarkerOwners(
+  id: number,
+  body: { user_ids: number[] } & Versioned,
+): Promise<ApiMarker> {
+  return request(`/markers/${id}/owners`, { method: 'PUT', body: JSON.stringify(body) })
+}
+export type MarkerConflict = Pick<
+  ApiMarker,
+  'id' | 'version' | 'title' | 'description' | 'favourite' | 'board_ids' | 'permissions'
+>
+function isMarkerConflict(value: unknown): value is MarkerConflict {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'number' &&
+    typeof value.version === 'number' &&
+    typeof value.title === 'string' &&
+    (value.description === null || typeof value.description === 'string') &&
+    typeof value.favourite === 'boolean' &&
+    Array.isArray(value.board_ids) &&
+    value.board_ids.every((id: unknown) => typeof id === 'number') &&
+    isRecord(value.permissions) &&
+    typeof value.permissions.can_edit === 'boolean' &&
+    typeof value.permissions.can_delete === 'boolean'
+  )
+}
+export function markerConflictCurrent(err: unknown): MarkerConflict | null {
+  if (!(err instanceof ApiError) || err.status !== 409) return null
+  return isMarkerConflict(err.data) ? err.data : null
 }
 
 export function fetchVersions(): Promise<VersionsResponse> {
@@ -2706,6 +2999,18 @@ export type MeasurementFindingSortKey =
 export type MeasurementFindingSort =
   `${MeasurementFindingSortKey}_${'asc' | 'desc'}` | 'created_desc'
 
+/** Instructor-facing detection tuning (epic #1865); mirrors DetectionTuning. */
+export interface DetectionTuning {
+  /** 0 → strict (only obvious cells), 1 → permissive (fainter cells). */
+  sensitivity: number
+  /** Smallest component radius (work-image px) that counts as a cell. */
+  min_cell_size: number
+  /** Exclude dark purple-stained objects (leukocyte nuclei). */
+  exclude_nuclei: boolean
+  /** Optional raw detector field overrides, not surfaced in the UI. */
+  advanced: Record<string, number> | null
+}
+
 export interface MeasurementFindingCategory {
   id: number
   /** Full path from the root, e.g. "Hematology › Blood films". */
@@ -2738,6 +3043,8 @@ export interface ApiMeasurementFinding {
   approved_objective: string | null
   /** Calibrated px/µm per objective for this camera; null for unknown cameras. */
   objective_scales: Record<string, number> | null
+  /** Instructor-tuned detection values saved on the finding; null = defaults. */
+  params: DetectionTuning | null
   reviewed_by: number | null
   reviewed_at: string | null
   created_at: string
@@ -2850,5 +3157,45 @@ export function bulkApproveMeasurementFindings(
   return request('/measurement-findings/approve', {
     method: 'POST',
     body: JSON.stringify({ ids }),
+  })
+}
+
+/** Read-only detection + calibration preview under candidate tuning (#1867). */
+export interface DetectionPreviewOut {
+  diameter_px: number | null
+  component_count: number | null
+  selected_count: number | null
+  peak_fraction: number | null
+  proposed_scale: number | null
+  proposed_unit: string
+  objective: string | null
+  confidence: number
+  /** source_missing | slide_too_large_for_rbc | detect_failed | no_rbc_population; null on success. */
+  reason: string | null
+  /** work-image px per source px — divide mask coords by it for level-0. */
+  work_scale: number | null
+  /** Base64 PNG (include=outline only): 0 none, 1 rejected fill, 2 selected fill. */
+  outline: string | null
+}
+
+export function previewMeasurementFinding(
+  id: number,
+  tuning: DetectionTuning,
+  include?: 'outline'[],
+): Promise<DetectionPreviewOut> {
+  return request(`/measurement-findings/${id}/preview`, {
+    method: 'POST',
+    body: JSON.stringify({ tuning, include: include ?? null }),
+  })
+}
+
+/** Persist tuned params on a pending finding; `null` clears. */
+export function updateMeasurementFindingParams(
+  id: number,
+  params: DetectionTuning | null,
+): Promise<ApiMeasurementFinding> {
+  return request(`/measurement-findings/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ params }),
   })
 }

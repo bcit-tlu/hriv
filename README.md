@@ -31,37 +31,47 @@ API for the [password-management validation flow](docs/password-management.md).
 
 ### Role Capabilities
 
-| Capability                                             | Admin | Instructor | Staff | Student |
-| ------------------------------------------------------ | ----- | ---------- | ----- | ------- |
-| Browse categories & view images                        | Yes   | Yes        | Yes   | Yes†    |
-| Count objects in a selection (when `COUNTING_ENABLED`) | Yes   | Yes        | Yes   | Yes†    |
-| View image uploader name                               | Yes   | Yes        | No    | No      |
-| View collections (API; student deployment gate¶)       | Yes   | Yes        | Yes   | Yes¶    |
-| Create collections‖                                    | Yes   | Yes        | Yes   | Yes     |
-| Edit co-owned collections‖                             | Yes   | Yes        | Yes   | Yes     |
-| Delete own collections‖                                | Yes   | Yes        | Yes\* | Yes\*   |
-| Restrict collections to programs/groups‖               | Yes   | Yes\*      | No    | No      |
-| Manage collection owners‖                              | Yes   | Yes\*      | No    | No      |
-| Hide/show collections‖                                 | Yes   | Yes        | No    | No      |
-| Manage any collection (incl. orphaned)‖                | Yes   | No         | No    | No      |
-| Create/update categories                               | Yes   | Yes        | No    | No      |
-| Delete categories                                      | Yes   | Yes        | No    | No      |
-| Manage page (image table)                              | Yes   | Yes        | No    | No      |
-| Bulk import images                                     | Yes   | Yes        | No    | No      |
-| Manage programs                                        | Yes   | No         | No    | No      |
-| Manage groups                                          | Yes   | Yes\*      | No    | No      |
-| Restrict categories to groups                          | Yes   | Yes\*      | No    | No      |
-| Manage announcement                                    | Yes   | Yes        | No    | No      |
-| View changelog notifications                           | Yes   | Yes        | No    | No      |
-| View component versions (About)                        | Yes   | Yes        | No    | No      |
-| Manage changelog entries                               | Yes   | No         | No    | No      |
-| Admin tab (changelog + backups)                        | Yes   | No         | No    | No      |
-| User management (add/delete)                           | Yes   | No         | No    | No      |
-| Mint local password-setup links (People and API)       | Yes   | No         | No    | No      |
-| Change own password (local accounts)                   | Yes   | Yes        | Yes   | Yes     |
-| Set/regenerate/force another local password (People)   | Yes   | No         | No    | No      |
-| People tab (view users)                                | Yes   | No         | Yes‡  | No      |
-| List users (API)                                       | Yes   | Yes§       | Yes‡  | No      |
+| Capability                                                    | Admin | Instructor | Staff | Student |
+| ------------------------------------------------------------- | ----- | ---------- | ----- | ------- |
+| Browse categories & view images                               | Yes   | Yes        | Yes   | Yes†    |
+| Count objects in a selection                                  | Yes   | Yes        | Yes   | Yes†    |
+| Search visible Boards/Markers (Markers flag)                  | Yes   | Yes        | Yes   | Yes†    |
+| Seed Collections from saved views (Markers flag)              | Yes   | Yes        | Yes   | Yes¶    |
+| View Boards and Markers (feature-gated API)                   | Yes   | Yes        | Yes   | Yes†    |
+| All Boards discovery, including others' private Boards (flag) | Yes   | Yes        | Yes   | No      |
+| Create/edit owned Boards and Markers (feature-gated API)      | Yes   | Yes        | Yes   | Yes     |
+| View image uploader name                                      | Yes   | Yes        | No    | No      |
+| View collections (API; student deployment gate¶)              | Yes   | Yes        | Yes   | Yes¶    |
+| Create collections‖                                           | Yes   | Yes        | Yes   | Yes     |
+| Edit co-owned collections‖                                    | Yes   | Yes        | Yes   | Yes     |
+| Delete own collections‖                                       | Yes   | Yes        | Yes\* | Yes\*   |
+| Restrict collections to programs/groups‖                      | Yes   | Yes\*      | No    | No      |
+| Manage collection owners‖                                     | Yes   | Yes\*      | No    | No      |
+| Hide/show collections‖                                        | Yes   | Yes        | No    | No      |
+| Manage any collection (incl. orphaned)‖                       | Yes   | No         | No    | No      |
+| Create/update categories                                      | Yes   | Yes        | No    | No      |
+| Delete categories                                             | Yes   | Yes        | No    | No      |
+| Manage page (image table)                                     | Yes   | Yes        | No    | No      |
+| Bulk import images                                            | Yes   | Yes        | No    | No      |
+| Manage programs                                               | Yes   | No         | No    | No      |
+| Manage groups                                                 | Yes   | Yes\*      | No    | No      |
+| Restrict categories to groups                                 | Yes   | Yes\*      | No    | No      |
+| Manage announcement                                           | Yes   | Yes        | No    | No      |
+| Read announcements (bell, Inbox, reactions)                   | Yes   | Yes        | Yes   | Yes     |
+| Author announcements (Mine, composer)                         | Yes   | Yes        | No    | No      |
+| View component versions (About)                               | Yes   | Yes        | No    | No      |
+| Post release notes / warning announcements                    | Yes   | No         | No    | No      |
+| Post announcements (targeted to own programs/groups)          | Yes   | Yes        | No    | No      |
+| Post `everyone`/`staff`/release/warning announcements         | Yes   | No         | No    | No      |
+| Read + react to announcements in their audience               | Yes   | Yes        | Yes   | Yes     |
+| See announcement seen counts                                  | Yes   | Yes        | Yes   | No      |
+| Admin tab (backups)                                           | Yes   | No         | No    | No      |
+| User management (add/delete)                                  | Yes   | No         | No    | No      |
+| Mint local password-setup links (People and API)              | Yes   | No         | No    | No      |
+| Change own password (local accounts)                          | Yes   | Yes        | Yes   | Yes     |
+| Set/regenerate/force another local password (People)          | Yes   | No         | No    | No      |
+| People tab (view users)                                       | Yes   | No         | Yes‡  | No      |
+| List users (API)                                              | Yes   | Yes§       | Yes‡  | No      |
 
 \* Instructors manage only the groups they co-own and may attach only groups
 they manage; admins manage and attach any group. Inherited program and group
@@ -123,15 +133,16 @@ A **program** is a flat, admin/OIDC-managed access-control unit that gates categ
 
 A **group** is an instructor-managed visibility dimension, independent of programs. Any admin or instructor can create a group and add student members (and instructor co-owners); a category restricted to one or more groups is visible to a student only if they belong to at least one of them. Visibility is a **dual gate**: a student sees a category only if it passes _both_ the program gate **and** the group gate. Group memberships also surface as read-only chips in the student profile menu. See [docs/groups.md](docs/groups.md) for the model, authorization rules, API, and frontend behaviour, and [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md) for the combined visibility evaluation.
 
-### Changelog Notifications
+### Announcements
 
-The notification bell is a separate feature from the site-wide announcement
-banner. Admins publish Markdown changelog entries from the Admin page, and
-admins plus instructors can read them from the AppBar bell's **What's New**
-dialog. The Admin tab now opens on a dedicated **Changelog** sub-tab, while the
-backup/import tools live under **Backups**. Read state is tracked per user, and
-republishing an entry marks it unread again. See
-[docs/changelog-notifications.md](docs/changelog-notifications.md).
+Announcements are one stream for every role (epic #1832): a bell with a peek of
+the newest unseen posts, an **Announcements** page (Inbox for everyone, Mine for
+admins and instructors), a composer dialog with Markdown, media and emoji
+reactions, a banner slot for posts flagged `banner`, a Home **Notices** shelf of
+pinned posts and a login-screen broadcast. Release notes are announcements of
+`kind='release'` (default audience admins + instructors + staff) — there is no
+separate changelog. See
+[docs/announcements.md](docs/announcements.md).
 
 ### CLI Access via curl
 
@@ -171,51 +182,54 @@ reconciliation model for both environments.
 
 ## Documentation
 
-| Doc                                                                                  | Covers                                                                           |
-| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| [docs/groups.md](docs/groups.md)                                                     | Groups model, authorization, API surface, and frontend behaviour                 |
-| [docs/collections.md](docs/collections.md)                                           | Collections model, ownership, visibility/authorization rules, and API surface    |
-| [docs/object-counting.md](docs/object-counting.md)                                   | Object counting: selection stitching, ephemeral Redis jobs, count-job API        |
-| [docs/user-deactivation.md](docs/user-deactivation.md)                               | Admin user deactivation flow, API, auth enforcement, and People page behavior    |
-| [docs/changelog-notifications.md](docs/changelog-notifications.md)                   | Notification bell, What's New feed, changelog CRUD, and unread-state rules       |
-| [docs/feedback-subsystem.md](docs/feedback-subsystem.md)                             | In-app feedback routing, provider contract, and environment policy               |
-| [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md) | Dual-gate student visibility (programs AND groups), cascade rules, tree loading  |
-| [docs/domain-model.md](docs/domain-model.md)                                         | Data model reference (entities, junctions, conventions)                          |
-| [docs/jobs.md](docs/jobs.md)                                                         | Durable supervisor/child job model for long-running operations                   |
-| [docs/admin-import-export.md](docs/admin-import-export.md)                           | Admin import/export task lifecycle and data round-trip                           |
-| [docs/agent-feature-map.md](docs/agent-feature-map.md)                               | "Where to change what" map across frontend/backend/tests/docs                    |
-| [docs/agent-test-matrix.md](docs/agent-test-matrix.md)                               | "I changed X → run Y" decision tree for targeted test runs                       |
-| [docs/TESTING.md](docs/TESTING.md)                                                   | Test plan, API endpoint → minimum-role table                                     |
-| [docs/OIDC_SETUP.md](docs/OIDC_SETUP.md)                                             | OIDC / auth configuration                                                        |
-| [docs/password-setup.md](docs/password-setup.md)                                     | Admin-issued, single-use local password setup links                              |
-| [docs/password-management.md](docs/password-management.md)                           | Credential states, administrator password runbook, and stable rollout            |
-| [docs/tile-delivery-boundary.md](docs/tile-delivery-boundary.md)                     | ADR: authorized tile delivery via HMAC tile tokens + nginx auth_request          |
-| [docs/unauthenticated-routes.md](docs/unauthenticated-routes.md)                     | Standing rule and audit for unauthenticated routes and enforcement layers        |
-| [docs/drag-and-drop.md](docs/drag-and-drop.md)                                       | Tile drag-and-drop move-vs-reorder contract                                      |
-| [docs/reorder-fixture.md](docs/reorder-fixture.md)                                   | Production-scale reorder fixture and regression scaffolding (epic #975)          |
-| [docs/reorder-telemetry.md](docs/reorder-telemetry.md)                               | Reorder operation correlation, timing, and diagnostic telemetry (epic #975)      |
-| [docs/tile-ordering.md](docs/tile-ordering.md)                                       | Atomic, revisioned tile-order API and ordering normalization (epic #975)         |
-| [frontend/guide/](frontend/guide/)                                                   | Instructor/admin user guide (Markdown rendered in-app at `?page=guide`)          |
-| [docs/browse-state.md](docs/browse-state.md)                                         | Monotonic browse revision and `GET /categories/tree` `304` short-circuit (#1066) |
-| [docs/reorder-performance.md](docs/reorder-performance.md)                           | Browse drag-and-drop profiling results and optimization record (epic #975)       |
-| [docs/image-metadata-and-versioning.md](docs/image-metadata-and-versioning.md)       | Image metadata, versioning, and optimistic concurrency control                   |
-| [docs/measurement-review.md](docs/measurement-review.md)                             | Measurement-scale findings: RBC detector, review/approve API, metadata promotion |
-| [docs/image-processing-lifecycle.md](docs/image-processing-lifecycle.md)             | Image processing pipeline stages, tile generation, and worker configuration      |
-| [docs/tile-cache-provenance.md](docs/tile-cache-provenance.md)                       | Tile-cache provenance fields and current/missing/stale/failed status rules       |
-| [docs/backup-and-disaster-recovery.md](docs/backup-and-disaster-recovery.md)         | Production backup and DR strategy, volume layout, restore order, and runbook     |
-| [docs/longhorn-storage-classes.md](docs/longhorn-storage-classes.md)                 | Longhorn StorageClass guidance per HRIV volume, tradeoffs, and example manifests |
-| [docs/recovery-set-contract.md](docs/recovery-set-contract.md)                       | Normative backup boundary, mismatch policy, recovery metadata, and restore rules |
-| [docs/ui-behaviour-spec.md](docs/ui-behaviour-spec.md)                               | UI behaviour spec (role gating, browse, dialogs, viewer, file drop)              |
-| [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md)                   | Release-please + Flux deploy flow                                                |
-| [docs/security-scanning.md](docs/security-scanning.md)                               | Trivy code-scanning sources, `.trivyignore` review, Dependabot PR handling       |
-| [docs/deployment-proxy-chain.md](docs/deployment-proxy-chain.md)                     | Proxy chain, `TRUSTED_PROXY_HOPS` client-IP resolution, login rate-limit buckets |
-| [docs/observability-conventions.md](docs/observability-conventions.md)               | OTel spans, telemetry ingestion, canonical auth logs, usage dashboard            |
-| [docs/observability-operations.md](docs/observability-operations.md)                 | Alert catalogue, routing policy, validation drills, and readiness checklist      |
-| [docs/observability-runbooks.md](docs/observability-runbooks.md)                     | Alert-linked operator runbooks for availability, storage, backups, and load      |
-| [docs/synthetic-monitoring.md](docs/synthetic-monitoring.md)                         | Synthetic Playwright journey, configuration, and operator runbook                |
-| [docs/per-file-restore-design.md](docs/per-file-restore-design.md)                   | Per-file restore design and implemented backend/UI shape                         |
-| [docs/rebuild-architecture-design.md](docs/rebuild-architecture-design.md)           | Design plan for scalable, parallel tile rebuilds after backup restores           |
-| [AGENTS.md](AGENTS.md)                                                               | Contributor setup, workflow, and **Critical Invariants**                         |
+| Doc                                                                                        | Covers                                                                           |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| [docs/groups.md](docs/groups.md)                                                           | Groups model, authorization, API surface, and frontend behaviour                 |
+| [docs/collections.md](docs/collections.md)                                                 | Collections model, ownership, visibility/authorization rules, and API surface    |
+| [docs/markers-and-boards.md](docs/markers-and-boards.md)                                   | Marker and Board schema, read API, visibility, thumbnails and dark-launch flag   |
+| [docs/announcements.md](docs/announcements.md)                                             | Announcements model, audience union rule, kinds, seen-state, reactions, API      |
+| [docs/object-counting.md](docs/object-counting.md)                                         | Object counting: selection stitching, ephemeral Redis jobs, count-job API        |
+| [docs/presentation-tools.md](docs/presentation-tools.md)                                   | Full-screen laser pointer and ephemeral ink tools for presenting images          |
+| [docs/user-deactivation.md](docs/user-deactivation.md)                                     | Admin user deactivation flow, API, auth enforcement, and People page behavior    |
+| [docs/feedback-subsystem.md](docs/feedback-subsystem.md)                                   | In-app feedback routing, provider contract, and environment policy               |
+| [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md)       | Dual-gate student visibility (programs AND groups), cascade rules, tree loading  |
+| [docs/domain-model.md](docs/domain-model.md)                                               | Data model reference (entities, junctions, conventions)                          |
+| [docs/jobs.md](docs/jobs.md)                                                               | Durable supervisor/child job model for long-running operations                   |
+| [docs/admin-import-export.md](docs/admin-import-export.md)                                 | Admin import/export task lifecycle and data round-trip                           |
+| [docs/agent-feature-map.md](docs/agent-feature-map.md)                                     | "Where to change what" map across frontend/backend/tests/docs                    |
+| [docs/agent-test-matrix.md](docs/agent-test-matrix.md)                                     | "I changed X → run Y" decision tree for targeted test runs                       |
+| [docs/TESTING.md](docs/TESTING.md)                                                         | Test plan, API endpoint → minimum-role table                                     |
+| [docs/OIDC_SETUP.md](docs/OIDC_SETUP.md)                                                   | OIDC / auth configuration                                                        |
+| [docs/password-setup.md](docs/password-setup.md)                                           | Admin-issued, single-use local password setup links                              |
+| [docs/password-management.md](docs/password-management.md)                                 | Credential states, administrator password runbook, and stable rollout            |
+| [docs/tile-delivery-boundary.md](docs/tile-delivery-boundary.md)                           | ADR: authorized tile delivery via HMAC tile tokens + nginx auth_request          |
+| [docs/unauthenticated-routes.md](docs/unauthenticated-routes.md)                           | Standing rule and audit for unauthenticated routes and enforcement layers        |
+| [docs/drag-and-drop.md](docs/drag-and-drop.md)                                             | Tile drag-and-drop move-vs-reorder contract                                      |
+| [docs/reorder-fixture.md](docs/reorder-fixture.md)                                         | Production-scale reorder fixture and regression scaffolding (epic #975)          |
+| [docs/reorder-telemetry.md](docs/reorder-telemetry.md)                                     | Reorder operation correlation, timing, and diagnostic telemetry (epic #975)      |
+| [docs/tile-ordering.md](docs/tile-ordering.md)                                             | Atomic, revisioned tile-order API and ordering normalization (epic #975)         |
+| [frontend/guide/](frontend/guide/)                                                         | Instructor/admin user guide (Markdown rendered in-app at `?page=guide`)          |
+| [docs/browse-state.md](docs/browse-state.md)                                               | Monotonic browse revision and `GET /categories/tree` `304` short-circuit (#1066) |
+| [docs/reorder-performance.md](docs/reorder-performance.md)                                 | Browse drag-and-drop profiling results and optimization record (epic #975)       |
+| [docs/image-metadata-and-versioning.md](docs/image-metadata-and-versioning.md)             | Image metadata, versioning, and optimistic concurrency control                   |
+| [docs/measurement-review.md](docs/measurement-review.md)                                   | Measurement-scale findings: RBC detector, review/approve API, metadata promotion |
+| [docs/image-processing-lifecycle.md](docs/image-processing-lifecycle.md)                   | Image processing pipeline stages, tile generation, and worker configuration      |
+| [docs/tile-cache-provenance.md](docs/tile-cache-provenance.md)                             | Tile-cache provenance fields and current/missing/stale/failed status rules       |
+| [docs/backup-and-disaster-recovery.md](docs/backup-and-disaster-recovery.md)               | Production backup and DR strategy, volume layout, restore order, and runbook     |
+| [docs/longhorn-storage-classes.md](docs/longhorn-storage-classes.md)                       | Longhorn StorageClass guidance per HRIV volume, tradeoffs, and example manifests |
+| [docs/recovery-set-contract.md](docs/recovery-set-contract.md)                             | Normative backup boundary, mismatch policy, recovery metadata, and restore rules |
+| [docs/ui-behaviour-spec.md](docs/ui-behaviour-spec.md)                                     | UI behaviour spec (role gating, browse, dialogs, viewer, file drop)              |
+| [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md)                         | Release-please + Flux deploy flow                                                |
+| [docs/security-scanning.md](docs/security-scanning.md)                                     | Trivy code-scanning sources, `.trivyignore` review, Dependabot PR handling       |
+| [docs/deployment-proxy-chain.md](docs/deployment-proxy-chain.md)                           | Proxy chain, `TRUSTED_PROXY_HOPS` client-IP resolution, login rate-limit buckets |
+| [docs/observability-conventions.md](docs/observability-conventions.md)                     | OTel spans, telemetry ingestion, canonical auth logs, usage dashboard            |
+| [docs/observability-operations.md](docs/observability-operations.md)                       | Alert catalogue, routing policy, validation drills, and readiness checklist      |
+| [docs/observability-runbooks.md](docs/observability-runbooks.md)                           | Alert-linked operator runbooks for availability, storage, backups, and load      |
+| [docs/synthetic-monitoring.md](docs/synthetic-monitoring.md)                               | Synthetic Playwright journey, configuration, and operator runbook                |
+| [docs/per-file-restore-design.md](docs/per-file-restore-design.md)                         | Per-file restore design and implemented backend/UI shape                         |
+| [docs/rebuild-architecture-design.md](docs/rebuild-architecture-design.md)                 | Design plan for scalable, parallel tile rebuilds after backup restores           |
+| [docs/3d-slice-reconstruction-exploration.md](docs/3d-slice-reconstruction-exploration.md) | Exploratory RFC for 2D slice-stack navigation and 3D anatomical reconstruction   |
+| [AGENTS.md](AGENTS.md)                                                                     | Contributor setup, workflow, and **Critical Invariants**                         |
 
 ## License
 

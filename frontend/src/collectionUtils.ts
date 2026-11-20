@@ -176,7 +176,10 @@ export function apiImageToItem(img: ApiImage): ImageItem {
 export function apiCollectionToCollection(api: ApiCollection): Collection {
   return {
     ...apiCollectionSummaryToSummary(api),
-    images: api.images.map(apiImageToItem),
+    images: api.images.map((image) => ({
+      ...apiImageToItem(image),
+      ...(image.slot ? { slot: image.slot } : {}),
+    })),
     viewportState: api.viewport_state,
     memberCount: api.member_count,
   }
@@ -227,4 +230,12 @@ export function collectionLinkFromBrowse(search: string): boolean {
   if (parseCollectionIdParam(search) == null) return false
   const params = new URLSearchParams(search)
   return params.get('cat') != null || params.get('from') === 'browse'
+}
+
+export function parseCollectionSlotParam(search: string): number | null {
+  if (parseCollectionIdParam(search) == null) return null
+  const raw = new URLSearchParams(search).get('slot')
+  if (raw == null || !/^\d+$/.test(raw)) return null
+  const id = Number(raw)
+  return Number.isSafeInteger(id) && id > 0 ? id : null
 }

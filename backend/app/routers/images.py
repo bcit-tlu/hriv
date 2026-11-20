@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 from copy import deepcopy
 import errno
@@ -21,10 +22,15 @@ from ..collection_views import (
     collections_accessible_to,
     image_ids_in_collections,
 )
+from ..collection_slots import cleanup_slot_thumbs, image_slot_thumbs
 from ..database import async_session, get_db, settings
 from ..filenames import sanitize_upload_filename, storage_extension
 from ..image_validation import is_valid_image
 from ..image_source_info import build_image_source_info
+from ..marker_thumbs import remove_image_marker_thumbnails
+from ..board_memberships import bump_board_membership_versions
+from ..markers import require_markers_enabled
+from .markers import image_markers
 from ..upload_staging import (
     UploadTooLargeError,
     cleanup_unowned_final,
@@ -43,6 +49,7 @@ from ..schemas import (
     ImageOut,
     ImageSourceInfoOut,
     ImageUpdate,
+    MarkerOut,
     SourceImageOut,
     normalize_note_value,
 )
@@ -55,6 +62,11 @@ logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
 router = APIRouter(prefix="/images", tags=["images"])
+router.add_api_route(
+    "/{image_id}/markers", image_markers, methods=["GET"],
+    response_model=list[MarkerOut],
+    dependencies=[Depends(require_markers_enabled)],
+)
 
 
 @router.get("/", response_model=list[ImageOut])
@@ -120,9 +132,9 @@ async def image_collections_map(
     for image_id, img, collection in rows:
         if not ctx.can_view_image(img) or not ctx.can_view(collection):
             continue
-        result.setdefault(image_id, []).append(
-            CollectionRefOut(id=collection.id, name=collection.name)
-        )
+        refs = result.setdefault(image_id, [])
+        if not any(ref.id == collection.id for ref in refs):
+            refs.append(CollectionRefOut(id=collection.id, name=collection.name))
     return result
 
 
@@ -796,7 +808,7 @@ async def bulk_delete_images(
     with tracer.start_as_current_span("image.bulk_delete") as span:
         try:
             span.set_attribute("image.count", len(body.image_ids))
-            stmt = select(Image).where(Image.id.in_(body.image_ids))
+            stmt = select(Image).where(Image.id.in_(body.image_ids)).order_by(Image.id).with_for_update()
             result = await db.execute(stmt)
             images = result.scalars().all()
             if len(images) != len(set(body.image_ids)):
@@ -809,11 +821,14 @@ async def bulk_delete_images(
                     db, {image_id for image_id, _, _ in deleted_images}
                 )
             )
+            await bump_board_membership_versions(db, image_ids=body.image_ids)
+            slot_paths = await image_slot_thumbs(db, body.image_ids)
             for img in images:
                 await db.delete(img)
             if browse_dirty:
                 await bump_browse_revision(db)
             await db.commit()
+            await cleanup_slot_thumbs(slot_paths)
             for image_id, image_name, category_id in deleted_images:
                 logger.info(
                     "Image deleted",
@@ -826,6 +841,8 @@ async def bulk_delete_images(
                         **actor_log_fields(user, client_synthetic=x_client_synthetic),
                     },
                 )
+            for img in images:
+                await asyncio.to_thread(remove_image_marker_thumbnails, img)
         except Exception as exc:
             record_exception_if_server_error(span, exc)
             raise
@@ -841,7 +858,7 @@ async def delete_image(
     with tracer.start_as_current_span("image.delete") as span:
         try:
             span.set_attribute("image.id", image_id)
-            img = await db.get(Image, image_id)
+            img = await db.get(Image, image_id, with_for_update=True)
             if not img:
                 raise HTTPException(status_code=404, detail="Image not found")
             image_name = img.name
@@ -852,10 +869,14 @@ async def delete_image(
             member_of_collection = bool(
                 await image_ids_in_collections(db, {image_id})
             )
+            await bump_board_membership_versions(db, image_ids=[image_id])
+            slot_paths = await image_slot_thumbs(db, [image_id])
             await db.delete(img)
             if category_id is not None or member_of_collection:
                 await bump_browse_revision(db)
             await db.commit()
+            await cleanup_slot_thumbs(slot_paths)
+            await asyncio.to_thread(remove_image_marker_thumbnails, img)
             logger.info(
                 "Image deleted",
                 extra={

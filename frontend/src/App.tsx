@@ -9,7 +9,6 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Popover from '@mui/material/Popover'
@@ -18,8 +17,6 @@ import Button from '@mui/material/Button'
 import MuiBreadcrumbs from '@mui/material/Breadcrumbs'
 import Link from '@mui/material/Link'
 import Snackbar from '@mui/material/Snackbar'
-import Switch from '@mui/material/Switch'
-import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import AddIcon from '@mui/icons-material/Add'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
@@ -33,6 +30,7 @@ import LinkIcon from '@mui/icons-material/Link'
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
 import ChangePasswordDialog from './components/ChangePasswordDialog'
+import ViewerImageDetails from './components/ViewerImageDetails'
 import ImageDetailsDrawer, { ImageDetailsTrigger } from './components/ImageDetailsDrawer'
 import ImageViewerInfoBar from './components/ImageViewerInfoBar'
 import ViewportDialog from './components/ViewportDialog'
@@ -60,7 +58,11 @@ import LoginScreen from './components/LoginScreen'
 import EditImageModal from './components/EditImageModal'
 import ProgramManagementModal from './components/ProgramManagementModal'
 import GroupManagementModal from './components/GroupManagementModal'
-import NotificationMenu from './components/NotificationMenu'
+import NoticesShelf from './components/NoticesShelf'
+import AnnouncementBanner from './components/AnnouncementBanner'
+import AnnouncementsBell from './components/AnnouncementsBell'
+import AnnouncementsPage from './components/AnnouncementsPage'
+import AboutMenuItems from './components/AboutMenuItems'
 import GuidePage, { type GuideDocRequest } from './components/GuidePage'
 import ReportIssueModal from './components/ReportIssueModal'
 import SearchModal from './components/SearchModal'
@@ -82,6 +84,7 @@ import {
   collectionLinkFromBrowse,
   parseCollectionIdParam,
   parseCollectionItemParam,
+  parseCollectionSlotParam,
   studentTypesAtCap,
 } from './collectionUtils'
 import type { StageAddImages } from './components/CollectionManageDialog'
@@ -117,6 +120,8 @@ import {
   bulkDeleteCollections,
   ApiError,
   userMessage,
+  fetchAnnouncementBroadcast,
+  type ApiAnnouncementBroadcast,
 } from './api'
 import type { ApiCollectionSummary, ApiImage, ApiUser } from './api'
 import { mergeRenewedImageItemUrls } from './tileTokenRenewal'
@@ -150,12 +155,19 @@ import { formatCategoryItemCountsForCategory } from './components/categoryOption
 import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
 import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
-import { useShareableImageState } from './useShareableImageState'
+import { parseShareableUrlParams, useShareableImageState } from './useShareableImageState'
+import BoardDialog from './components/BoardDialog'
+import BoardsPage from './components/BoardsPage'
+import { markerViewParams, parseBoardLocation } from './boardUtils'
+import type { ApiMarker } from './types'
+import type { ViewportState } from './components/imageViewerUtils'
 import { useCanvasAnnotations } from './useCanvasAnnotations'
+import type { CanvasDraftHandle } from './useCanvasAnnotations'
 import { useOverlayPersistence } from './useOverlayPersistence'
 import { useCategoryActions } from './useCategoryActions'
 import { useImageActions } from './useImageActions'
-import { useAnnouncementModal } from './useAnnouncementModal'
+import { useAnnouncements } from './useAnnouncements'
+import { selectBannerAnnouncements } from './announcementUtils'
 import { useUserProfile } from './useUserProfile'
 import { useMostSevereScope, useTileOrdering } from './useTileOrdering'
 import { tileOrderingCoordinator } from './tileOrdering'
@@ -204,6 +216,40 @@ export default function App() {
   // Deployment flags (`GET /api/features`). Collections are dark-launched:
   // the tab and `?collection=` deep links only exist once the flag is on.
   const features = useFeatures()
+  const announcementsFeed = useAnnouncements(currentUser != null)
+  const [loginBroadcast, setLoginBroadcast] = useState<ApiAnnouncementBroadcast | null>(null)
+  useEffect(() => {
+    if (currentUser != null) return
+    let cancelled = false
+    const refresh = () => {
+      fetchAnnouncementBroadcast()
+        .then((rows) => {
+          if (!cancelled) setLoginBroadcast(rows[0] ?? null)
+        })
+        .catch(() => {
+          if (!cancelled) setLoginBroadcast(null)
+        })
+    }
+    refresh()
+    // Broadcast media tokens expire after ~60 min — refresh well before
+    // that so embedded media still resolves on a long-open login screen.
+    const timer = setInterval(refresh, 30 * 60 * 1000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [currentUser])
+  const bannerCandidates = selectBannerAnnouncements(announcementsFeed.announcements)
+  const bannerPost = bannerCandidates[0]
+  const [announcementsFocusId, setAnnouncementsFocusId] = useState<number | null>(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('page') !== 'announcements') return null
+    const id = Number(params.get('id'))
+    return Number.isInteger(id) && id > 0 ? id : null
+  })
+  const [announcementsComposeGroupId, setAnnouncementsComposeGroupId] = useState<number | null>(
+    null,
+  )
   const collectionsEnabled =
     features?.collections === true &&
     (currentUser?.role !== 'student' || features?.collectionsStudentAccess === true)
@@ -212,6 +258,9 @@ export default function App() {
   // `&item={image_id}` is the sequence viewer position (#1416).
   const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(() =>
     parseCollectionIdParam(window.location.search),
+  )
+  const [selectedCollectionSlotId, setSelectedCollectionSlotId] = useState<number | null>(() =>
+    parseCollectionSlotParam(window.location.search),
   )
   const [selectedCollectionItemId, setSelectedCollectionItemId] = useState<number | null>(() =>
     parseCollectionItemParam(window.location.search),
@@ -233,6 +282,44 @@ export default function App() {
   })
   const [collectionTypeSeedNonce, setCollectionTypeSeedNonce] = useState(0)
   const [collectionsRefreshToken, setCollectionsRefreshToken] = useState(0)
+  const [boardLocation, setBoardLocation] = useState(() =>
+    parseBoardLocation(window.location.search),
+  )
+  // Marker the viewer should select and reveal after external navigation
+  // (Boards & Markers list or a `?marker=` link). Seeded from the URL so
+  // deep links and history entries carry the target marker. `navigate`
+  // re-centres on the marker's saved view — skipped when the URL carries
+  // explicit viewport coords (a shared current view wins over the marker's).
+  // `viewport` then carries those coords so a mounted viewer can restore
+  // them on a same-image history pop, where initialViewport cannot.
+  const [markerFocus, setMarkerFocus] = useState<{
+    id: number
+    imageId: number
+    navigate?: boolean
+    viewport?: ViewportState
+  } | null>(() => {
+    const parsed = parseShareableUrlParams()
+    return parsed.markerId != null && parsed.imageId != null
+      ? {
+          id: parsed.markerId,
+          imageId: parsed.imageId,
+          navigate: parsed.viewport == null,
+          viewport: parsed.viewport,
+        }
+      : null
+  })
+  // Board opened from a viewer drawer heading — stays on the current image.
+  const [boardDialogId, setBoardDialogId] = useState<number | null>(null)
+  // Bumped when the in-place Board dialog mutates Marker/Board data so the
+  // mounted viewer reloads its marker list and Board summaries.
+  const [markersReloadTick, setMarkersReloadTick] = useState(0)
+  // Container of the viewer that opened the in-place Board dialog — the
+  // dialog portals into it so it stays visible in full-page viewer mode.
+  const [boardDialogContainer, setBoardDialogContainer] = useState<HTMLElement | null>(null)
+  const handleOpenBoardDialog = (id: number, container?: HTMLElement | null) => {
+    setBoardDialogId(id)
+    setBoardDialogContainer(container ?? null)
+  }
   const [page, setPage] = useState<Page>(() => {
     if (parseCollectionIdParam(window.location.search) != null) return 'collections'
     const p = new URLSearchParams(window.location.search).get('page')
@@ -240,11 +327,13 @@ export default function App() {
     if (p === LEGACY_MANAGE_COLLECTIONS_PAGE) return 'collections'
     if (
       p === 'collections' ||
+      p === 'boards' ||
       p === 'manage' ||
       p === 'measurement' ||
       p === 'people' ||
       p === 'admin' ||
-      p === 'guide'
+      p === 'guide' ||
+      p === 'announcements'
     )
       return p
     return 'browse'
@@ -260,7 +349,16 @@ export default function App() {
         ? 'browse'
         : page === 'collections' && features != null && !collectionsEnabled
           ? 'browse'
-          : page
+          : page === 'boards' && features != null && !features.markers
+            ? 'browse'
+            : page
+
+  useEffect(() => {
+    if (features == null || features.markers || page !== 'boards') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- flags arrive after the deep link is parsed
+    setPage('browse')
+    setBoardLocation({ boardId: null })
+  }, [features, page])
 
   // A collections deep link on a deployment with the flag off falls back to
   // browse once the flags are known (the page renders nothing until then).
@@ -332,6 +430,15 @@ export default function App() {
     })
   }, [path, currentUser, page])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
+  // Leaving the Marker-focused image consumes the focus, so returning to it
+  // through Browse/Collections opens the canvas without a Marker card.
+  const focusImageId = selectedImage?.id ?? null
+  const [prevFocusImageId, setPrevFocusImageId] = useState(focusImageId)
+  if (focusImageId !== prevFocusImageId) {
+    setPrevFocusImageId(focusImageId)
+    if (markerFocus && prevFocusImageId === markerFocus.imageId) setMarkerFocus(null)
+  }
+  const graphImageEpoch = useRef(0)
   // "Image details" drawer open state; closed on every image change
   // (including leave -> return to the same image) and on canvas edit entry.
   const [imageDetailsOpen, setImageDetailsOpen] = useState(false)
@@ -464,7 +571,6 @@ export default function App() {
   const [backendVersion, setBackendVersion] = useState<string | null>(null)
   const [backupVersion, setBackupVersion] = useState<string | null>(null)
   const [frontendVersion, setFrontendVersion] = useState<string | null>(null)
-  const [changelogVersion, setChangelogVersion] = useState(0)
 
   // Browse data (categories, images, collections, programs, background refresh)
   const {
@@ -521,6 +627,7 @@ export default function App() {
   // active; the `move`/`loadCollection` actions are mounted unconditionally
   // so filed Browse collection moves (#1529) keep list/detail state in sync.
   const collectionsData = useCollectionsData({
+    markersEnabled: features?.markers === true,
     enabled: collectionsEnabled && page === 'collections' && currentUser != null,
     currentUser,
     selectedCollectionId,
@@ -649,7 +756,7 @@ export default function App() {
         if (!cancelled) {
           setMyCollectionsCapState({
             userId: currentUser.id,
-            types: studentTypesAtCap(rows.map(apiCollectionSummaryToSummary), currentUser),
+            types: studentTypesAtCap((rows ?? []).map(apiCollectionSummaryToSummary), currentUser),
           })
         }
       })
@@ -745,9 +852,6 @@ export default function App() {
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [ancestorGroupIds, groups, liveCategoryPath, path.length])
-  const bumpChangelogVersion = useCallback(() => {
-    setChangelogVersion((version) => version + 1)
-  }, [])
   const renderBreadcrumbChips = (
     items: Array<{ id: number; name: string; inherited: boolean }>,
     kind: 'program' | 'group',
@@ -891,9 +995,12 @@ export default function App() {
     path,
     collectionId: selectedCollectionId,
     collectionItemId: selectedCollectionItemId,
+    collectionSlotId: features?.markers ? selectedCollectionSlotId : null,
     collectionFromBrowse,
     collectionTypeFilter:
       collectionsData.filters.type === 'all' ? undefined : collectionsData.filters.type,
+    boardId: boardLocation.boardId,
+    focusedMarker: markerFocus,
     setPath,
     setSelectedImage,
   })
@@ -941,6 +1048,11 @@ export default function App() {
   } | null>(null)
   const pendingNavigationRef = useRef<(() => void) | null>(null)
   const [discardNavigationOpen, setDiscardNavigationOpen] = useState(false)
+  // Edit draft living inside a collection viewer (#1863) — the sequence
+  // viewer registers its dirty/saving state + discard here so the same
+  // navigation guards that protect the image-viewer draft cover collection
+  // item switching and closing the collection.
+  const collectionCanvasDraftRef = useRef<CanvasDraftHandle | null>(null)
   const [imagesVersion, setImagesVersion] = useState(0)
   useEffect(() => {
     setImagesVersionRef.current = setImagesVersion
@@ -965,11 +1077,11 @@ export default function App() {
       traversal?: { historyIndex?: number },
       poppedCollectionFromBrowse?: boolean,
     ) => {
-      if (canvasSavingRef.current && traversal) {
+      if ((canvasSavingRef.current || collectionCanvasDraftRef.current?.saving) && traversal) {
         setErrorSnack('Please wait for the annotation save to finish.')
         return false
       }
-      if (canvasDraftDirtyRef.current && traversal) {
+      if ((canvasDraftDirtyRef.current || collectionCanvasDraftRef.current?.dirty) && traversal) {
         pendingPopStateRef.current = {
           page: popPage,
           catIds,
@@ -983,13 +1095,24 @@ export default function App() {
       const validPage = (
         popPage === LEGACY_MANAGE_COLLECTIONS_PAGE
           ? 'collections'
-          : ['browse', 'collections', 'manage', 'measurement', 'people', 'admin', 'guide'].includes(
-                popPage,
-              )
+          : [
+                'browse',
+                'boards',
+                'collections',
+                'manage',
+                'measurement',
+                'people',
+                'admin',
+                'guide',
+                'announcements',
+              ].includes(popPage)
             ? popPage
             : 'browse'
       ) as Page
       setPage(validPage)
+      setBoardLocation(
+        validPage === 'boards' ? parseBoardLocation(window.location.search) : { boardId: null },
+      )
       if (popPage === LEGACY_MANAGE_COLLECTIONS_PAGE) setCollectionsInitialView('table')
       // The collection id lives in the URL (`?collection=`), which the browser
       // has already restored by the time popstate fires. `?item=` (sequence
@@ -1007,6 +1130,9 @@ export default function App() {
           setCollectionsRefreshToken((n) => n + 1)
         }
       }
+      setSelectedCollectionSlotId(
+        validPage === 'collections' ? parseCollectionSlotParam(window.location.search) : null,
+      )
       setSelectedCollectionItemId(
         validPage === 'collections' ? parseCollectionItemParam(window.location.search) : null,
       )
@@ -1023,6 +1149,7 @@ export default function App() {
         setSelectedImage(null)
         setViewportState(undefined)
         setOverlays([])
+        setMarkerFocus(null)
         return true
       }
 
@@ -1032,6 +1159,7 @@ export default function App() {
         setSelectedImage(null)
         setViewportState(undefined)
         setOverlays([])
+        setMarkerFocus(null)
         return true
       }
 
@@ -1056,7 +1184,18 @@ export default function App() {
       } else {
         setSelectedImage(null)
       }
-      setViewportState(undefined)
+      const popped = parseShareableUrlParams()
+      setViewportState(popped.viewport)
+      setMarkerFocus(
+        popped.markerId != null && imageId != null
+          ? {
+              id: popped.markerId,
+              imageId,
+              navigate: popped.viewport == null,
+              viewport: popped.viewport,
+            }
+          : null,
+      )
       setOverlays([])
       return true
     },
@@ -1073,26 +1212,6 @@ export default function App() {
         traversal?.collectionFromBrowse,
       ),
   )
-
-  // Announcement modal state (load, draft, save) — extracted to useAnnouncementModal hook
-  const {
-    announcement,
-    annMessage,
-    annEnabled,
-    dismissAnnouncement,
-    loadAnnouncement,
-    annModalOpen,
-    setAnnModalOpen,
-    annDraftMessage,
-    setAnnDraftMessage,
-    annDraftEnabled,
-    setAnnDraftEnabled,
-    annSaving,
-    annError,
-    setAnnError,
-    openAnnModal,
-    handleAnnSave,
-  } = useAnnouncementModal(currentUser?.id)
 
   // User profile popover + edit modal state — extracted to useUserProfile hook
   const {
@@ -1212,18 +1331,7 @@ export default function App() {
         loadGroups()
       }
     }
-    if (!usersLoading) {
-      loadAnnouncement()
-    }
-  }, [
-    currentUser,
-    usersLoading,
-    loadCategories,
-    loadUncategorizedImages,
-    loadPrograms,
-    loadGroups,
-    loadAnnouncement,
-  ])
+  }, [currentUser, usersLoading, loadCategories, loadUncategorizedImages, loadPrograms, loadGroups])
 
   // Load users for search when modal opens (admin/instructor only)
   useEffect(() => {
@@ -1385,6 +1493,13 @@ export default function App() {
     [setGroups],
   )
 
+  // After any image metadata write (annotations, locked overlays) the
+  // image-viewer host refreshes both lists (#1863 generalized the hooks to
+  // this callback so collection viewers can swap the member instead).
+  const handleImageSaved = useCallback(async () => {
+    await Promise.all([loadCategories(), loadUncategorizedImages()])
+  }, [loadCategories, loadUncategorizedImages])
+
   // Canvas annotations (extracted to useCanvasAnnotations hook)
   const {
     localCanvasAnnotations,
@@ -1398,8 +1513,7 @@ export default function App() {
     latestMetadataRef,
   } = useCanvasAnnotations({
     selectedImage,
-    loadCategories,
-    loadUncategorizedImages,
+    onImageSaved: handleImageSaved,
     setErrorSnack,
   })
 
@@ -1409,7 +1523,13 @@ export default function App() {
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!canvasDraftDirtyRef.current && !canvasSavingRef.current) return
+      if (
+        !canvasDraftDirtyRef.current &&
+        !canvasSavingRef.current &&
+        !collectionCanvasDraftRef.current?.dirty &&
+        !collectionCanvasDraftRef.current?.saving
+      )
+        return
       event.preventDefault()
       event.returnValue = ''
     }
@@ -1418,11 +1538,11 @@ export default function App() {
   }, [])
 
   const runCanvasNavigation = useCallback((action: () => void) => {
-    if (canvasSavingRef.current) {
+    if (canvasSavingRef.current || collectionCanvasDraftRef.current?.saving) {
       setErrorSnack('Please wait for the annotation save to finish.')
       return
     }
-    if (!canvasDraftDirtyRef.current) {
+    if (!canvasDraftDirtyRef.current && !collectionCanvasDraftRef.current?.dirty) {
       setCanvasEditActive(false)
       action()
       return
@@ -1432,11 +1552,14 @@ export default function App() {
   }, [])
 
   const confirmCanvasNavigationDiscard = useCallback(() => {
-    if (canvasSavingRef.current) {
+    if (canvasSavingRef.current || collectionCanvasDraftRef.current?.saving) {
       setErrorSnack('Please wait for the annotation save to finish.')
       return
     }
-    discardCanvasAnnotations()
+    // Discard whichever draft was blocking (at most one can be dirty — the
+    // guards prevent navigating from one dirty context into another).
+    collectionCanvasDraftRef.current?.discard()
+    if (canvasDraftDirtyRef.current) discardCanvasAnnotations()
     canvasDraftDirtyRef.current = false
     setCanvasEditActive(false)
     setDiscardNavigationOpen(false)
@@ -1486,8 +1609,7 @@ export default function App() {
     selectedImage,
     latestVersionRef,
     latestMetadataRef,
-    loadCategories,
-    loadUncategorizedImages,
+    onImageSaved: handleImageSaved,
     setLockEngaged,
     setErrorSnack,
   })
@@ -1670,6 +1792,24 @@ export default function App() {
       )
     },
     [setCategories, setUncategorizedImages],
+  )
+
+  // Collection-viewer saves swap the member inside the open collection
+  // AND replace the record in the browse caches + selected image —
+  // otherwise a browser back into the regular viewer would restore the
+  // pre-edit record and show stale annotations. `mergeRenewedImageItemUrls`
+  // only covers tile credentials, so the saved record is swapped in whole
+  // via `apiImageToItem` (same as `renewCollectionImage` itself).
+  const renewCollectionImage = collectionsData.renewCollectionImage
+  const handleCollectionImageRenewed = useCallback(
+    (collectionId: number, image: ApiImage) => {
+      renewCollectionImage(collectionId, image)
+      const fresh = apiImageToItem(image)
+      setCategories((prev) => updateImageInTree(prev, image.id, () => fresh))
+      setUncategorizedImages((prev) => prev.map((cur) => (cur.id === image.id ? fresh : cur)))
+      setSelectedImage((prev) => (prev?.id === image.id ? fresh : prev))
+    },
+    [renewCollectionImage, setCategories, setUncategorizedImages],
   )
 
   const handleCategoryTileClick = useCallback(
@@ -1861,11 +2001,28 @@ export default function App() {
     }
   }, [canEditContent])
 
+  const openAnnouncementsPage = useCallback(
+    (announcementId?: number, composeGroupId?: number) => {
+      setAnnouncementsFocusId(announcementId ?? null)
+      setAnnouncementsComposeGroupId(composeGroupId ?? null)
+      setPage('announcements')
+      pushNavState(
+        'announcements',
+        [],
+        null,
+        announcementId != null ? { id: String(announcementId) } : undefined,
+      )
+    },
+    [pushNavState],
+  )
+
   const handleTabChange = useCallback(
     (v: Page) => {
+      graphImageEpoch.current++
       runCanvasNavigation(() => {
         if (v === 'collections') setCollectionsRefreshToken((n) => n + 1)
         setPage(v)
+        setBoardLocation({ boardId: null })
         setSelectedCollectionId(null)
         setCollectionFromBrowse(false)
         clearImage()
@@ -1912,6 +2069,7 @@ export default function App() {
         setPage('collections')
         setSelectedCollectionId(id)
         setSelectedCollectionItemId(null)
+        setSelectedCollectionSlotId(null)
         clearImage()
         // From a Browse tile the detail sits "on top of" the current scope:
         // `path` keeps the Browse location, the URL carries `?cat=` so the
@@ -1931,26 +2089,29 @@ export default function App() {
   )
 
   const handleCloseCollection = useCallback(() => {
-    setSelectedCollectionId(null)
-    setSelectedCollectionItemId(null)
-    if (collectionFromBrowse) {
-      // `path` still holds the Browse scope the tile was opened from (#1529).
-      setCollectionFromBrowse(false)
-      setPage('browse')
+    runCanvasNavigation(() => {
+      setSelectedCollectionId(null)
+      setSelectedCollectionItemId(null)
+      setSelectedCollectionSlotId(null)
+      if (collectionFromBrowse) {
+        // `path` still holds the Browse scope the tile was opened from (#1529).
+        setCollectionFromBrowse(false)
+        setPage('browse')
+        pushNavState(
+          'browse',
+          path.map((c) => c.id),
+        )
+        return
+      }
+      setCollectionsRefreshToken((n) => n + 1)
       pushNavState(
-        'browse',
-        path.map((c) => c.id),
+        'collections',
+        [],
+        null,
+        collectionsData.filters.type === 'all' ? undefined : { type: collectionsData.filters.type },
       )
-      return
-    }
-    setCollectionsRefreshToken((n) => n + 1)
-    pushNavState(
-      'collections',
-      [],
-      null,
-      collectionsData.filters.type === 'all' ? undefined : { type: collectionsData.filters.type },
-    )
-  }, [collectionFromBrowse, path, pushNavState, collectionsData.filters.type])
+    })
+  }, [collectionFromBrowse, path, pushNavState, collectionsData.filters.type, runCanvasNavigation])
 
   // Detail-header breadcrumb (#1559): jump from the open collection to its
   // filed Browse scope (or the root for `Home`). Clears the detail like
@@ -1960,6 +2121,7 @@ export default function App() {
       runCanvasNavigation(() => {
         setSelectedCollectionId(null)
         setSelectedCollectionItemId(null)
+        setSelectedCollectionSlotId(null)
         setCollectionFromBrowse(false)
         setPath(categoryPath)
         setPage('browse')
@@ -2125,22 +2287,33 @@ export default function App() {
   // Sequence viewer: `?collection={id}&item={image_id}` keeps the position
   // shareable and in history, so back steps through viewed items (#1416).
   const handleSelectCollectionItem = useCallback(
-    (imageId: number) => {
-      setSelectedCollectionItemId(imageId)
-      if (selectedCollectionId != null) {
-        pushNavState(
-          'collections',
-          collectionFromBrowse ? path.map((c) => c.id) : [],
-          null,
-          {
-            collection: String(selectedCollectionId),
-            item: String(imageId),
-          },
-          { collectionFromBrowse },
-        )
-      }
+    (imageId: number, slotId?: number) => {
+      runCanvasNavigation(() => {
+        setSelectedCollectionItemId(imageId)
+        setSelectedCollectionSlotId(slotId ?? null)
+        if (selectedCollectionId != null) {
+          pushNavState(
+            'collections',
+            collectionFromBrowse ? path.map((c) => c.id) : [],
+            null,
+            {
+              collection: String(selectedCollectionId),
+              item: String(imageId),
+              ...(features?.markers && slotId != null ? { slot: String(slotId) } : {}),
+            },
+            { collectionFromBrowse },
+          )
+        }
+      })
     },
-    [collectionFromBrowse, path, pushNavState, selectedCollectionId],
+    [
+      collectionFromBrowse,
+      path,
+      pushNavState,
+      selectedCollectionId,
+      runCanvasNavigation,
+      features?.markers,
+    ],
   )
 
   // Drop an `?item=` that does not resolve to a visible member (deleted image,
@@ -2151,13 +2324,18 @@ export default function App() {
     if (
       detail == null ||
       selectedCollectionItemId == null ||
-      detail.images.some((img) => img.id === selectedCollectionItemId)
+      detail.images.some(
+        (img) =>
+          img.id === selectedCollectionItemId ||
+          (selectedCollectionSlotId != null && img.slot?.id === selectedCollectionSlotId),
+      )
     ) {
       return
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- drop a stale ?item= once the collection detail resolves
     setSelectedCollectionItemId(null)
-  }, [collectionsData.detail, selectedCollectionItemId])
+    setSelectedCollectionSlotId(null)
+  }, [collectionsData.detail, selectedCollectionItemId, selectedCollectionSlotId])
 
   // "Add to Collection" from the image view (#1415) and from search
   // multi-select (#1418) — both paths set the target image ids before opening.
@@ -2249,7 +2427,11 @@ export default function App() {
         )
         return false
       } catch (err) {
-        setErrorSnack(userMessage(err, 'Failed to add to collection.'))
+        setErrorSnack(
+          userMessage(err, "Couldn't add to the collection. Please try again.", {
+            includeServerDetail: true,
+          }),
+        )
         return false
       }
     },
@@ -2289,12 +2471,20 @@ export default function App() {
 
   const handleCreateCollectionWithImage = useCallback(
     async (values: CollectionFormValues) => {
-      const created = await createCollectionWithImages(values, addToCollectionImageIds)
+      const created = features?.markers
+        ? await createCollectionWithImages(values, addToCollectionImageIds, true)
+        : await createCollectionWithImages(values, addToCollectionImageIds)
       if (created.categoryId != null) refreshCategories()
       reloadMyCollectionsShelf()
       reportAddedToCollection(created, addToCollectionImageIds.length)
     },
-    [addToCollectionImageIds, refreshCategories, reloadMyCollectionsShelf, reportAddedToCollection],
+    [
+      addToCollectionImageIds,
+      refreshCategories,
+      reloadMyCollectionsShelf,
+      reportAddedToCollection,
+      features?.markers,
+    ],
   )
 
   // "Open image" from the collection detail placeholder → the regular
@@ -2320,10 +2510,9 @@ export default function App() {
   // hop (#1636 review): navigating anywhere, clicking another node, or
   // switching the collection detail before the fetch lands must not be
   // overwritten by the stale result (#1638 review).
-  const graphImageEpoch = useRef(0)
   useEffect(() => {
     graphImageEpoch.current += 1
-  }, [page, selectedCollectionId])
+  }, [page, selectedCollectionId, boardLocation.boardId, currentUser?.id, features?.markers])
   const handleOpenGraphImage = useCallback(
     (imageId: number) => {
       const epoch = ++graphImageEpoch.current
@@ -2337,6 +2526,33 @@ export default function App() {
         })
     },
     [handleOpenCollectionImage],
+  )
+
+  const handleOpenBoardMarker = useCallback(
+    (item: ApiMarker) => {
+      const epoch = ++graphImageEpoch.current
+      void apiFetchImage(item.image_id)
+        .then((api) => {
+          if (epoch !== graphImageEpoch.current) return
+          runCanvasNavigation(() => {
+            clearPending()
+            setOverlays([])
+            setViewportState({ x: item.x, y: item.y, zoom: item.zoom, rotation: item.rotation })
+            setSelectedImage(apiImageToItem(api))
+            setPath([])
+            setSelectedCollectionId(null)
+            setCollectionFromBrowse(false)
+            setMarkerFocus({ id: item.id, imageId: item.image_id, navigate: true })
+            setPage('browse')
+            pushNavState('browse', [], item.image_id, markerViewParams(item))
+          })
+        })
+        .catch((err) => {
+          if (epoch === graphImageEpoch.current)
+            setErrorSnack(userMessage(err, 'Failed to load the image.'))
+        })
+    },
+    [clearPending, setOverlays, setViewportState, runCanvasNavigation, pushNavState],
   )
 
   // Saving/deleting from the shared edit modal can change an image's stored
@@ -2362,7 +2578,7 @@ export default function App() {
 
   // Show login screen when no user is authenticated
   if (!currentUser) {
-    return <LoginScreen onLogin={login} announcement={announcement} />
+    return <LoginScreen onLogin={login} broadcast={loginBroadcast} />
   }
 
   const viewerReplaceUploadProgress = getReplaceUploadProgress('viewer')
@@ -2378,11 +2594,31 @@ export default function App() {
       canManageUsers={canManageUsers}
       canViewPeople={canViewPeople}
       collectionsEnabled={collectionsEnabled}
+      markersEnabled={features?.markers === true}
       currentUser={currentUser}
-      announcement={announcement}
-      annMessage={annMessage}
-      annEnabled={annEnabled}
-      onDismissAnnouncement={dismissAnnouncement}
+      bannerSlot={
+        bannerPost ? (
+          <AnnouncementBanner
+            key={bannerPost.id}
+            title={bannerPost.title}
+            message={bannerPost.message}
+            mediaTokens={bannerPost.media_tokens}
+            kind={bannerPost.kind}
+            onDismiss={() => announcementsFeed.markSeen(bannerPost)}
+            moreCount={bannerCandidates.length - 1}
+            onMore={() => openAnnouncementsPage()}
+          />
+        ) : undefined
+      }
+      profileMenuExtras={
+        <AboutMenuItems
+          frontendVersion={frontendVersion}
+          backendVersion={backendVersion}
+          backupVersion={backupVersion}
+          onOpenGuide={canEditContent ? () => handleTabChange('guide') : undefined}
+          onNavigate={() => setProfileOpen(false)}
+        />
+      }
       profileOpen={profileOpen}
       setProfileOpen={setProfileOpen}
       avatarRef={avatarRef}
@@ -2392,7 +2628,6 @@ export default function App() {
       onOpenCategories={() => setDialogOpen(true)}
       onOpenPrograms={() => setProgramModalOpen(true)}
       onOpenGroups={() => setGroupModalOpen(true)}
-      onOpenAnnouncement={openAnnModal}
       onSearchOpen={openSearch}
       mode={mode}
       frontendVersion={frontendVersion}
@@ -2424,21 +2659,12 @@ export default function App() {
         ) : null
       }
       notificationSlot={
-        currentUser.role === 'admin' || currentUser.role === 'instructor' ? (
-          <NotificationMenu
-            userEmail={currentUser.email}
-            serverLastReadAt={
-              typeof currentUser.metadataExtra?.changelog_last_read_at === 'string'
-                ? currentUser.metadataExtra.changelog_last_read_at
-                : null
-            }
-            frontendVersion={frontendVersion}
-            backendVersion={backendVersion}
-            backupVersion={backupVersion}
-            changelogVersion={changelogVersion}
-            onOpenGuide={() => handleTabChange('guide')}
-          />
-        ) : null
+        <AnnouncementsBell
+          announcements={announcementsFeed.announcements}
+          unseenCount={announcementsFeed.unseenCount}
+          onOpenAnnouncements={(id) => openAnnouncementsPage(id)}
+          onMarkSeen={announcementsFeed.markSeen}
+        />
       }
     >
       {/* Main content */}
@@ -2475,10 +2701,49 @@ export default function App() {
               : {}),
           }}
         >
-          {page === 'guide' && canEditContent ? (
+          {page === 'boards' ? (
+            <BoardsPage
+              key={currentUser.id}
+              enabled={features?.markers === true}
+              currentUser={currentUser}
+              programs={programs}
+              groups={groups}
+              boardId={boardLocation.boardId}
+              onOpenMarker={handleOpenBoardMarker}
+              collectionsEnabled={collectionsEnabled}
+              categories={categories}
+              onOpenCollection={handleOpenCollection}
+              onNavigateCategory={(categoryPath) => {
+                runCanvasNavigation(() => {
+                  setPath(categoryPath)
+                  setPage('browse')
+                  pushNavState(
+                    'browse',
+                    categoryPath.map((c) => c.id),
+                  )
+                })
+              }}
+              onSelectBoard={(boardId) => {
+                graphImageEpoch.current++
+                setBoardLocation({ boardId })
+                const params: Record<string, string> = {}
+                if (boardId != null) params.board = String(boardId)
+                pushNavState('boards', [], null, params)
+              }}
+            />
+          ) : page === 'announcements' ? (
+            <AnnouncementsPage
+              currentUser={currentUser}
+              feed={announcementsFeed}
+              canCompose={canEditContent}
+              focusId={announcementsFocusId}
+              composeGroupId={announcementsComposeGroupId}
+              onComposeGroupConsumed={() => setAnnouncementsComposeGroupId(null)}
+            />
+          ) : page === 'guide' && canEditContent ? (
             <GuidePage docRequest={guideDocRequest} />
           ) : page === 'admin' && canManageUsers ? (
-            <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
+            <AdminPage />
           ) : page === 'measurement' && canEditContent ? (
             <MeasurementReviewPage
               onOpenImage={handleOpenGraphImage}
@@ -2487,6 +2752,7 @@ export default function App() {
             />
           ) : page === 'collections' && !collectionsEnabled ? null : page === 'collections' ? (
             <CollectionsPage
+              markersEnabled={features?.markers === true}
               currentUser={currentUser}
               programs={programs}
               groups={groups}
@@ -2511,12 +2777,17 @@ export default function App() {
               onOpenCollection={handleOpenCollection}
               onCloseCollection={handleCloseCollection}
               onOpenImage={handleOpenCollectionImage}
+              onOpenBoard={handleOpenBoardDialog}
+              markersReloadSignal={markersReloadTick}
               onOpenImageById={handleOpenGraphImage}
               selectedCollectionItemId={selectedCollectionItemId}
+              selectedCollectionSlotId={features?.markers ? selectedCollectionSlotId : null}
               onSelectCollectionItem={handleSelectCollectionItem}
               onReorderImages={collectionsData.reorderImages}
-              onCollectionImageRenewed={collectionsData.renewCollectionImage}
+              onCollectionImageRenewed={handleCollectionImageRenewed}
               onViewerError={setErrorSnack}
+              canAnnotateImages={canEditContent}
+              canvasDraftRef={collectionCanvasDraftRef}
               onViewChange={setCollectionsListView}
               onSaveViewport={collectionsData.saveViewport}
               loadCollection={collectionsData.loadCollection}
@@ -2658,6 +2929,9 @@ export default function App() {
                   mb: 2,
                   gap: 1,
                   flexShrink: 0,
+                  // Buttons are size="small" (30.75px) — keep the row at the
+                  // historical 36.5px so content position doesn't shift.
+                  minHeight: 36.5,
                 }}
               >
                 <Box
@@ -2783,6 +3057,7 @@ export default function App() {
                         return (
                           <Button
                             variant="text"
+                            size="small"
                             startIcon={<VisibilityOff />}
                             disabled
                             aria-label="Visibility: Hidden by category"
@@ -2799,6 +3074,7 @@ export default function App() {
                         return (
                           <Button
                             variant="text"
+                            size="small"
                             startIcon={<VisibilityOff />}
                             onClick={() => {
                               toggleImageVisibility(selectedImage.id).catch(() => {})
@@ -2813,6 +3089,7 @@ export default function App() {
                       return (
                         <Button
                           variant="text"
+                          size="small"
                           startIcon={<Visibility />}
                           onClick={() => {
                             toggleImageVisibility(selectedImage.id).catch(() => {})
@@ -2835,6 +3112,7 @@ export default function App() {
                       <span>
                         <Button
                           variant="outlined"
+                          size="small"
                           startIcon={<PlaylistAddIcon />}
                           onClick={() => {
                             setAddToCollectionImageIds([selectedImage.id])
@@ -2853,6 +3131,7 @@ export default function App() {
                       <span>
                         <Button
                           variant="contained"
+                          size="small"
                           startIcon={<EditIcon />}
                           onClick={() => setImageEditOpen(true)}
                           disabled={canvasEditActive}
@@ -2863,16 +3142,19 @@ export default function App() {
                       </span>
                     </Tooltip>
                   )}
-                  <Tooltip title="Copy shareable link to clipboard">
-                    <Button
-                      variant="outlined"
-                      startIcon={<LinkIcon />}
-                      onClick={copyShareLink}
-                      sx={inactiveViewerActionSx}
-                    >
-                      Share View
-                    </Button>
-                  </Tooltip>
+                  {features?.markers !== true && (
+                    <Tooltip title="Copy shareable link to clipboard">
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<LinkIcon />}
+                        onClick={copyShareLink}
+                        sx={inactiveViewerActionSx}
+                      >
+                        Share View
+                      </Button>
+                    </Tooltip>
+                  )}
                 </Box>
               </Box>
 
@@ -2889,12 +3171,18 @@ export default function App() {
                 }}
               >
                 <ImageViewer
+                  markersEnabled={features?.markers === true}
+                  onShareView={copyShareLink}
+                  onOpenBoard={handleOpenBoardDialog}
+                  markersReloadSignal={markersReloadTick}
+                  markerFocus={
+                    markerFocus && markerFocus.imageId === selectedImage.id ? markerFocus : null
+                  }
                   key={selectedImage.id}
                   height={{ xs: '70vh', md: '100%' }}
                   tileSources={selectedImage.tileSources}
                   imageId={selectedImage.id}
                   categoryId={selectedImage.categoryId ?? undefined}
-                  countingEnabled={features?.counting === true}
                   onTileSourceRenewed={handleImageRenewed}
                   onError={(message) => setErrorSnack(message)}
                   initialViewport={initialViewport}
@@ -2918,17 +3206,9 @@ export default function App() {
                       setViewerDialog(null)
                     }
                   }}
-                  viewportControl={
-                    <ImageDetailsTrigger
-                      open={imageDetailsOpen}
-                      onOpenChange={setImageDetailsOpen}
-                      disabled={canvasEditActive}
-                      triggerRef={imageDetailsTriggerRef}
-                    />
-                  }
-                  viewportOverlay={
-                    <>
-                      <ImageDetailsDrawer
+                  sidePanelDetails={
+                    features?.markers === true ? (
+                      <ViewerImageDetails
                         image={selectedImage}
                         programNames={ancestorProgramIds.map(
                           (pid) =>
@@ -2938,11 +3218,38 @@ export default function App() {
                           (gid) => groups.find((group) => group.id === gid)?.name ?? String(gid),
                         )}
                         measurement={selectedImageMeasurement}
-                        sourceInfo={imageSourceInfo}
+                      />
+                    ) : undefined
+                  }
+                  viewportControl={
+                    features?.markers === true ? null : (
+                      <ImageDetailsTrigger
                         open={imageDetailsOpen}
                         onOpenChange={setImageDetailsOpen}
+                        disabled={canvasEditActive}
                         triggerRef={imageDetailsTriggerRef}
                       />
+                    )
+                  }
+                  viewportOverlay={
+                    <>
+                      {features?.markers !== true && (
+                        <ImageDetailsDrawer
+                          image={selectedImage}
+                          programNames={ancestorProgramIds.map(
+                            (pid) =>
+                              programs.find((program) => program.id === pid)?.name ?? String(pid),
+                          )}
+                          groupNames={ancestorGroupIds.map(
+                            (gid) => groups.find((group) => group.id === gid)?.name ?? String(gid),
+                          )}
+                          measurement={selectedImageMeasurement}
+                          sourceInfo={imageSourceInfo}
+                          open={imageDetailsOpen}
+                          onOpenChange={setImageDetailsOpen}
+                          triggerRef={imageDetailsTriggerRef}
+                        />
+                      )}
                       <ViewportDialog
                         open={viewerDialog === 'note'}
                         title="Notes"
@@ -3005,6 +3312,12 @@ export default function App() {
           ) : (
             /* ---- Browse mode ---- */
             <>
+              {path.length === 0 && (
+                <NoticesShelf
+                  announcements={announcementsFeed.announcements}
+                  onOpenAnnouncements={(id) => openAnnouncementsPage(id)}
+                />
+              )}
               {/* Breadcrumbs + action buttons */}
               <Box
                 sx={{
@@ -3014,6 +3327,9 @@ export default function App() {
                   flexWrap: 'wrap',
                   mb: 2,
                   gap: 1,
+                  // Buttons are size="small" (30.75px) — keep the row at the
+                  // historical 36.5px so content position doesn't shift.
+                  minHeight: 36.5,
                 }}
               >
                 <Box
@@ -3179,6 +3495,7 @@ export default function App() {
                               return (
                                 <Button
                                   variant="text"
+                                  size="small"
                                   startIcon={<VisibilityOff />}
                                   disabled
                                   aria-label="Visibility: Hidden by parent category"
@@ -3195,6 +3512,7 @@ export default function App() {
                               return (
                                 <Button
                                   variant="text"
+                                  size="small"
                                   startIcon={<VisibilityOff />}
                                   onClick={() => toggleCategoryVisibility(current.id)}
                                   aria-label="Visibility: Show category"
@@ -3207,6 +3525,7 @@ export default function App() {
                             return (
                               <Button
                                 variant="text"
+                                size="small"
                                 startIcon={<Visibility />}
                                 onClick={() => toggleCategoryVisibility(current.id)}
                                 aria-label="Visibility: Hide category"
@@ -3219,6 +3538,7 @@ export default function App() {
                         {collectionsEnabled && (
                           <Button
                             variant="outlined"
+                            size="small"
                             startIcon={<AddIcon />}
                             onClick={openBrowseCollectionCreate}
                             sx={categoryPageHiddenSx}
@@ -3230,6 +3550,7 @@ export default function App() {
                           liveCategoryPath.length < MAX_DEPTH && (
                             <Button
                               variant="outlined"
+                              size="small"
                               startIcon={<CreateNewFolderIcon />}
                               onClick={() => setAddCatOpen(true)}
                               sx={categoryPageHiddenSx}
@@ -3239,6 +3560,7 @@ export default function App() {
                           )}
                         <Button
                           variant="contained"
+                          size="small"
                           startIcon={<AddPhotoAlternateIcon />}
                           onClick={() => setUploadOpen(true)}
                           sx={categoryPageHiddenSx}
@@ -3467,6 +3789,7 @@ export default function App() {
         </DialogContent>
         <DialogActions>
           <Button
+            size="small"
             onClick={() => {
               setDiscardNavigationOpen(false)
               pendingNavigationRef.current = null
@@ -3475,7 +3798,12 @@ export default function App() {
           >
             Keep Editing
           </Button>
-          <Button color="error" onClick={confirmCanvasNavigationDiscard} disabled={canvasSaving}>
+          <Button
+            size="small"
+            color="error"
+            onClick={confirmCanvasNavigationDiscard}
+            disabled={canvasSaving}
+          >
             Discard Changes
           </Button>
         </DialogActions>
@@ -3641,49 +3969,6 @@ export default function App() {
         selfProfile
       />
 
-      {/* Announcement modal (from Manage menu) */}
-      <Dialog open={annModalOpen} onClose={() => setAnnModalOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Manage Announcement</DialogTitle>
-        <DialogContent>
-          <TextField
-            label="Announcement Message"
-            multiline
-            minRows={3}
-            maxRows={8}
-            fullWidth
-            value={annDraftMessage}
-            onChange={(e) => setAnnDraftMessage(e.target.value)}
-            sx={{ mt: 1 }}
-          />
-          <FormControlLabel
-            control={
-              <Switch
-                checked={annDraftEnabled}
-                onChange={(e) => setAnnDraftEnabled(e.target.checked)}
-              />
-            }
-            label="Enable announcement"
-            sx={{ mt: 2 }}
-          />
-          {annError && (
-            <Alert severity="error" sx={{ mt: 2 }} onClose={() => setAnnError(null)}>
-              {annError}
-            </Alert>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAnnModalOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleAnnSave}
-            disabled={annSaving}
-            startIcon={annSaving ? <CircularProgress size={18} color="inherit" /> : undefined}
-          >
-            {annSaving ? 'Saving...' : 'Save'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
       {/* Program management modal (from Manage menu) */}
       <ProgramManagementModal
         open={programModalOpen}
@@ -3698,6 +3983,10 @@ export default function App() {
       <GroupManagementModal
         open={groupModalOpen}
         onClose={() => setGroupModalOpen(false)}
+        onPostToGroup={(groupId) => {
+          setGroupModalOpen(false)
+          openAnnouncementsPage(undefined, groupId)
+        }}
         groups={groups}
         onAdd={handleAddGroup}
         onEdit={handleEditGroup}
@@ -3787,6 +4076,16 @@ export default function App() {
         collections={searchableCollections.collections}
         collectionsEnabled={collectionsEnabled}
         onSelectCollection={handleOpenCollection}
+        markersEnabled={features?.markers === true}
+        onSelectMarker={handleOpenBoardMarker}
+        onSelectBoard={(boardId) =>
+          runCanvasNavigation(() => {
+            graphImageEpoch.current++
+            setBoardLocation({ boardId })
+            setPage('boards')
+            pushNavState('boards', [], null, { board: String(boardId) })
+          })
+        }
         onAddImagesToCollection={handleSearchAddToCollection}
         excludeHidden={isStudent}
         suppressExtendedResults={isStudent || currentUser?.role === 'staff'}
@@ -3841,6 +4140,30 @@ export default function App() {
             pushNavState('guide', [], null, { doc: slug })
             guideDocSeqRef.current += 1
             setGuideDocRequest({ slug, anchor, seq: guideDocSeqRef.current })
+          })
+        }}
+      />
+
+      {/* Board dialog opened from a viewer drawer heading — stays on the image. */}
+      <BoardDialog
+        boardId={boardDialogId}
+        currentUser={currentUser}
+        programs={programs}
+        groups={groups}
+        container={boardDialogContainer}
+        onClose={() => setBoardDialogId(null)}
+        onChanged={() => setMarkersReloadTick((tick) => tick + 1)}
+        onOpenMarker={(item) => {
+          setBoardDialogId(null)
+          handleOpenBoardMarker(item)
+        }}
+        onManage={(boardId) => {
+          setBoardDialogId(null)
+          runCanvasNavigation(() => {
+            graphImageEpoch.current++
+            setBoardLocation({ boardId })
+            setPage('boards')
+            pushNavState('boards', [], null, { board: String(boardId) })
           })
         }}
       />

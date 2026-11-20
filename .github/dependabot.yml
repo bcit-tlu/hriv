@@ -5,8 +5,8 @@
 # component so one PR lands per ecosystem per week; majors open individually.
 #
 # PR titles use conventional-commit prefixes (`chore(deps)`, `ci(deps)`).
-# pr-title-lint.yaml skips bot-authored PRs, and release-please does not add
-# `chore` commits to component changelogs.
+# pr-title-lint.yaml lints them like any other PR, and release-please does not
+# add `chore` commits to component changelogs.
 #
 # See docs/security-scanning.md for how to handle these PRs.
 #

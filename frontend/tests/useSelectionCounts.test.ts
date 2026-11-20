@@ -369,3 +369,68 @@ describe('useSelectionCounts', () => {
     expect(result.current.entries).toHaveLength(0)
   })
 })
+
+describe('manual adjustment (#1746)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    mocks.startCount.mockReset()
+    mocks.getCount.mockReset()
+    mocks.cancelCount.mockReset()
+    mocks.cancelCount.mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  async function doneEntry() {
+    const d = deferred<ApiCountJob>()
+    mocks.startCount.mockResolvedValue({ job_id: 'j1', status: 'queued', queue_position: 0 })
+    mocks.getCount.mockImplementation(() => d.promise)
+    const { result } = renderHook(() => useSelectionCounts(5))
+    await act(async () => {
+      void result.current.start('k', 'Selection 1', SEL, 'cells')
+    })
+    await act(async () => {
+      d.resolve(job({ status: 'done', total: 2, groups: [], objects: [] }))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    return result
+  }
+
+  it('toggleObject marks and unmarks a combined index', async () => {
+    const result = await doneEntry()
+    await act(async () => {
+      result.current.toggleObject('k', 1)
+    })
+    expect(result.current.entries[0].removed).toEqual([1])
+    await act(async () => {
+      result.current.toggleObject('k', 1)
+    })
+    expect(result.current.entries[0].removed).toEqual([])
+  })
+
+  it('addObject appends a manual outline; reset clears all adjustments', async () => {
+    const result = await doneEntry()
+    const obj = {
+      group: 0,
+      centroid: [5, 5] as [number, number],
+      polygon: [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [0, 10],
+      ] as [number, number][],
+    }
+    await act(async () => {
+      result.current.addObject('k', obj)
+    })
+    expect(result.current.entries[0].added).toEqual([{ ...obj, manual: true }])
+    await act(async () => {
+      result.current.toggleObject('k', 0)
+      result.current.resetAdjustments('k')
+    })
+    expect(result.current.entries[0].removed).toBeUndefined()
+    expect(result.current.entries[0].added).toBeUndefined()
+  })
+})

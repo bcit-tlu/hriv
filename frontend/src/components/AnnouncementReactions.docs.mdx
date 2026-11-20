@@ -1,0 +1,32 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as AnnouncementReactionsStories from './AnnouncementReactions.stories'
+
+<Meta of={AnnouncementReactionsStories} />
+
+<Title />
+
+<Subtitle>
+  Emoji reaction pills and the "Add reaction" picker, shared by `AnnouncementCard` and
+  `AnnouncementBanner`.
+</Subtitle>
+
+<Primary />
+<Controls />
+
+## Behaviour
+
+- Pills show every reaction with a count; the viewer's own are filled (`aria-pressed`).
+- The picker offers the eight allowlisted ids from `ANNOUNCEMENT_REACTIONS`; emoji are engagement
+  only, never kinds.
+- Without an `onToggleReaction` handler, or when the post is not live, pills are read-only and the
+  picker is hidden; with no reactions at all the component renders nothing.
+
+<Stories />

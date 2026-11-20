@@ -24,16 +24,20 @@ from uuid import uuid4
 import pyvips
 from opentelemetry import metrics, trace
 from opentelemetry.trace import StatusCode
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from .browse_state import bump_browse_revision
+from .board_memberships import bump_board_membership_versions
 from .collection_views import image_ids_in_collections
 from .database import async_session, settings
 from .measurement.service import scan_after_processing
+from .marker_thumbs import remove_image_marker_thumbnails
+from .collection_slots import cleanup_slot_thumbs, image_slot_thumbs
+from .snapshot_files import SNAPSHOT_NAMESPACES
 from .auth_events import actor_log_fields
-from .models import Image, MeasurementFinding, SourceImage, User
+from .models import Image, Marker, MeasurementFinding, SourceImage, User
 from .queue_metrics import collect_queue_state
 from .task_constants import (
     BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
@@ -1040,6 +1044,7 @@ async def process_replace_image(
             # Capture old tile directory path before updating Image record
             old_tile_dir: str | None = None
             old_tile_sources = img.tile_sources  # e.g. /api/tiles/42/image.dzi
+            old_thumbnail_image = Image(tile_sources=old_tile_sources)
             if old_tile_sources:
                 parts = old_tile_sources.strip("/").split("/")
                 # Expected format: api/tiles/<old_src_id>/image.dzi
@@ -1061,7 +1066,7 @@ async def process_replace_image(
                 file_size = _source_image_file_size_bytes(src)
 
                 # Re-fetch to pick up any concurrent metadata changes
-                await db.refresh(img)
+                await db.refresh(img, with_for_update=True)
 
                 img.tile_sources = tile_sources_url
                 img.thumb = thumb_url
@@ -1074,6 +1079,11 @@ async def process_replace_image(
                 current_meta = dict(img.metadata_ or {})
                 current_meta.pop("canvas_annotations", None)
                 current_meta.pop("locked_overlays", None)
+                await bump_board_membership_versions(db, image_ids=[img.id])
+                slot_paths = await image_slot_thumbs(db, [img.id], clear=True)
+                await db.execute(
+                    delete(Marker).where(Marker.image_id == img.id)
+                )
 
                 # Clear old pyramid metadata before merging new
                 for key in ("pyramid_detected", "pyramid_level_count",
@@ -1134,6 +1144,8 @@ async def process_replace_image(
 
             # Remove old tiles only after the commit succeeds, so a
             # failure cannot leave the Image record pointing at deleted files.
+            await asyncio.to_thread(remove_image_marker_thumbnails, old_thumbnail_image)
+            await cleanup_slot_thumbs(slot_paths)
             if old_tile_dir and os.path.isdir(old_tile_dir):
                 shutil.rmtree(old_tile_dir, ignore_errors=True)
                 logger.info(
@@ -1607,6 +1619,10 @@ async def promote_source_image_tile_rebuild(
 
     def _swap() -> str | None:
         had_existing = os.path.isdir(prepared.output_dir)
+        for namespace in SNAPSHOT_NAMESPACES:
+            snapshots = os.path.join(prepared.output_dir, namespace)
+            if Path(snapshots).exists() and Path(snapshots).is_dir() and not Path(snapshots).is_symlink():
+                shutil.copytree(snapshots, os.path.join(prepared.temporary_dir, namespace), dirs_exist_ok=True)
         if had_existing:
             os.replace(prepared.output_dir, backup_dir)
         try:

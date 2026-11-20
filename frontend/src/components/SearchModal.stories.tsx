@@ -3,6 +3,7 @@ import { expect, fn, userEvent, within } from 'storybook/test'
 import type { Category, CollectionSummary, ImageItem, Program } from '../types'
 import type { ApiUser } from '../api'
 import SearchModal from './SearchModal'
+import { BOARDS_FIXTURES, installBoardsFetch } from './boardsFixtures'
 
 const FIXED_AT = '2026-09-01T09:00:00Z'
 
@@ -161,6 +162,20 @@ export const Basic: Story = {
     await expect(await body.findByText('Liver Section')).toBeVisible()
     await expect(await body.findByText('Cardiac series')).toBeVisible()
     await expect(body.getByText(/Sequence · 6 images/)).toBeVisible()
+  },
+}
+
+export const SavedViews: Story = {
+  args: { markersEnabled: true },
+  beforeEach: () =>
+    installBoardsFetch('ready', undefined, [{ ...BOARDS_FIXTURES[0], name: 'Rose studies' }]),
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await userEvent.type(await body.findByRole('textbox'), 'Rose')
+    await expect(await body.findByText('Rose studies')).toBeVisible()
+    await expect(await body.findByText('Rose window')).toBeVisible()
+    await expect(body.getByText('Boards')).toBeVisible()
+    await expect(body.getByText('Markers')).toBeVisible()
   },
 }
 

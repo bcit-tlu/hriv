@@ -1,7 +1,7 @@
 # HRIV user guide (source)
 
-This folder holds the user-facing guide shown in the app via the bell menu
-(**Documentation**, `?page=guide`). It is plain Markdown rendered by the
+This folder holds the user-facing guide shown in the app via the avatar
+menu (**Documentation**, `?page=guide`). It is plain Markdown rendered by the
 frontend — there is no separate docs site or build step.
 
 ## Editing
@@ -12,9 +12,6 @@ frontend — there is no separate docs site or build step.
   `![Alt text](images/your-file.png)`.
 - To add a page: create `your-page.md`, then add it to the `GUIDE_PAGES` list
   in `src/guideContent.ts` so it appears in the guide's navigation.
-  Exception: `object-counting.md` is intentionally NOT listed — object
-  counting is dark-launched behind `COUNTING_ENABLED`, so the page is
-  rendered only inside `CountHelpDialog`, reached from the counting UI.
 - Pages are indexed automatically: staff search results include guide
   sections (a `Guide` chip narrows results), so clear `##` headings double as
   search targets.
@@ -37,5 +34,5 @@ of Markdown — keep pages inside it:
 ## Previewing
 
 Run the app (`npm run dev` or `docker compose up`), sign in as an instructor
-or admin, and open **Documentation** from the bell menu — or go straight to
-`/?page=guide&doc=your-page`.
+or admin, and open **Documentation** from your avatar menu — or go straight
+to `/?page=guide&doc=your-page`.

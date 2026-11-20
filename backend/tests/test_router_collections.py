@@ -158,7 +158,8 @@ def _collection(
         programs=[SimpleNamespace(id=p) for p in (programs or [])],
         groups=[SimpleNamespace(id=g) for g in (groups or [])],
         image_links=[
-            SimpleNamespace(sort_order=i, image_id=img.id, image=img)
+            SimpleNamespace(id=i + 1, sort_order=i, image_id=img.id, image=img,
+                            viewport_state=None, thumb=None, label=None)
             for i, img in enumerate(images or [])
         ],
     )
@@ -204,16 +205,20 @@ def _write_db(
 
     ``execute`` answers ``SELECT`` by entity (Image / Program / Group / User)
     with the supplied rows and answers the optimistic-concurrency ``UPDATE``
-    with ``cas_rowcount``. ``refresh`` fills server-generated columns on
+    with ``cas_rowcount``. ``refresh`` and eager ``get`` fill server-generated columns on
     freshly created ORM instances so ``collection_out`` can serialize them.
     """
     db = AsyncMock()
     db.add = MagicMock()
     category_by_id = {category.id: category for category in categories or []}
 
-    async def _get(entity, entity_id):
+    async def _get(entity, entity_id, **kwargs):
         if entity is Category:
             return category_by_id.get(entity_id)
+        if entity is Collection and kwargs.get("populate_existing") and db.add.called:
+            created = db.add.call_args.args[0]
+            await _refresh(created)
+            return created
         return get
 
     db.get = AsyncMock(side_effect=_get)
@@ -813,7 +818,7 @@ async def test_get_collection_student_omits_invisible_images(
 
 async def test_get_collection_skips_dangling_links() -> None:
     col = _collection(1, "public", user_id=10, images=[_image(1)])
-    col.image_links.append(SimpleNamespace(sort_order=5, image=None))
+    col.image_links.append(SimpleNamespace(sort_order=5, image_id=999, image=None))
     out = await get_collection(1, _user("admin"), db=_mock_db(get=col))
     assert [i.id for i in out.images] == [1]
 

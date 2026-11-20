@@ -18,9 +18,21 @@ import * as SearchModalStories from './SearchModal.stories'
   multi-select for adding image results to a collection.
 </Subtitle>
 
+## Saved-view search
+
+When `markersEnabled` is true, Boards and Markers use the existing backend
+`q` search endpoints, including server-side visibility checks, rather than a
+client-only index. Title and description matches have their own type chips.
+Board results navigate to Boards; Markers reuse saved-coordinate navigation.
+In collection-picker mode, choosing either stages its saved views into the draft
+in displayed Board order. An empty Board or a failed request leaves the picker open.
+
+<Canvas of={SearchModalStories.SavedViews} />
+
 ## When to use
 
-`App` opens this modal from the top-bar **Search** button. All searching is client-side: the
+`App` opens this modal from the top-bar **Search** button. Standard result searching is client-side;
+saved views use the backend endpoints described above. For the local kinds, the
 index is whatever data the caller already has — the category tree, uncategorized images,
 programs, users (admin/instructor), the bundled guide, and the caller's visible collections
 (`useVisibleCollections`, fetched lazily each time the modal opens; the backend list is
@@ -34,8 +46,9 @@ already access-filtered).
 
 ## Implementation guidance
 
-- **Result kinds.** `ResultKind` covers `category`, `image`, `program`, `user`, `guide`, and
-  `collection`. Each kind has a type chip; a chip scopes matches to the kind's primary
+- **Result kinds.** `ResultKind` covers `category`, `image`, `program`, `user`, `guide`,
+  `collection`, `board` and `marker` (the last two are flag-gated).
+  Each kind has a type chip; a chip scopes matches to the kind's primary
   fields (`PRIMARY_FIELDS_BY_KIND`) unless explicit Field chips override. Collections match
   **Name** and **Description**; their rows show the collection type, image count, and owner,
   and selecting one navigates to `?collection={id}` via `onSelectCollection`.
@@ -45,8 +58,9 @@ already access-filtered).
 - **Multi-select is picker-only.** The select layer exists solely when `initialSelectMode` opens
   the modal as a collection-image picker (the Manage Collection dialog's **Add** flow) with
   `onAddImagesToCollection` provided — normal search shows no Select affordance. The picker
-  offers only the two addable kinds — **Categories** and **Images** chips, pre-applied and
-  toggleable; no other type chips or Field chips render (unticking both widens to all kinds).
+  offers **Categories** and **Images** chips, pre-applied and toggleable, plus
+  **Boards** and **Markers** when enabled. No Field chips render in picker mode.
+  Saved-view results stage immediately as described above; the checkbox behavior is unchanged.
   Image rows
   become labelled checkboxes (`Select {image name}`) and category rows checkable too — a checked
   category claims every image in its subtree in registration order — while every other kind keeps

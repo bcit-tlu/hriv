@@ -1,0 +1,31 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as AboutMenuItemsStories from './AboutMenuItems.stories'
+
+<Meta of={AboutMenuItemsStories} />
+
+<Title />
+
+<Subtitle>
+  Documentation and About entries for the profile popover (moved out of the legacy bell menu by the
+  announcements epic), plus the About dialog with component versions and licence links.
+</Subtitle>
+
+<Primary />
+<Controls />
+
+## Behaviour
+
+- `Documentation` shows only when `onOpenGuide` is given (admins/instructors); it calls
+  `onNavigate` (close the popover) and then `onOpenGuide`.
+- `About` opens the dialog without closing the popover — the dialog is rendered inside it — and
+  calls `onNavigate` once the dialog closes.
+
+<Stories includePrimary={false} />

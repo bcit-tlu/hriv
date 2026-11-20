@@ -1,3 +1,4 @@
+import { memberKey, renewSlotThumbnail } from '../collectionMembers'
 import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -12,33 +13,71 @@ import ImageIcon from '@mui/icons-material/Image'
 
 import { type ApiImage } from '../api'
 import type { Collection, ImageItem } from '../types'
+import { useCanvasAnnotations } from '../useCanvasAnnotations'
+import type { CanvasDraftHandle } from '../useCanvasAnnotations'
+import { useOverlayPersistence } from '../useOverlayPersistence'
 import ImageViewer from './ImageViewer'
 import RenewingThumbnail from './RenewingThumbnail'
 import ImageCaptionRow from './ImageCaptionRow'
 import ViewportDialog from './ViewportDialog'
 import {
+  CollectionImageDetails,
+  CollectionImageDetailsDrawer,
+  CollectionImageDetailsPanel,
+  CollectionImageDetailsTrigger,
+  type MemberInfoNames,
+} from './CollectionImageDetails'
+import {
   canvasAnnotationsFromMetadata,
   lockedOverlaysFromMetadata,
   measurementFromMetadata,
   useStableJson,
+  viewportStateFromSaved,
 } from './imageViewerUtils'
 
 export interface SequenceCollectionViewerProps {
+  markersEnabled?: boolean
   collection: Collection
   /** `?item={image_id}` — desired current image; falls back to the first visible image. */
   itemId: number | null
-  onSelectItem: (imageId: number) => void
+  slotId?: number | null
+  onSelectItem: (imageId: number, slotId?: number) => void
   /** "Open image" → the regular `?image={id}` view where annotations can be edited. */
   onOpenImage: (image: ImageItem) => void
   /** Refresh a member's tokenized URLs after the viewer's tile-token renewal. */
   onImageRenewed: (image: ApiImage) => void
+  /** Opens the Board dialog for a drawer group heading; carries the
+   * viewer's container so the dialog stays visible in full-page mode. */
+  onOpenBoard?: (boardId: number, container?: HTMLElement | null) => void
+  /** Bumped when the in-place Board dialog mutates Marker/Board data. */
+  markersReloadSignal?: number
   onError: (message: string) => void
+  /**
+   * Program/group display names per member image id for the details drawer
+   * (#1862), resolved by the parent from the category tree. Members with no
+   * entry (unfiled, or a category the user cannot see) omit those rows.
+   */
+  memberInfoNames?: ReadonlyMap<number, MemberInfoNames>
   /**
    * Hidden collections desaturate the filmstrip (#1566) — the thumbnails are
    * the collection's "tiles", matching how hidden categories grey theirs.
    * The viewport imagery keeps its color, like the hidden image view.
    */
   hidden?: boolean
+  /**
+   * Admin/instructor gate resolved by the parent from `canEditContent`
+   * (#1863) — unlocks annotation editing and overlay lock/clear on the
+   * active member. Annotations live on the image, so edits here are
+   * visible everywhere the image appears. Orthogonal to
+   * `collection.permissions.canEdit` (curation).
+   */
+  canEditContent?: boolean
+  /**
+   * Shared draft handle (#1863): the viewer registers dirty/saving state +
+   * discard so the App-level navigation guards (discard dialog, popstate,
+   * beforeunload) cover item switches and collection close.
+   */
+  canvasDraftRef?: React.MutableRefObject<CanvasDraftHandle | null>
 }
 
 // How long edge nav stays after the last pointer event — mirrors OSD's
@@ -89,13 +128,20 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 export default function SequenceCollectionViewer({
+  markersEnabled = false,
   collection,
   itemId,
+  slotId = null,
   onSelectItem,
   onOpenImage,
   onImageRenewed,
+  onOpenBoard,
+  markersReloadSignal,
   onError,
+  memberInfoNames,
   hidden = false,
+  canEditContent = false,
+  canvasDraftRef,
 }: SequenceCollectionViewerProps) {
   const images = collection.images
   // Images whose tiles failed mid-session (deleted / access lost / expired
@@ -106,6 +152,9 @@ export default function SequenceCollectionViewer({
   // fading back out after a short idle. The buttons stay mounted (opacity +
   // pointer-events only) so keyboard focus can reveal them.
   const [navVisible, setNavVisible] = useState(false)
+  const [markersDrawerOpen, setMarkersDrawerOpen] = useState(false)
+  const [viewerPanelWidth, setViewerPanelWidth] = useState(0)
+  const navShown = navVisible && !markersDrawerOpen
   const navHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Focus inside the nav holds it open regardless of pointer idle/leave.
   const navFocusedRef = useRef(false)
@@ -162,21 +211,34 @@ export default function SequenceCollectionViewer({
   }, [collectionId])
 
   const available = useMemo(
-    () => images.filter((img) => !failedIds.has(img.id)),
+    () => images.filter((img) => !failedIds.has(memberKey(img))),
     [images, failedIds],
   )
 
   const currentIndex = useMemo(() => {
     if (available.length === 0) return 0
-    const idx = itemId != null ? available.findIndex((img) => img.id === itemId) : -1
+    let idx =
+      markersEnabled && slotId != null ? available.findIndex((img) => img.slot?.id === slotId) : -1
+    if (idx < 0 && itemId != null) idx = available.findIndex((img) => img.id === itemId)
     return idx >= 0 ? idx : 0
-  }, [available, itemId])
+  }, [available, itemId, slotId, markersEnabled])
+  const selectMember = useCallback(
+    (image: Collection['images'][number]) => {
+      if (markersEnabled && image.slot) onSelectItem(image.id, image.slot.id)
+      else onSelectItem(image.id)
+    },
+    [markersEnabled, onSelectItem],
+  )
   const current = available[currentIndex] ?? null
+  const initialSlotViewport = useStableJson(
+    JSON.stringify(markersEnabled ? current?.slot?.viewport_state : null),
+    () => viewportStateFromSaved(markersEnabled ? current?.slot?.viewport_state : undefined),
+  )
   // Notes dialog open state; closed on every image change (same
   // adjust-during-render pattern as the App's image-details drawer).
   const [noteDialogOpen, setNoteDialogOpen] = useState(false)
   const [noteDialogImageId, setNoteDialogImageId] = useState<number | null>(null)
-  const currentImageId = current?.id ?? null
+  const currentImageId = (current ? memberKey(current) : null) ?? null
   if (currentImageId !== noteDialogImageId) {
     setNoteDialogImageId(currentImageId)
     setNoteDialogOpen(false)
@@ -201,6 +263,18 @@ export default function SequenceCollectionViewer({
     JSON.stringify(currentMetadata?.locked_overlays ?? null),
     () => lockedOverlaysFromMetadata(currentMetadata),
   )
+  // `initialOverlays` is an ImageViewer mount dependency — keep it stable
+  // for the member's whole lifetime (id-keyed, like useShareableImageState
+  // does for the regular viewer). A content-keyed value would change on
+  // every lock/clear save and the mount effect would destroy the OSD
+  // viewer, resetting zoom/pan mid-edit. Live overlay changes arrive
+  // through the lock callbacks, not this prop; `lockedOverlays` above
+  // still seeds the auto-engaged lock.
+  const initialLockedOverlays = useMemo(
+    () => lockedOverlaysFromMetadata(currentMetadata),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on the member id only
+    [currentImageId],
+  )
   const canvasAnnotations = useStableJson(
     JSON.stringify(currentMetadata?.canvas_annotations ?? null),
     () => canvasAnnotationsFromMetadata(currentMetadata),
@@ -210,12 +284,122 @@ export default function SequenceCollectionViewer({
     () => measurementFromMetadata(currentMetadata),
   )
 
+  // --- Canvas annotation + overlay editing (#1863) -------------------------
+  // The same hooks the image viewer uses; `onImageSaved` swaps the saved
+  // image into the collection's member list (renewCollectionImage) so the
+  // version/metadata stay current for optimistic-concurrency saves.
+  const setEditError = useCallback<React.Dispatch<React.SetStateAction<string | null>>>(
+    (value) => {
+      const message = typeof value === 'function' ? value(null) : value
+      if (message) onError(message)
+    },
+    [onError],
+  )
+  const {
+    localCanvasAnnotations,
+    handleCanvasAnnotationsChange,
+    saveCanvasAnnotations,
+    discardCanvasAnnotations,
+    canvasDraftDirty,
+    canvasSaving,
+    latestVersionRef,
+    latestMetadataRef,
+  } = useCanvasAnnotations({
+    selectedImage: current,
+    onImageSaved: onImageRenewed,
+    setErrorSnack: setEditError,
+  })
+  const [lockEngaged, setLockEngaged] = useState(false)
+  const { handleLockOverlays, handleUnlockOverlays, handleClearOverlays } = useOverlayPersistence({
+    selectedImage: current,
+    latestVersionRef,
+    latestMetadataRef,
+    onImageSaved: onImageRenewed,
+    setLockEngaged,
+    setErrorSnack: setEditError,
+  })
+
+  // Auto-engage the overlay lock when the active member has stored
+  // `locked_overlays` (the image viewer's behavior); resets per member.
+  const hasLockedOverlays = lockedOverlays != null && lockedOverlays.length > 0
+  const [prevLockSeed, setPrevLockSeed] = useState<{
+    id: number | null
+    has: boolean
+  } | null>(null)
+  if (
+    prevLockSeed == null ||
+    prevLockSeed.id !== currentImageId ||
+    prevLockSeed.has !== hasLockedOverlays
+  ) {
+    setPrevLockSeed({ id: currentImageId, has: hasLockedOverlays })
+    setLockEngaged(hasLockedOverlays)
+  }
+
+  // Canvas edit mode: disables the details trigger/drawer and closes the
+  // note dialog on entry; switching members always ends the session.
+  const [canvasEditActive, setCanvasEditActive] = useState(false)
+  const [prevEditMemberId, setPrevEditMemberId] = useState(currentImageId)
+  if (prevEditMemberId !== currentImageId) {
+    setPrevEditMemberId(currentImageId)
+    setCanvasEditActive(false)
+  }
+
+  // Refs mirror App's synchronous draft flags so the navigation guards see
+  // a dirty/saving transition in the same event that caused it.
+  const draftDirtyRef = useRef(false)
+  const draftSavingRef = useRef(false)
+  useEffect(() => {
+    draftDirtyRef.current = canvasDraftDirty
+  }, [canvasDraftDirty])
+  useEffect(() => {
+    draftSavingRef.current = canvasSaving
+  }, [canvasSaving])
+  const handleAnnotationsChange = useCallback(
+    (annotations: Parameters<typeof handleCanvasAnnotationsChange>[0]) => {
+      draftDirtyRef.current = handleCanvasAnnotationsChange(annotations)
+    },
+    [handleCanvasAnnotationsChange],
+  )
+  const handleSaveAnnotations = useCallback(
+    async (annotations: Parameters<typeof saveCanvasAnnotations>[0]) => {
+      draftSavingRef.current = true
+      try {
+        return await saveCanvasAnnotations(annotations)
+      } finally {
+        draftSavingRef.current = false
+      }
+    },
+    [saveCanvasAnnotations],
+  )
+
+  // Register the draft handle for App's guards; the getters read the live
+  // refs so a synchronous change/save is guarded before effects flush.
+  useEffect(() => {
+    if (!canvasDraftRef) return
+    canvasDraftRef.current = {
+      get dirty() {
+        return draftDirtyRef.current
+      },
+      get saving() {
+        return draftSavingRef.current
+      },
+      discard: () => {
+        draftDirtyRef.current = false
+        discardCanvasAnnotations()
+      },
+    }
+    return () => {
+      canvasDraftRef.current = null
+    }
+  }, [canvasDraftRef, discardCanvasAnnotations])
+
   const goTo = useCallback(
     (index: number) => {
       const target = available[index]
-      if (target && target.id !== current?.id) onSelectItem(target.id)
+      if (target && memberKey(target) !== (current ? memberKey(current) : null))
+        selectMember(target)
     },
-    [available, current?.id, onSelectItem],
+    [available, current, selectMember],
   )
 
   const handleViewerError = useCallback(
@@ -223,19 +407,19 @@ export default function SequenceCollectionViewer({
       onError(message)
       if (current == null) return
       setFailedIds((prev) => {
-        if (prev.has(current.id)) return prev
-        return new Set(prev).add(current.id)
+        if (prev.has(memberKey(current))) return prev
+        return new Set(prev).add(memberKey(current))
       })
       // Skip to the nearest still-available image, preferring the next one.
       const nextIds = new Set(failedIds)
-      nextIds.add(current.id)
-      const idx = images.findIndex((img) => img.id === current.id)
-      const after = images.slice(idx + 1).find((img) => !nextIds.has(img.id))
-      const before = [...images.slice(0, idx)].reverse().find((img) => !nextIds.has(img.id))
+      nextIds.add(memberKey(current))
+      const idx = images.findIndex((img) => memberKey(img) === memberKey(current))
+      const after = images.slice(idx + 1).find((img) => !nextIds.has(memberKey(img)))
+      const before = [...images.slice(0, idx)].reverse().find((img) => !nextIds.has(memberKey(img)))
       const next = after ?? before
-      if (next) onSelectItem(next.id)
+      if (next) selectMember(next)
     },
-    [current, failedIds, images, onError, onSelectItem],
+    [current, failedIds, images, onError, selectMember],
   )
 
   // Arrow keys step the sequence from anywhere on the page (#1567): a
@@ -327,16 +511,16 @@ export default function SequenceCollectionViewer({
         }}
       >
         {images.map((img) => {
-          const isCurrent = img.id === current.id
-          const isFailed = failedIds.has(img.id)
+          const isCurrent = memberKey(img) === memberKey(current)
+          const isFailed = failedIds.has(memberKey(img))
           return (
             <Box
-              key={img.id}
+              key={memberKey(img)}
               component="button"
               type="button"
-              onClick={() => onSelectItem(img.id)}
+              onClick={() => selectMember(img)}
               disabled={isFailed}
-              aria-label={`Go to ${img.name}`}
+              aria-label={`Go to ${markersEnabled ? img.slot?.label || img.name : img.name}`}
               aria-current={isCurrent ? 'true' : undefined}
               sx={{
                 ...stripThumbRing(isCurrent),
@@ -351,8 +535,16 @@ export default function SequenceCollectionViewer({
               }}
             >
               <RenewingThumbnail
-                image={img}
-                alt={img.name}
+                image={{
+                  ...img,
+                  thumb: markersEnabled ? img.slot?.thumb || img.thumb : img.thumb,
+                }}
+                renewThumb={
+                  markersEnabled && img.slot?.thumb
+                    ? () => renewSlotThumbnail(collection.id, img)
+                    : undefined
+                }
+                alt={markersEnabled && img.slot?.label ? '' : img.name}
                 onImageRenewed={onImageRenewed}
                 draggable={false}
                 sx={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 1 }}
@@ -379,46 +571,83 @@ export default function SequenceCollectionViewer({
         onPointerDown={showNav}
         onPointerLeave={hideNav}
       >
-        <ImageViewer
-          key={current.id}
-          fullScreenHandoffKey={`sequence:${collectionId}`}
-          tileSources={current.tileSources}
-          imageId={current.id}
-          categoryId={current.categoryId ?? undefined}
-          height={{ xs: '60vh', md: '100%' }}
-          initialOverlays={lockedOverlays}
-          overlaysLocked={lockedOverlays != null}
-          canvasAnnotations={canvasAnnotations}
-          canEditContent={false}
+        {/* Details provider keyed like the viewer — a new member resets the
+            drawer closed (the note dialog resets the same way above). */}
+        <CollectionImageDetails
+          key={memberKey(current)}
+          image={current}
+          programNames={memberInfoNames?.get(current.id)?.programNames ?? []}
+          groupNames={memberInfoNames?.get(current.id)?.groupNames ?? []}
           measurement={measurement}
-          onTileSourceRenewed={onImageRenewed}
-          onError={handleViewerError}
-          viewportOverlay={
-            <ViewportDialog
-              open={noteDialogOpen}
-              title="Notes"
-              onClose={() => setNoteDialogOpen(false)}
-            >
-              <Box
-                sx={{
-                  typography: 'body2',
-                  whiteSpace: 'pre-wrap',
-                  overflowWrap: 'anywhere',
-                }}
-              >
-                {current.note}
-              </Box>
-            </ViewportDialog>
-          }
-        />
+          disabled={canvasEditActive}
+        >
+          <ImageViewer
+            markersEnabled={markersEnabled}
+            onOpenBoard={onOpenBoard}
+            markersReloadSignal={markersReloadSignal}
+            onMarkersDrawerOpenChange={setMarkersDrawerOpen}
+            onViewerPanelWidthChange={setViewerPanelWidth}
+            sidePanelDetails={<CollectionImageDetailsPanel />}
+            key={memberKey(current)}
+            fullScreenHandoffKey={`sequence:${collectionId}`}
+            initialViewport={initialSlotViewport}
+            tileSources={current.tileSources}
+            imageId={current.id}
+            categoryId={current.categoryId ?? undefined}
+            height={{ xs: '60vh', md: '100%' }}
+            initialOverlays={initialLockedOverlays}
+            overlaysLocked={lockEngaged}
+            onLockOverlays={canEditContent ? handleLockOverlays : undefined}
+            onUnlockOverlays={canEditContent ? handleUnlockOverlays : undefined}
+            onClearOverlays={canEditContent ? handleClearOverlays : undefined}
+            canvasAnnotations={localCanvasAnnotations ?? canvasAnnotations}
+            canEditContent={canEditContent}
+            onCanvasAnnotationsChange={canEditContent ? handleAnnotationsChange : undefined}
+            onSaveCanvasAnnotations={canEditContent ? handleSaveAnnotations : undefined}
+            canvasDraftDirty={canvasDraftDirty}
+            onCanvasEditModeChange={
+              canEditContent
+                ? (active) => {
+                    setCanvasEditActive(active)
+                    if (active) setNoteDialogOpen(false)
+                  }
+                : undefined
+            }
+            measurement={measurement}
+            onTileSourceRenewed={onImageRenewed}
+            onError={handleViewerError}
+            viewportControl={markersEnabled ? null : <CollectionImageDetailsTrigger />}
+            viewportOverlay={
+              <>
+                {!markersEnabled && <CollectionImageDetailsDrawer />}
+                <ViewportDialog
+                  open={noteDialogOpen}
+                  title="Notes"
+                  onClose={() => setNoteDialogOpen(false)}
+                >
+                  <Box
+                    sx={{
+                      typography: 'body2',
+                      whiteSpace: 'pre-wrap',
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
+                    {current.note}
+                  </Box>
+                </ViewportDialog>
+              </>
+            }
+          />
+        </CollectionImageDetails>
         <Box
           data-testid="sequence-nav-overlay"
-          style={{ opacity: navVisible ? 1 : 0 }}
+          style={{ opacity: navShown ? 1 : 0 }}
           onFocusCapture={holdNavForFocus}
           onBlurCapture={releaseNavForBlur}
           sx={{
             position: 'absolute',
             inset: 0,
+            right: viewerPanelWidth,
             pointerEvents: 'none',
             transition: 'opacity 0.25s ease',
           }}
@@ -427,7 +656,8 @@ export default function SequenceCollectionViewer({
             onClick={() => goTo(currentIndex - 1)}
             disabled={currentIndex <= 0}
             aria-label="Previous image"
-            style={{ pointerEvents: navVisible ? 'auto' : 'none' }}
+            tabIndex={markersDrawerOpen ? -1 : 0}
+            style={{ pointerEvents: navShown ? 'auto' : 'none' }}
             sx={{ ...navEdgeButton, left: 8 }}
           >
             <ChevronLeftIcon sx={{ fontSize: 52.5 }} />
@@ -436,7 +666,8 @@ export default function SequenceCollectionViewer({
             onClick={() => goTo(currentIndex + 1)}
             disabled={currentIndex >= available.length - 1}
             aria-label="Next image"
-            style={{ pointerEvents: navVisible ? 'auto' : 'none' }}
+            tabIndex={markersDrawerOpen ? -1 : 0}
+            style={{ pointerEvents: navShown ? 'auto' : 'none' }}
             sx={{ ...navEdgeButton, right: 8 }}
           >
             <ChevronRightIcon sx={{ fontSize: 52.5 }} />
@@ -446,8 +677,8 @@ export default function SequenceCollectionViewer({
       {/* Caption row mirrors the synchronized pane captions (#1564): the
           member name + note left, the position readout + Open image right. */}
       <ImageCaptionRow
-        key={`caption-${current.id}`}
-        name={current.name}
+        key={`caption-${memberKey(current)}`}
+        name={markersEnabled ? current.slot?.label || current.name : current.name}
         active={current.active}
         note={current.note}
         noteDialogOpen={noteDialogOpen}

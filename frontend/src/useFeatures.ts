@@ -19,10 +19,10 @@ export function useFeatures(): Features | null {
       .then((data) => {
         if (!cancelled)
           setFeatures({
+            markers: data.markers === true,
             collections: data.collections === true,
             collectionsStudentAccess: data.collections_student_access ?? true,
             collectionsHomeShelf: data.collections === true && data.collections_home_shelf === true,
-            counting: data.counting === true,
           })
       })
       .catch(() => {

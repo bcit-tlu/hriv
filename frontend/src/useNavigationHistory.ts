@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { parseBoardLocation } from './boardUtils'
 
 /** Navigation state stored in `history.state` for back/forward support. */
 export interface NavHistoryState {
@@ -6,6 +7,7 @@ export interface NavHistoryState {
   page: string
   catIds: number[]
   imageId: number | null
+  boardId?: number | null
   /**
    * `?collection=` entries opened from a Browse tile (#1529): "back" from
    * the detail returns to Browse (restoring `catIds`) rather than the
@@ -58,6 +60,7 @@ export function buildNavHistoryState(
   imageId: number | null,
   historyIndex = historyIndexOf(window.history.state) ?? 0,
   collectionFromBrowse?: boolean,
+  boardLocation?: { boardId: number | null },
 ): NavHistoryState {
   return {
     _hriv: true,
@@ -65,6 +68,7 @@ export function buildNavHistoryState(
     catIds,
     imageId,
     collectionFromBrowse,
+    ...boardLocation,
     historyIndex,
     historyKey: currentHistoryKey(),
   }
@@ -268,6 +272,9 @@ export function useNavigationHistory(
         imageId,
         historyIndex,
         opts?.collectionFromBrowse,
+        page === 'boards'
+          ? parseBoardLocation('?' + new URLSearchParams({ page, ...extraParams }).toString())
+          : undefined,
       )
       const params = new URLSearchParams()
       if (extraParams?.collection != null) {

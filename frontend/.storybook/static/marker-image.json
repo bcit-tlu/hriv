@@ -1,0 +1,4 @@
+{
+  "type": "legacy-image-pyramid",
+  "levels": [{ "url": "/hriv-splash2.jpg", "width": 1024, "height": 1024 }]
+}

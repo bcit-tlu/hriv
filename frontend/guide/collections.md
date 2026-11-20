@@ -70,6 +70,9 @@ visible but can't be changed here.
   (`n of N` — part of the page link, so copying the URL shares the exact
   image you're looking at), and **Open image**, which jumps to the normal
   image view where you can edit annotations with the usual permissions.
+- Thumbnails above the viewer are image-only, without captions. Screen readers
+  identify each thumbnail by its saved-view label or image name; the active
+  view's caption remains below the main viewer.
 - If you can edit the collection, a **Manage Images** button in the
   top-right header opens the **Manage Collection Images** dialog — a
   miniature
@@ -119,8 +122,10 @@ limit is reached.
 
 ## Add an image to a collection
 
-While viewing an image, click **Add to Collection** (next to **Share View**)
-and pick one of your collections — or one owned by a program you teach in.
+While viewing an image, click **Add to Collection** and pick one of your collections
+— or one owned by a program you teach in. It sits next to **Share View**
+when the legacy viewer is active. With Markers enabled, Add to Collection stays
+in the header and sharing moves to the right panel's **Share View** link tab.
 Type in the filter box to narrow a long list.
 
 - The image is added to the end of the collection. If it is already there,
@@ -339,3 +344,12 @@ The address bar shows `?collection=…` while a collection is open. Copy it to
 share; anyone who can see the collection lands straight on it. Your browser's
 back and forward buttons move between the library, images, and collections as
 usual.
+
+### Saved-view panel in Sequence collections
+
+With Markers enabled, Sequence viewers share the image page's permanent right
+panel. The sidebar toggle opens it; pin/info buttons select saved views or
+image details. The minimap and edge arrows stay beside the panel rather than
+under it. Open state and selected content carry between steps. On phones the
+panel covers the image until closed. Synchronized panes retain their existing
+independent Details and Markers controls.

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useShareableImageState } from '../src/useShareableImageState'
+import { parseShareableUrlParams, useShareableImageState } from '../src/useShareableImageState'
 import type { UseShareableImageStateDeps } from '../src/useShareableImageState'
 import { makeCategory, makeImage } from './helpers/fixtures'
 
@@ -26,6 +26,21 @@ function makeDeps(overrides: Partial<UseShareableImageStateDeps> = {}): UseShare
 }
 
 describe('useShareableImageState', () => {
+  it('ignores legacy grouping query parameters on Board URLs without resolving an unrelated image', () => {
+    window.history.replaceState(null, '', '/?page=boards&board=2&section=11&image=42')
+    expect(parseShareableUrlParams()).toMatchObject({ boardId: 2, imageId: null })
+  })
+  it('syncs Board selection and supports opt-out', () => {
+    const { rerender } = renderHook(
+      ({ boardId, enableUrlSync }) =>
+        useShareableImageState(makeDeps({ page: 'boards', boardId, enableUrlSync })),
+      { initialProps: { boardId: 2, enableUrlSync: true } },
+    )
+    expect(window.location.search).toBe('?page=boards&board=2')
+    expect(window.history.state).toMatchObject({ page: 'boards', boardId: 2 })
+    rerender({ boardId: 3, enableUrlSync: false })
+    expect(window.location.search).toBe('?page=boards&board=2')
+  })
   let replaceStateSpy: ReturnType<typeof vi.spyOn>
   let savedClipboard: Clipboard
   let savedExecCommand: typeof document.execCommand | undefined
@@ -714,4 +729,25 @@ describe('useShareableImageState', () => {
       expect(setSelectedImage).toHaveBeenCalledWith(img)
     })
   })
+})
+
+it('serializes a saved slot alongside the real image fallback and removes it on close', () => {
+  window.history.replaceState(null, '', '/')
+  const { rerender } = renderHook(
+    ({ slot }) =>
+      useShareableImageState(
+        makeDeps({
+          page: 'collections',
+          collectionId: 7,
+          collectionItemId: 100,
+          collectionSlotId: slot,
+        }),
+      ),
+    { initialProps: { slot: 11 as number | null } },
+  )
+  expect(window.location.search).toContain('slot=11')
+  expect(window.location.search).toContain('item=100')
+  rerender({ slot: null })
+  expect(window.location.search).not.toContain('slot=')
+  expect(window.location.search).toContain('item=100')
 })

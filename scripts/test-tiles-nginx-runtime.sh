@@ -84,7 +84,7 @@ assert_not_contains "$auth_request_line" '$' \
 # replayed for tile paths.
 assert_contains "$nginx_conf" 'proxy_cache_key "$tile_auth_token:$tile_image_id:$tile_path_class"' \
   "tiles auth verdict cache key must include the thumb-vs-tiles path class"
-assert_contains "$nginx_conf" 'map $request_uri $tile_path_class_from_uri' \
+assert_contains "$nginx_conf" 'map $uri $tile_path_class_from_uri' \
   "tiles config should classify requests into thumb vs tiles cache classes"
 
 # Resolve the sidecar image and listen port from the rendered manifest so
@@ -112,9 +112,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$work/tiles/42/image_files/0" "$work/tiles/7" "$work/stub-logs"
+mkdir -p "$work/tiles/42/image_files/0" "$work/tiles/42/markers" "$work/tiles/7" "$work/stub-logs"
 printf 'dzi-descriptor-42' > "$work/tiles/42/image.dzi"
 printf 'thumbnail-42' > "$work/tiles/42/thumbnail.jpeg"
+printf 'marker-1' > "$work/tiles/42/markers/1.jpg"
+printf 'marker-7' > "$work/tiles/42/markers/7.jpg"
+printf 'marker-8' > "$work/tiles/42/markers/8.jpg"
 printf 'tile-bytes-42' > "$work/tiles/42/image_files/0/0_0.jpeg"
 printf 'dzi-descriptor-7' > "$work/tiles/7/image.dzi"
 printf '%s' "$nginx_conf" > "$work/default.conf"
@@ -136,20 +139,42 @@ map $stub_token $stub_token_image_id {
     ~^valid-([0-9]+)$ $1;
     ~^alt-([0-9]+)$ $1;
     ~^thumb-([0-9]+)$ $1;
+    ~^marker-([0-9]+)-[0-9]+$ $1;
     default "";
 }
 # ``thumb-<id>`` tokens emulate the backend's thumbnail-only purpose
 # (#1609): they validate the thumbnail but nothing else.
 map $stub_token $stub_thumb_only {
     ~^thumb- 1;
+    ~^marker- 1;
     default 0;
 }
 map $http_x_original_uri $stub_path_class {
     ~^/api/tiles/[0-9]+/thumbnail\.jpeg(\?|$) thumb;
+    ~^/api/tiles/[0-9]+/markers/([0-9]+)\.jpg(\?|$) marker-$1;
     default tiles;
 }
 map "$stub_thumb_only:$stub_path_class" $stub_thumb_denied {
-    "1:tiles" 1;
+    ~^0: 0;
+    "1:thumb" 0;
+    default 1;
+}
+map $stub_token $stub_marker_scope {
+    ~^marker-[0-9]+-([0-9]+)$ marker-$1;
+    default "";
+}
+map "$stub_marker_scope:$stub_path_class" $stub_marker_allowed {
+    ~^marker-([0-9]+):marker-\1$ 1;
+    default 0;
+}
+map $stub_token $stub_is_marker {
+    ~^marker- 1;
+    default 0;
+}
+map "$stub_is_marker:$stub_marker_allowed:$stub_thumb_denied" $stub_scope_denied {
+    ~^1:1: 0;
+    ~^1:0: 1;
+    ~^0:0:1$ 1;
     default 0;
 }
 server {
@@ -159,7 +184,7 @@ server {
         if ($stub_image_id = "") { return 403; }
         if ($stub_token_image_id = "") { return 401; }
         if ($stub_token_image_id != $stub_image_id) { return 403; }
-        if ($stub_thumb_denied = 1) { return 403; }
+        if ($stub_scope_denied = 1) { return 403; }
         return 204;
     }
 }
@@ -292,16 +317,57 @@ after_second_image="$(hits)"
 # path class in the cache key this would return 200.
 expect_status 200 "$base/api/tiles/42/thumbnail.jpeg?tile_token=thumb-42" \
   "thumb token should serve the thumbnail"
+expect_status 403 "$base/api/tiles/42/markers/7.jpg?tile_token=thumb-42" \
+  "card-cover token must not serve a Marker after a cached thumbnail hit"
+expect_status 403 "$base/api/tiles/42/image_files/0/0_0.jpeg?tile_token=thumb-42" \
+  "thumb token must not unlock DZI tiles"
 expect_status 403 "${image42}?tile_token=thumb-42" \
   "a thumbnail verdict must not authorize tile paths for the same token"
 after_thumb="$(hits)"
-[[ "$after_thumb" -eq 10 ]] || \
-  fail "the tile-path denial must come from a fresh validator hit, not a cached verdict (expected 10 hits, got $after_thumb)"
+[[ "$after_thumb" -eq 12 ]] || \
+  fail "the tile-path denial must come from a fresh validator hit, not a cached verdict (expected 12 hits, got $after_thumb)"
 
 # A second valid token for the same image misses the cache too — the
 # verdict is keyed per token, not per image.
 expect_status 200 "${image42}?tile_token=alt-42" "a different valid token should be validated independently"
 after_token="$(hits)"
-[[ "$after_token" -eq 11 ]] || \
-  fail "a new token for a cached image must hit the validator (expected 11 hits, got $after_token)"
+[[ "$after_token" -eq 13 ]] || \
+  fail "a new token for a cached image must hit the validator (expected 13 hits, got $after_token)"
+
+before_marker="$(hits)"
+for _ in 1 2; do
+  expect_status 200 "$base/api/tiles/42/markers/7.jpg?tile_token=marker-42-7" \
+    "an exact Marker token should serve its JPEG, including a cached hit"
+done
+[[ "$(hits)" -eq $((before_marker + 1)) ]] || fail "repeat Marker request should use its cached verdict"
+expect_status 403 "$base/api/tiles/42/markers/8.jpg?tile_token=marker-42-7" \
+  "cached Marker 7 verdict must not authorize Marker 8"
+expect_status 403 "$base/api/tiles/42/thumbnail.jpeg?tile_token=marker-42-7" \
+  "Marker token must not authorize the whole-image thumbnail"
+expect_status 403 "$base/api/tiles/42/image_files/0/0_0.jpeg?tile_token=marker-42-7" \
+  "Marker token must not authorize DZI tiles"
+# Dot-segment path confusion: the validator reads the raw request URI but
+# nginx serves the normalized one, so ``/api/tiles/42/../7/image.dzi``
+# would be authorized as image 42 and served from image 7. The stub
+# validator above deliberately keeps the naive raw first-segment check, so
+# these assertions prove the sidecar blocks the attack on its own — even
+# with a warm ``valid-42`` verdict in the cache from the burst above.
+for traversal in \
+  "42/../7/image.dzi" \
+  "42/%2e%2e/7/image.dzi" \
+  "42/%2E%2e/7/image.dzi" \
+  "42/.%2e/7/image.dzi" \
+  "42/x/../../7/image.dzi" \
+  "42/image_files/../../7/image.dzi" \
+  "42%2f..%2f7/image.dzi" \
+  "42/%2e/image.dzi" \
+  "42/./image.dzi"; do
+  got="$(curl -s --path-as-is -o "$work/traversal-body" -w '%{http_code}' \
+    "$base/api/tiles/${traversal}?tile_token=valid-42")"
+  [[ "$got" != 2* ]] || \
+    fail "dot-segment tile path /api/tiles/${traversal} must be rejected (got $got)"
+  assert_not_contains "$(cat "$work/traversal-body")" "dzi-descriptor-7" \
+    "dot-segment tile path /api/tiles/${traversal} must never serve another image's tiles"
+done
+
 echo "Tiles sidecar runtime regression checks passed."

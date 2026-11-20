@@ -1,0 +1,26 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as BoardStories from './BoardEditDialog.stories'
+
+<Meta of={BoardStories} />
+
+<Title />
+
+Boards default to private and require a name. Scope uses the same “Visible to”
+radio row as Edit Collection — Private, Restricted, Public — not a dropdown.
+Restricted scope is available to
+instructors and admins and requires a Program or Group. Program membership and
+managed Groups govern new attachments; existing attachments may be removed.
+Scope controls are hidden when `can_change_scope` is false, and metadata-only
+writes omit scope fields. Backend permissions remain authoritative.
+
+The dialog keeps the Board version from opening. A stale save is blocked until
+Reload latest explicitly replaces the draft with current server values.
+
+For a deletable existing Board, Delete Board sits below the fields, like Delete
+Collection. A second press confirms after warning that orphaned Markers will be
+permanently deleted. Deletion sends the opening version; 409 blocks Save and Delete
+until Reload latest succeeds, while other errors retain the form and confirmation.
+
+<Primary />
+
+<Stories />

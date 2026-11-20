@@ -21,6 +21,7 @@ from opentelemetry import trace
 
 from .grouping import assign_groups
 from .metrics import record_run_step
+from .mpp import nuclei_downsample
 from .objects import objects_from_labels
 from .outliners import (
     NATIVE_DIAMETER,
@@ -119,6 +120,8 @@ def _choose_downsample(
     margin_px: int,
     max_pixels: int,
     max_downsample: int,
+    params: dict | None = None,
+    preprocess: bool = True,
 ) -> int:
     """Size-driven level rule (#1662): pick the largest d such that the
     estimated median object is at least ``NATIVE_DIAMETER`` px at that
@@ -131,13 +134,9 @@ def _choose_downsample(
         # no mpp the hematoxylin-mask diameter estimate merges dense tissue
         # and over-coarsens, so always stay at level 0 — an over-budget
         # selection then fails pre-flight rather than silently counting
-        # nothing.
-        if mpp and mpp > 0:
-            d = max_downsample
-            while d > 1 and mpp * d > 0.5:
-                d //= 2
-            return d
-        return 1
+        # nothing. Shared with the API via ``counting.mpp`` so pre-flight
+        # plans the exact level this returns (#1868).
+        return nuclei_downsample(mpp, max_downsample)
 
     native = NATIVE_DIAMETER[mode]
     # Probe at a coarse level bounded by ~0.25 MP; a probe that still can't
@@ -163,7 +162,12 @@ def _choose_downsample(
             "selection cannot fit the processing budget at any permitted level"
         )
     probe_rgb = stitch_region(tile_root, dzi, probe_plan).numpy()
-    diameter, n_components = probe_object_stats(probe_rgb, mode)
+    # The probe must see the same signal as the segmenter — otherwise
+    # preprocessing would fix outlines but leave the level-picker blind
+    # (#1870).
+    diameter, n_components = probe_object_stats(
+        probe_rgb, mode, params=params, preprocess=preprocess
+    )
     if n_components < _PROBE_MIN_COMPONENTS:
         return 1
     if diameter is None or diameter <= 0:
@@ -225,6 +229,7 @@ def run_count(
     max_downsample: int,
     max_objects: int,
     is_cancelled: Callable[[], bool],
+    preprocess: bool = True,
 ) -> dict[str, Any]:
     """Execute one count job; returns the result-contract payload.
 
@@ -239,6 +244,12 @@ def run_count(
         dzi = read_dzi(tile_root)
         mode = record.get("mode", "cells")
         mpp = record.get("mpp")
+        # Instructor-tuned detection values promoted at measurement-review
+        # approval (#1869); validated at enqueue, so the dict here is a
+        # well-formed DetectionTuning (or absent → shipped defaults).
+        params = record.get("params")
+        if not isinstance(params, dict):
+            params = None
         sel_rect = Rect(
             x=int(sel["x"]),
             y=int(sel["y"]),
@@ -257,6 +268,8 @@ def run_count(
                 margin_px=margin_px,
                 max_pixels=max_pixels,
                 max_downsample=max_downsample,
+                params=params,
+                preprocess=preprocess,
             )
             plan = plan_region(
                 dzi,
@@ -282,7 +295,9 @@ def run_count(
         # every level px spans ``mpp * downsample`` µm.
         eff_mpp = float(mpp) * downsample if mpp else None
         with _step_span(mode, "outline", timings) as span:
-            labels = outliner.segment(rgb, plan=plan, mpp=eff_mpp)
+            labels = outliner.segment(
+                rgb, plan=plan, mpp=eff_mpp, params=params, preprocess=preprocess
+            )
             span.set_attribute("count.outliner", outliner.name)
         _check_cancelled(is_cancelled)
         with _step_span(mode, "objects", timings) as span:
