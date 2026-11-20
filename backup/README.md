@@ -4,6 +4,13 @@ Standalone service that publishes HRIV recovery archives on a configurable sched
 
 ## Quick Start
 
+The service image and CI tests use Python 3.15. Local development requires
+Python 3.15 and Poetry: run `poetry install --no-root` and `poetry run pytest`
+from `backup/`. The runtime dependency floor for gRPC is 1.85.3, which provides
+Python 3.15 Linux wheels without a compiler in the slim image builder.
+Pytest's logging plugin is disabled because the CLI configures root stream
+handlers itself; the unit tests capture logs with `unittest.assertLogs`.
+
 ### Run a one-shot backup (local storage)
 
 ```bash
