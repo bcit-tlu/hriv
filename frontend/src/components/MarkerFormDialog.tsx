@@ -592,7 +592,11 @@ export default function MarkerFormDialog({
             id={formTitleId}
             component="h2"
             variant={inline ? 'subtitle1' : 'h6'}
-            sx={{ overflowWrap: 'anywhere', minWidth: 0 }}
+            sx={
+              baseline
+                ? { overflowWrap: 'anywhere', minWidth: 0 }
+                : { whiteSpace: 'nowrap', flexShrink: 0 }
+            }
           >
             {inline
               ? baseline?.title
@@ -614,11 +618,11 @@ export default function MarkerFormDialog({
               disabled={busy || loading}
               onClick={openPicker}
               sx={{
+                flex: '0 1 auto',
                 minWidth: 0,
                 px: 1,
                 textTransform: 'none',
                 typography: inline ? 'subtitle1' : 'h6',
-                fontWeight: 600,
                 bgcolor: 'action.hover',
                 '& .MuiButton-endIcon': { ml: 0 },
               }}
@@ -629,7 +633,7 @@ export default function MarkerFormDialog({
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
-                  maxWidth: 180,
+                  minWidth: 0,
                 }}
               >
                 {selectedBoards.length === 1
