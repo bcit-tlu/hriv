@@ -123,7 +123,12 @@ export default function AnnouncementBanner({
         />
       )}
       {(longBody && clamp) || moreCount > 0 ? (
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5, flexWrap: 'wrap' }}>
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          sx={{ mt: 1, ml: -0.5, flexWrap: 'wrap' }}
+        >
           {longBody && clamp && (
             <Button
               size="small"
