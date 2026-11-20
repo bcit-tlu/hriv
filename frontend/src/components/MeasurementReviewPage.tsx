@@ -539,7 +539,9 @@ export default function MeasurementReviewPage({
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setLearnMoreOpen(false)}>Close</Button>
+          <Button size="small" onClick={() => setLearnMoreOpen(false)}>
+            Close
+          </Button>
         </DialogActions>
       </Dialog>
 
@@ -582,6 +584,7 @@ export default function MeasurementReviewPage({
         {pending && (
           <Button
             variant="outlined"
+            size="small"
             onClick={handleBulkApprove}
             disabled={busy || selected.size === 0}
           >
@@ -590,6 +593,7 @@ export default function MeasurementReviewPage({
         )}
         <Button
           variant="contained"
+          size="small"
           endIcon={<ArrowDropDownIcon />}
           onClick={(e) => setActionsAnchor(e.currentTarget)}
           aria-haspopup="menu"

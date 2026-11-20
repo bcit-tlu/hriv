@@ -1,13 +1,13 @@
-"""Board authority matrix and Inuksuk visibility/source rules."""
+"""Board authority matrix and Marker visibility/source rules."""
 
 from types import SimpleNamespace as NS
 
 import pytest
 
 from app.authz import (
-    can_change_board_scope, can_delete_board, can_delete_inuksuk,
-    can_edit_board, can_edit_inuksuk, can_transfer_board, can_view_board,
-    is_board_owner, is_inuksuk_owner,
+    can_change_board_scope, can_delete_board, can_delete_marker,
+    can_edit_board, can_edit_marker, can_transfer_board, can_view_board,
+    is_board_owner, is_marker_owner,
 )
 from app.board_views import BoardViewerContext
 
@@ -57,12 +57,12 @@ def test_board_write_authority(role, owners, program):
 
 @pytest.mark.parametrize("role", ["admin", "instructor", "staff", "student"])
 @pytest.mark.parametrize("owners", [[], [1], [1, 2], [2]])
-def test_inuksuk_write_authority(role, owners):
+def test_marker_write_authority(role, owners):
     caller = user(role)
     item = NS(owners=[NS(id=i) for i in owners])
-    assert is_inuksuk_owner(caller, item) == (1 in owners)
-    assert can_edit_inuksuk(caller, item) == (role == "admin" or 1 in owners)
-    assert can_delete_inuksuk(caller, item) == (role == "admin" or 1 in owners)
+    assert is_marker_owner(caller, item) == (1 in owners)
+    assert can_edit_marker(caller, item) == (role == "admin" or 1 in owners)
+    assert can_delete_marker(caller, item) == (role == "admin" or 1 in owners)
 
 
 @pytest.mark.parametrize("role", ["admin", "instructor", "staff", "student"])
@@ -76,7 +76,7 @@ def test_image_gate_cannot_be_bypassed(role, active, category_id, owner, board_v
         (role != "student" or (active and category_id != 99))
         and (role != "student" or owner or board_visible)
     )
-    assert ctx.can_view_inuksuk(item, [NS()] if board_visible else []) == expected
+    assert ctx.can_view_marker(item, [NS()] if board_visible else []) == expected
 
 
 async def test_context_passes_both_membership_dimensions(monkeypatch):

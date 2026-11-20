@@ -290,7 +290,7 @@ async def _caller_visible_image_counts(
     stmt = (
         select(
             CollectionImage.collection_id,
-            func.count() if settings.inuksuks_enabled
+            func.count() if settings.markers_enabled
             else func.count(func.distinct(CollectionImage.image_id)),
         )
         .join(Image, Image.id == CollectionImage.image_id)
@@ -1143,13 +1143,13 @@ async def create_collection(
         await bump_scopes(db, collection_scope_keys({body.category_id}))
     plans = (
         await resolve_slots(db, ctx, body, body.image_ids)
-        if settings.inuksuks_enabled else None
+        if settings.markers_enabled else None
     )
     if plans is not None:
         validate_slot_caps(
             user, body.type, plans, [],
             seeded_create=(
-                body.inuksuk_ids is not None or body.source_board_id is not None
+                body.marker_ids is not None or body.source_board_id is not None
             ),
         )
     images = (
@@ -1550,11 +1550,11 @@ async def replace_collection_images(
         retained=len(unseen),
         existing_ids=existing_ids,
     )
-    if settings.inuksuks_enabled and collection.category_id is not None:
+    if settings.markers_enabled and collection.category_id is not None:
         await lock_scope_revision(db, collection.category_id)
     plans = (
         await resolve_slots(db, ctx, body, body.image_ids, collection)
-        if settings.inuksuks_enabled else None
+        if settings.markers_enabled else None
     )
     if plans is not None:
         validate_slot_caps(

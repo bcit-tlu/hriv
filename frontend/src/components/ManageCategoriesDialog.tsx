@@ -883,7 +883,9 @@ export default function ManageCategoriesDialog({
           </List>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose}>Close</Button>
+          <Button size="small" onClick={onClose}>
+            Close
+          </Button>
         </DialogActions>
       </Dialog>
 
@@ -940,8 +942,10 @@ export default function ManageCategoriesDialog({
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCancelDelete}>Cancel</Button>
-          <Button onClick={handleConfirmDelete} color="error" variant="contained">
+          <Button size="small" onClick={handleCancelDelete}>
+            Cancel
+          </Button>
+          <Button size="small" onClick={handleConfirmDelete} color="error" variant="contained">
             Delete
           </Button>
         </DialogActions>

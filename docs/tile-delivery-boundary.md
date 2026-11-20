@@ -5,9 +5,9 @@
   category card covers — path-restricted to `thumbnail.jpeg` (see the
   Token section).
 - **Amendment (#1767):** a thumb-purpose token with an integer `iid` claim
-  grants only `inuksuks/<iid>.jpg` in the same source-image directory.
+  grants only `markers/<iid>.jpg` in the same source-image directory.
   Plain card-cover tokens remain limited to `thumbnail.jpeg`; nginx
-  caches Inuksuk verdicts per exact path.
+  caches Marker verdicts per exact path.
 - **Issues:** [#1069](https://github.com/bcit-tlu/hriv/issues/1069) (design),
   [#1064](https://github.com/bcit-tlu/hriv/issues/1064) (enforcement),
   [#1079](https://github.com/bcit-tlu/hriv/issues/1079) (route audit — see
@@ -106,12 +106,12 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
   request URI) so a cached thumbnail 204 can never be replayed for a tile
   request; all tile paths still share the `tiles` class, so the
   per-tile storm still collapses to one verdict.
-  With #1767, `issue_inuksuk_thumb_token(sid, iid)` mints a separate
+  With #1767, `issue_marker_thumb_token(sid, iid)` mints a separate
   thumb-purpose token carrying a positive integer `iid` claim.
-  `append_inuksuk_thumb_token(url)` derives these ids from an Inuksuk JPEG
+  `append_marker_thumb_token(url)` derives these ids from a Marker JPEG
   URL after image and Board visibility checks. Such tokens accept only
-  the exact `inuksuks/<iid>.jpg` path, rejecting even `thumbnail.jpeg`.
-  Tokens without `iid` never authorize Inuksuk JPEGs, because card covers
+  the exact `markers/<iid>.jpg` path, rejecting even `thumbnail.jpeg`.
+  Tokens without `iid` never authorize Marker JPEGs, because card covers
   may reference hidden images. Malformed `iid` claims and dot-segment
   traversal (including percent-encoded segments) remain rejected.
 
@@ -133,9 +133,9 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
    likewise stops a thumbnail-scoped verdict for a `purpose="thumb"` token
    from being replayed for tile paths. Both are derived from the normalized
    `$uri` (the path `alias` serves), not the raw `$request_uri`.
-   The #1767 Inuksuk thumbnail path `/api/tiles/<id>/inuksuks/<integer>.jpg`
+   The #1767 Marker thumbnail path `/api/tiles/<id>/markers/<integer>.jpg`
    uses its exact normalized `$uri` as its class value instead of `thumb`,
-   so a cached 204 for Inuksuk 7 cannot authorize Inuksuk 8 or the whole-image
+   so a cached 204 for Marker 7 cannot authorize Marker 8 or the whole-image
    thumbnail with the same token. No `image_files/` path changes class.
 
    **Path confusion guard:** nginx serves the decoded, dot-segment-resolved

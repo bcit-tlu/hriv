@@ -123,8 +123,11 @@ function ConfirmImportDialogBody({ kind, file, onCancel, onConfirm }: ConfirmImp
         />
       </DialogContent>
       <DialogActions>
-        <Button onClick={onCancel}>Cancel</Button>
+        <Button size="small" onClick={onCancel}>
+          Cancel
+        </Button>
         <Button
+          size="small"
           onClick={onConfirm}
           variant="contained"
           color="warning"

@@ -237,8 +237,8 @@ collections:
   # collections surfaces from students (404); non-students retain access.
   studentAccess: true
 
-# Inuksuks and Boards dark launch (epic #1765), API pod only.
-inuksuks:
+# Markers and Boards dark launch (epic #1765), API pod only.
+markers:
   enabled: false
 
 api:

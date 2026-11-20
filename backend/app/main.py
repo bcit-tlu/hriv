@@ -17,6 +17,7 @@ from .admin_ops import _ensure_tasks_dir
 from .auth import auth_settings
 from .database import dispose_probe_engine, get_probe_engine, settings
 from .logging_config import setup_logging
+from .marker_thumbs import rename_legacy_thumbnail_dirs
 from .metrics import render_metrics
 from .queue_metrics import queue_health
 from .rebuild_fixture import ensure_archive_lock_file
@@ -25,7 +26,7 @@ from .schemas import FeaturesOut
 from .worker import TaskQueueUnavailableError, get_pool
 from .maintenance import is_maintenance_mode
 from .upload_staging import UPLOAD_SPOOL_DIR_NAME
-from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, InuksuksFeatureMiddleware, MaintenanceMiddleware, UploadBodyLimitMiddleware
+from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, MarkersFeatureMiddleware, MaintenanceMiddleware, UploadBodyLimitMiddleware
 from .routers import (
     admin,
     announcements,
@@ -35,7 +36,7 @@ from .routers import (
     categories,
     collections,
     boards,
-    inuksuks,
+    markers,
     counts,
     groups,
     images,
@@ -217,6 +218,23 @@ async def lifespan(app: FastAPI):
             extra={"event": "rebuild_fixture.archive_lock_unavailable"},
         )
 
+    # One-shot migration of on-disk thumbnails written before the Marker
+    # rename; the Alembic revision rewrote DB paths but cannot see the volume.
+    try:
+        renamed = await asyncio.to_thread(rename_legacy_thumbnail_dirs)
+        if renamed:
+            logger.info(
+                "Renamed %d legacy marker thumbnail directories",
+                renamed,
+                extra={"event": "marker.legacy_thumbs_renamed", "renamed": renamed},
+            )
+    except OSError:
+        logger.warning(
+            "Could not rename legacy marker thumbnail directories",
+            exc_info=True,
+            extra={"event": "marker.legacy_thumbs_rename_failed"},
+        )
+
     if settings.oidc_enabled:
         await _check_oidc_connectivity()
 
@@ -340,7 +358,7 @@ app.add_middleware(UploadBodyLimitMiddleware)
 # Registered inside MaintenanceMiddleware (Starlette runs the last-added
 # middleware first) so maintenance 503s win over the collections 404.
 app.add_middleware(CollectionsFeatureMiddleware)
-app.add_middleware(InuksuksFeatureMiddleware)
+app.add_middleware(MarkersFeatureMiddleware)
 app.add_middleware(MaintenanceMiddleware)
 app.add_middleware(AuditMiddleware)
 
@@ -365,7 +383,7 @@ app.include_router(announcements.router, prefix="/api")
 app.include_router(media.router, prefix="/api")
 app.include_router(collections.router, prefix="/api")
 app.include_router(boards.router, prefix="/api")
-app.include_router(inuksuks.router, prefix="/api")
+app.include_router(markers.router, prefix="/api")
 app.include_router(counts.router, prefix="/api")
 app.include_router(categories.router, prefix="/api")
 app.include_router(groups.router, prefix="/api")
@@ -409,7 +427,7 @@ async def features() -> FeaturesOut:
     """Deployment feature flags (unauthenticated; see docs/collections.md)."""
     return FeaturesOut(
         collections=settings.collections_enabled,
-        inuksuks=settings.inuksuks_enabled,
+        markers=settings.markers_enabled,
         collections_student_access=settings.collections_student_access,
         collections_home_shelf=(
             settings.collections_enabled and settings.collections_home_shelf

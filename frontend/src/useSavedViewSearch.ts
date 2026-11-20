@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react'
-import { fetchBoards, fetchInuksuks, userMessage } from './api'
-import type { ApiBoardSummary, ApiInuksuk } from './types'
+import { fetchBoards, fetchMarkers, userMessage } from './api'
+import type { ApiBoardSummary, ApiMarker } from './types'
 import { parseSearchQuery } from './searchQuery'
 
-const EMPTY_RESULTS = { boards: [] as ApiBoardSummary[], inuksuks: [] as ApiInuksuk[], error: null }
+const EMPTY_RESULTS = { boards: [] as ApiBoardSummary[], markers: [] as ApiMarker[], error: null }
 
 export function useSavedViewSearch(enabled: boolean, query: string) {
   const key = `${enabled}:${query}`
   const [state, setState] = useState<{
     key: string
     boards: ApiBoardSummary[]
-    inuksuks: ApiInuksuk[]
+    markers: ApiMarker[]
     error: string | null
   } | null>(null)
   useEffect(() => {
@@ -19,7 +19,7 @@ export function useSavedViewSearch(enabled: boolean, query: string) {
     const timer = setTimeout(async () => {
       try {
         const boards = new Map<number, ApiBoardSummary>()
-        const inuksuks = new Map<number, ApiInuksuk>()
+        const markers = new Map<number, ApiMarker>()
         await Promise.all(
           parseSearchQuery(query).map(async (q) => {
             for (let page = 1; !controller.signal.aborted; page++) {
@@ -31,11 +31,11 @@ export function useSavedViewSearch(enabled: boolean, query: string) {
               if (batch.length < 200) break
             }
             for (let page = 1; !controller.signal.aborted; page++) {
-              const batch = await fetchInuksuks(
+              const batch = await fetchMarkers(
                 { q, page, page_size: 200 },
                 { signal: controller.signal },
               )
-              batch.forEach((row) => inuksuks.set(row.id, row))
+              batch.forEach((row) => markers.set(row.id, row))
               if (batch.length < 200) break
             }
           }),
@@ -44,7 +44,7 @@ export function useSavedViewSearch(enabled: boolean, query: string) {
           setState({
             key,
             boards: [...boards.values()],
-            inuksuks: [...inuksuks.values()],
+            markers: [...markers.values()],
             error: null,
           })
       } catch (err) {
@@ -52,7 +52,7 @@ export function useSavedViewSearch(enabled: boolean, query: string) {
           setState({
             key,
             boards: [],
-            inuksuks: [],
+            markers: [],
             error: userMessage(err, 'Unable to search saved views.'),
           })
       }

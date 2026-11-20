@@ -115,7 +115,7 @@ const EMPTY = makeCollection([], true)
 const EMPTY_READ_ONLY = makeCollection([], false)
 
 interface StoryArgs {
-  inuksuksEnabled?: boolean
+  markersEnabled?: boolean
   collection: Collection
   itemId: number | null
   onSelectItem: (id: number, slotId?: number) => void
@@ -132,7 +132,7 @@ function SequenceViewerExample(args: StoryArgs) {
   return (
     <AuthContext.Provider value={makeAuth(user)}>
       <SequenceCollectionViewer
-        inuksuksEnabled={args.inuksuksEnabled}
+        markersEnabled={args.markersEnabled}
         slotId={slotId}
         collection={args.collection}
         itemId={itemId}
@@ -239,6 +239,14 @@ export const EmptySequenceReadOnly: Story = {
 }
 
 export const SameImageSlots: Story = {
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'Two saved views of one image. The filmstrip is image-only; each button keeps its slot label as an accessible name, and the active view caption remains below the viewport.',
+      },
+    },
+  },
   decorators: [
     (Story) => (
       <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -253,7 +261,7 @@ export const SameImageSlots: Story = {
         typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
         window.location.href,
       )
-      if (/^\/api\/images\/\d+\/inuksuks$/.test(url.pathname)) return Response.json([])
+      if (/^\/api\/images\/\d+\/markers$/.test(url.pathname)) return Response.json([])
       return original(input, init)
     }
     return () => {
@@ -261,11 +269,11 @@ export const SameImageSlots: Story = {
     }
   },
   args: {
-    inuksuksEnabled: true,
+    markersEnabled: true,
     collection: makeCollection(
       [0.3, 0.7].map((x, index) => ({
         ...makeImage(101, 'Architectural study'),
-        tileSources: '/inuksuk-image.json',
+        tileSources: '/marker-image.json',
         slot: {
           id: 501 + index,
           label: index ? 'Right study' : 'Left study',
@@ -278,6 +286,7 @@ export const SameImageSlots: Story = {
   },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
+    await expect(canvas.getByTestId('sequence-thumbnail-strip').textContent).toBe('')
     await userEvent.click(canvas.getByRole('button', { name: 'Go to Right study' }))
     await expect(canvas.getByRole('button', { name: 'Go to Right study' })).toHaveAttribute(
       'aria-current',
@@ -285,5 +294,6 @@ export const SameImageSlots: Story = {
     )
     await expect(canvas.getByTestId('sequence-position')).toHaveTextContent('2 of 2')
     await expect(args.onSelectItem).toHaveBeenCalledWith(101, 502)
+    await expect(canvas.getByRole('heading', { name: 'Right study' })).toBeVisible()
   },
 }

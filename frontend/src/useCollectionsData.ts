@@ -287,7 +287,7 @@ export function matchesCollectionFilters(
 }
 
 export interface UseCollectionsDataOptions {
-  inuksuksEnabled?: boolean
+  markersEnabled?: boolean
   /** Only fetch while the Collections tab is active. */
   enabled: boolean
   currentUser: User | null
@@ -316,7 +316,7 @@ export interface UseCollectionsDataOptions {
 }
 
 export function useCollectionsData({
-  inuksuksEnabled = false,
+  markersEnabled = false,
   enabled,
   currentUser,
   selectedCollectionId,
@@ -851,7 +851,7 @@ export function useCollectionsData({
         try {
           const updated = apiCollectionToCollection(
             await replaceCollectionImages(id, {
-              ...(inuksuksEnabled
+              ...(markersEnabled
                 ? {
                     slots: (members ?? imageIds.map((key) => byId.get(key) ?? { id: key })).map(
                       memberSlotInput,
@@ -878,7 +878,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [writeCurrentRows, placeRow, inuksuksEnabled],
+    [writeCurrentRows, placeRow, markersEnabled],
   )
 
   /**
@@ -901,7 +901,7 @@ export function useCollectionsData({
         const updated = apiCollectionToCollection(
           await saveCollectionViewport(id, {
             viewport_state: viewportState,
-            ...(inuksuksEnabled && slotViewports ? { slot_viewports: slotViewports } : {}),
+            ...(markersEnabled && slotViewports ? { slot_viewports: slotViewports } : {}),
             version: baseline.version,
           }),
         )
@@ -916,7 +916,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [writeCurrentRows, placeRow, inuksuksEnabled],
+    [writeCurrentRows, placeRow, markersEnabled],
   )
 
   /**
@@ -1182,7 +1182,7 @@ export function useCollectionsData({
   const addImages = useCallback(
     (id: number, imageIds: number[], requestRole = role): Promise<AddToCollectionResult> => {
       const run = async (): Promise<AddToCollectionResult> => {
-        const result = await addImagesToCollection(id, imageIds, requestRole, inuksuksEnabled)
+        const result = await addImagesToCollection(id, imageIds, requestRole, markersEnabled)
         mergeUpdated(result.collection)
         return result
       }
@@ -1193,7 +1193,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [mergeUpdated, role, inuksuksEnabled],
+    [mergeUpdated, role, markersEnabled],
   )
 
   /**
@@ -1206,7 +1206,7 @@ export function useCollectionsData({
   const removeImages = useCallback(
     (id: number, imageIds: number[], base?: Collection): Promise<Collection> => {
       const run = async (): Promise<Collection> => {
-        const updated = await removeImagesFromCollection(id, imageIds, base, inuksuksEnabled)
+        const updated = await removeImagesFromCollection(id, imageIds, base, markersEnabled)
         mergeUpdated(updated)
         return updated
       }
@@ -1217,7 +1217,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [mergeUpdated, inuksuksEnabled],
+    [mergeUpdated, markersEnabled],
   )
 
   /**
