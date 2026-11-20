@@ -1433,6 +1433,12 @@ selection MouseTracker ignores their presses.
 
 ### Boards & Markers overview and Board dialog
 
+- The AppBar Boards & Markers button opens a My Boards popover listing the
+  viewer's editable owned Boards (page row order, cover, name, Marker count).
+  A Board opens the in-place Board dialog over the current page; the footer
+  **Open Boards & Markers** link opens the page. On the Boards page the button
+  navigates directly.
+
 - The Boards and Markers page title uses Collections' h5/h1 and unpadded flex
   header exactly, with the Cards/Table toggle in the title row immediately left
   of All Boards and the Filter by bar rendered under the title like Manage

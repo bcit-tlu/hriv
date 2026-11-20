@@ -1,0 +1,18 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as BoardsPopoverStories from './BoardsPopover.stories'
+
+<Meta of={BoardsPopoverStories} />
+
+<Title />
+
+The AppBar **Boards & Markers** button opens this popover instead of navigating
+away (prototype). It stacks the viewer's own editable Boards — the Boards &
+Markers page row, in its order — with cover, name and Marker count. Choosing a
+Board opens the in-place Board dialog over the current page, whose Marker tiles
+jump to their saved views. **Open Boards & Markers** at the bottom opens the full
+page. Boards reload on every open; on the Boards page itself the button keeps
+navigating.
+
+<Primary />
+
+<Stories includePrimary={false} />
