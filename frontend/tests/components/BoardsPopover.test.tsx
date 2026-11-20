@@ -39,7 +39,7 @@ describe('BoardsPopover', () => {
     const { fetchBoards, onOpenBoard, user } = setup()
     const paper = await screen.findByRole('dialog', { name: 'My Boards' })
     expect(fetchBoards).toHaveBeenCalledWith(
-      { sort: 'sort_order', order: 'asc', page_size: 200 },
+      { sort: 'sort_order', order: 'asc', page: 1, page_size: 200 },
       expect.anything(),
     )
     await waitFor(() => expect(within(paper).getByText('Second')).toBeVisible())
@@ -50,6 +50,19 @@ describe('BoardsPopover', () => {
     await user.click(within(paper).getByRole('button', { name: /^First/ }))
     expect(onOpenBoard).toHaveBeenCalledWith(10)
   })
+  it('reads every page so owned Boards after the first 200 still appear', async () => {
+    const others = Array.from({ length: 200 }, (_, i) =>
+      board({ id: 100 + i, name: `Other ${i}`, owners: [{ ...mine.owners[0], user_id: 77 }] }),
+    )
+    const fetchBoards = vi.fn(async ({ page }: { page?: number }) =>
+      page === 1 ? others : [board({ id: 10, name: 'First', marker_count: 4 })],
+    )
+    setup(fetchBoards as unknown as typeof import('../../src/api').fetchBoards)
+    const paper = await screen.findByRole('dialog', { name: 'My Boards' })
+    await waitFor(() => expect(within(paper).getByText('First')).toBeVisible())
+    expect(fetchBoards).toHaveBeenCalledTimes(2)
+  })
+
   it('opens the full page from the footer link', async () => {
     const { onOpenBoardsPage, user } = setup()
     await user.click(await screen.findByRole('button', { name: 'Open Boards & Markers' }))

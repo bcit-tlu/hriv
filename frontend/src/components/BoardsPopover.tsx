@@ -25,6 +25,7 @@ export interface BoardsPopoverProps {
 }
 
 type Loaded = { boards: ApiBoardSummary[] } | { error: string }
+const PAGE_SIZE = 200
 
 /** Quick AppBar switcher: the viewer's own editable Boards (the Boards &
  *  Markers page row, in its order) open the in-place Board dialog, and the
@@ -43,11 +44,20 @@ export default function BoardsPopover({
   useEffect(() => {
     if (!anchorEl) return
     const controller = new AbortController()
-    // Same order as the Boards page row (useBoardsData).
-    void load(
-      { sort: 'sort_order', order: 'asc', page_size: 200 },
-      { signal: controller.signal },
-    ).then(
+    // Same order as the Boards page row (useBoardsData). Every page is read
+    // because Boards the user can only view share the pages with their own.
+    const loadAll = async () => {
+      const rows: ApiBoardSummary[] = []
+      for (let page = 1; ; page++) {
+        const batch = await load(
+          { sort: 'sort_order', order: 'asc', page, page_size: PAGE_SIZE },
+          { signal: controller.signal },
+        )
+        rows.push(...batch)
+        if (batch.length < PAGE_SIZE) return rows
+      }
+    }
+    void loadAll().then(
       (boards) => setLoaded({ anchor: anchorEl, value: { boards } }),
       (err: unknown) => {
         if (controller.signal.aborted) return
