@@ -19,6 +19,10 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `description`, `visibility` (CHECK: private/public/restricted, default
   private), `sort_order` (zero), and OCC `version` (one).
   `created_by_user_id` and optional `owner_program_id` are **SET NULL** FKs.
+  Tile cover (`0050_board_cover_pin`): optional `cover_marker_id` (**SET
+  NULL** FK to `markers`) pins a member marker's thumbnail, and `cover_blank`
+  (default false) picks the Board-icon placeholder; writing one clears the
+  other.
   Both entities have timezone-aware `created_at` / `updated_at` timestamps.
 - **Ownership and scope:** `marker_owners(marker_id, user_id)`,
   `board_owners(board_id, user_id)`, `board_programs(board_id, program_id)`,
