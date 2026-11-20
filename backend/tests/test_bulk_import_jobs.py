@@ -68,7 +68,8 @@ async def test_create_bulk_import_job_snapshots_supervisor_and_items():
         bulk_import_job=bulk,
         file_entries=[("a.png", "/data/a.png"), ("b.png", "/data/b.png")],
         copyright="CC0",
-        note=None,
+        description="D",
+        instructor_note="S",
         active=True,
         parallelism=4,
     )
@@ -80,6 +81,8 @@ async def test_create_bulk_import_job_snapshots_supervisor_and_items():
     assert job.metadata_["bulk_import_job_id"] == 7
     assert job.metadata_["coordinator_claims"] == 0
     assert job.metadata_["parallelism"] == 4
+    assert job.metadata_["description"] == "D"
+    assert job.metadata_["instructor_note"] == "S"
     # The domain row is linked to the supervisor (job.id assigned by flush
     # in production; both stay None under the mock).
     assert bulk.job_id == job.id

@@ -32,6 +32,8 @@ import ImageViewer from './components/ImageViewer'
 import ChangePasswordDialog from './components/ChangePasswordDialog'
 import ViewerImageDetails from './components/ViewerImageDetails'
 import ImageDetailsDrawer, { ImageDetailsTrigger } from './components/ImageDetailsDrawer'
+import ImageNotesContent from './components/ImageNotesContent'
+import { imageNotesTitle } from './components/imageNotesTitle'
 import ImageViewerInfoBar from './components/ImageViewerInfoBar'
 import ViewportDialog from './components/ViewportDialog'
 import SortableTileGrid from './components/SortableTileGrid'
@@ -2878,7 +2880,8 @@ export default function App() {
                     tileSources: img.tile_sources,
                     categoryId: img.category_id,
                     copyright: img.copyright,
-                    note: img.note,
+                    description: img.description,
+                    instructorNote: img.instructor_note,
                     active: img.active,
                     sortOrder: img.sort_order,
                     version: img.version,
@@ -3264,18 +3267,16 @@ export default function App() {
                       )}
                       <ViewportDialog
                         open={viewerDialog === 'note'}
-                        title="Notes"
+                        title={imageNotesTitle(
+                          selectedImage.description,
+                          selectedImage.instructorNote,
+                        )}
                         onClose={() => setViewerDialog(null)}
                       >
-                        <Box
-                          sx={{
-                            typography: 'body2',
-                            whiteSpace: 'pre-wrap',
-                            overflowWrap: 'anywhere',
-                          }}
-                        >
-                          {selectedImage.note}
-                        </Box>
+                        <ImageNotesContent
+                          description={selectedImage.description}
+                          instructorNote={selectedImage.instructorNote}
+                        />
                       </ViewportDialog>
                       <ViewportDialog
                         open={viewerDialog === 'collections'}
@@ -3311,7 +3312,8 @@ export default function App() {
                 imageId={selectedImage.id}
                 name={selectedImage.name}
                 active={selectedImage.active}
-                note={selectedImage.note}
+                description={selectedImage.description}
+                instructorNote={selectedImage.instructorNote}
                 collections={selectedImageCollections}
                 onOpenCollection={handleOpenCollection}
                 hrefForCollection={(id) => `${window.location.pathname}?collection=${id}`}

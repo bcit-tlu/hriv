@@ -1214,7 +1214,8 @@ async def _get_or_create_bulk_source_image(
     stored_path: str,
     category_id: int | None,
     copyright: str | None,
-    note: str | None,
+    description: str | None,
+    instructor_note: str | None,
     active: bool,
     requested_by: int | None,
 ) -> SourceImage:
@@ -1239,7 +1240,8 @@ async def _get_or_create_bulk_source_image(
         name=Path(original_filename).stem,
         category_id=category_id,
         copyright=copyright or "Public Domain",
-        note=note,
+        description=description,
+        instructor_note=instructor_note,
         active=active,
         uploaded_by=requested_by,
         bulk_import_job_id=bulk_import_job_id,
@@ -1265,7 +1267,8 @@ async def _track_bulk_import_item(
     stored_path: str,
     category_id: int | None,
     copyright: str | None,
-    note: str | None,
+    description: str | None,
+    instructor_note: str | None,
     active: bool,
     requested_by: int | None,
     batch_progress: _BulkImportProgress,
@@ -1291,7 +1294,8 @@ async def _track_bulk_import_item(
                 stored_path=stored_path,
                 category_id=category_id,
                 copyright=copyright,
-                note=note,
+                description=description,
+                instructor_note=instructor_note,
                 active=active,
                 requested_by=requested_by,
             )
@@ -1927,7 +1931,9 @@ async def _process_bulk_import_impl(bulk_import_job_id: int) -> None:
     )
 
     copyright = meta.get("copyright")
-    note = meta.get("note")
+    # Jobs created before #1780 stored the description under "note".
+    description = meta.get("description", meta.get("note"))
+    instructor_note = meta.get("instructor_note")
     active = bool(meta.get("active", True))
     batch_progress = _BulkImportProgress(
         last_child_advanced_at=time.monotonic()
@@ -2021,7 +2027,8 @@ async def _process_bulk_import_impl(bulk_import_job_id: int) -> None:
                         stored_path=str(item_meta.get("stored_path") or ""),
                         category_id=category_id,
                         copyright=copyright,
-                        note=note,
+                        description=description,
+                        instructor_note=instructor_note,
                         active=active,
                         requested_by=requested_by,
                         batch_progress=batch_progress,
@@ -2172,14 +2179,15 @@ async def bulk_import_images(
     db: AsyncSession = Depends(get_db),
     category_id: Annotated[int | None, Form()] = None,
     copyright: Annotated[str | None, Form()] = None,
-    note: Annotated[str | None, Form()] = None,
+    description: Annotated[str | None, Form()] = None,
+    instructor_note: Annotated[str | None, Form()] = None,
     active: Annotated[bool, Form()] = True,
 ) -> BulkImportJob:
     """Upload multiple image files and/or zip archives for bulk import.
 
     Images are assigned to the specified category, or placed at root level
-    when ``category_id`` is omitted.  Metadata fields (copyright, note,
-    active) are applied uniformly to every image in the batch.  Omitted
+    when ``category_id`` is omitted.  Metadata fields (copyright, description,
+    instructor_note, active) are applied uniformly to every image in the batch.  Omitted
     fields fall back to sensible defaults.
     """
     if not files:
@@ -2192,11 +2200,18 @@ async def bulk_import_images(
             raise HTTPException(status_code=400, detail="Category not found")
 
     try:
-        note = normalize_note_value(note)
+        description = normalize_note_value(description)
     except ValueError:
         raise HTTPException(
             status_code=400,
-            detail=f"Note must be {MAX_NOTE_LENGTH} characters or fewer",
+            detail=f"Description must be {MAX_NOTE_LENGTH} characters or fewer",
+        )
+    try:
+        instructor_note = normalize_note_value(instructor_note)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Instructor note must be {MAX_NOTE_LENGTH} characters or fewer",
         )
 
     # A bulk-import coordinator remains a single in-flight logical operation for
@@ -2524,7 +2539,8 @@ async def bulk_import_images(
                     bulk_import_job=job,
                     file_entries=file_entries,
                     copyright=copyright,
-                    note=note,
+                    description=description,
+                    instructor_note=instructor_note,
                     active=active,
                     parallelism=_MAX_CONCURRENCY,
                 )

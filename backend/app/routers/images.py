@@ -21,6 +21,7 @@ from ..collection_views import (
     collection_summary_out,
     collections_accessible_to,
     image_ids_in_collections,
+    image_out,
 )
 from ..collection_slots import cleanup_slot_thumbs, image_slot_thumbs
 from ..database import async_session, get_db, settings
@@ -94,7 +95,8 @@ async def list_images(
             )
     stmt = stmt.order_by(Image.sort_order, Image.name)
     result = await db.execute(stmt)
-    return result.scalars().all()
+    scrub = _user.role == "student"
+    return [image_out(img, scrub_instructor_note=scrub) for img in result.scalars().all()]
 
 
 # Literal routes must register before `/{image_id}` — FastAPI matches in
@@ -144,7 +146,8 @@ async def get_image(
     _user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ):
-    return await _get_visible_image(db, _user, image_id)
+    img = await _get_visible_image(db, _user, image_id)
+    return image_out(img, scrub_instructor_note=_user.role == "student")
 
 
 async def _get_visible_image(db: AsyncSession, user: User, image_id: int) -> Image:
@@ -221,7 +224,8 @@ async def create_image(
                 tile_sources=body.tile_sources,
                 category_id=body.category_id,
                 copyright=body.copyright,
-                note=body.note,
+                description=body.description,
+                instructor_note=body.instructor_note,
                 active=body.active,
                 sort_order=body.sort_order,
                 metadata_=body.metadata_extra or {},
@@ -463,11 +467,13 @@ async def replace_image(
     file: Annotated[UploadFile, File()],
     background_tasks: BackgroundTasks,
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    request: Request,
     db: AsyncSession = Depends(get_db),
     name: Annotated[str | None, Form()] = None,
     category_id: Annotated[str | None, Form()] = None,
     copyright: Annotated[str | None, Form()] = None,
-    note: Annotated[str | None, Form()] = None,
+    description: Annotated[str | None, Form()] = None,
+    instructor_note: Annotated[str | None, Form()] = None,
     active: Annotated[str | None, Form()] = None,
     metadata_extra: Annotated[str | None, Form()] = None,
 ) -> SourceImage:
@@ -499,16 +505,33 @@ async def replace_image(
 
             original_filename = sanitize_upload_filename(file.filename)
 
+            # FastAPI turns an empty multipart field into None, same as an
+            # omitted one; recover an explicit "" so it clears the value.
+            form = await request.form()
+            category_id, copyright, description, instructor_note = (
+                "" if value is None and key in form else value
+                for key, value in (
+                    ("category_id", category_id),
+                    ("copyright", copyright),
+                    ("description", description),
+                    ("instructor_note", instructor_note),
+                )
+            )
+
             # ── Apply optional metadata updates atomically ──────────
             has_metadata = any(
                 v is not None
-                for v in (name, category_id, copyright, note, active, metadata_extra)
+                for v in (
+                    name, category_id, copyright, description, instructor_note,
+                    active, metadata_extra,
+                )
             )
             # Parse and validate all metadata fields up front so 400s fire
             # before any disk or database work, and so no lock is held
             # while the client streams the file.
             parsed_cat: int | None = None
-            parsed_note: str | None = None
+            parsed_description: str | None = None
+            parsed_instructor_note: str | None = None
             parsed_metadata: dict | list | None = None
             span.set_attribute("image.metadata_update", has_metadata)
             if has_metadata:
@@ -517,14 +540,20 @@ async def replace_image(
                         parsed_cat = int(category_id) if category_id != "" else None
                     except (ValueError, TypeError):
                         raise HTTPException(status_code=400, detail="Invalid category_id")
-                if note is not None:
-                    try:
-                        parsed_note = normalize_note_value(note)
-                    except ValueError:
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"Note must be {MAX_NOTE_LENGTH} characters or fewer",
-                        )
+                try:
+                    parsed_description = normalize_note_value(description)
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Description must be {MAX_NOTE_LENGTH} characters or fewer",
+                    )
+                try:
+                    parsed_instructor_note = normalize_note_value(instructor_note)
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Instructor note must be {MAX_NOTE_LENGTH} characters or fewer",
+                    )
                 if metadata_extra is not None:
                     try:
                         parsed_metadata = json.loads(metadata_extra) if metadata_extra else None
@@ -575,7 +604,8 @@ async def replace_image(
                 "name": img.name,
                 "category_id": img.category_id,
                 "copyright": img.copyright,
-                "note": img.note,
+                "description": img.description,
+                "instructor_note": img.instructor_note,
                 "active": img.active,
                 "metadata_": deepcopy(img.metadata_),
                 "version": img.version,
@@ -606,8 +636,10 @@ async def replace_image(
                         img.name = name
                     if copyright is not None:
                         img.copyright = copyright if copyright != "" else None
-                    if note is not None:
-                        img.note = parsed_note
+                    if description is not None:
+                        img.description = parsed_description
+                    if instructor_note is not None:
+                        img.instructor_note = parsed_instructor_note
                     if active is not None:
                         img.active = active.lower() in ("true", "1")
                     if metadata_extra is not None:
@@ -621,7 +653,8 @@ async def replace_image(
                     name=img.name,
                     category_id=img.category_id,
                     copyright=img.copyright,
-                    note=img.note,
+                    description=img.description,
+                    instructor_note=img.instructor_note,
                     active=img.active,
                     file_size=file_size,
                     uploaded_by=_user.id,
@@ -736,7 +769,8 @@ async def replace_image(
                                 name=metadata_snapshot["name"],
                                 category_id=metadata_snapshot["category_id"],
                                 copyright=metadata_snapshot["copyright"],
-                                note=metadata_snapshot["note"],
+                                description=metadata_snapshot["description"],
+                                instructor_note=metadata_snapshot["instructor_note"],
                                 active=metadata_snapshot["active"],
                                 metadata_=metadata_snapshot["metadata_"],
                                 version=metadata_snapshot["version"],
@@ -744,7 +778,7 @@ async def replace_image(
                         )
                         if restore_result.rowcount == 1:
                             # The restore reverts any browse-visible fields (name,
-                            # copyright, note, active, metadata) on a categorized image
+                            # copyright, description, instructor_note, active, metadata) on a categorized image
                             # or a collection member, so the tree/list content can
                             # change. Bump the browse revision whenever the image was
                             # or becomes categorized or is a member, matching the

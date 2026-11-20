@@ -14,13 +14,15 @@ import * as ImageViewerInfoBarStories from './ImageViewerInfoBar.stories'
 <Title />
 
 <Subtitle>
-  The caption row below the image viewer: title, clamped note, and fitted collections.
+  The caption row below the image viewer: title, clamped description and instructor note, and fitted
+  collections.
 </Subtitle>
 
 ## When to use
 
 `App` renders the info bar directly below the regular image viewer. The image title leads on the
-left, followed by the note clamped to one line with a "…more" link, then — pushed right — a
+left, followed by the description and (for staff, when set) the instructor note, each clamped to
+one line with a "…more" link, then — pushed right — a
 "Collections:" cell that shows as many names as fit and collapses the rest behind a "+ N more"
 link. Both affordances open a `ViewportDialog` centred over the viewer. The bar always renders
 because the title is always shown; the viewer instructions live in the `ImageDetailsDrawer`
@@ -36,7 +38,8 @@ footer.
 
 ### Long note
 
-A note longer than one line clamps behind an "…more" link that opens the notes dialog.
+A description longer than one line clamps behind an "…more" link that opens the dialog — titled
+**Description**, or **Description & instructor note** when there is one.
 
 <Canvas of={ImageViewerInfoBarStories.LongNote} />
 
@@ -48,7 +51,7 @@ More names than fit collapse behind a "+ N more" link that opens the collections
 
 ### Title only
 
-No note and no collections — just the title.
+No description, no instructor note and no collections — just the title.
 
 <Canvas of={ImageViewerInfoBarStories.TitleOnly} />
 

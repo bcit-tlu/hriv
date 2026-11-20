@@ -22,7 +22,9 @@
 #   --name <name>          Image name (single upload only)
 #   --category <id>        Category ID (single upload only)
 #   --copyright <text>     Copyright text (single upload only)
-#   --note <text>          Note text (single upload only)
+#   --description <text>   Description, shown to every role (single upload only)
+#   --instructor-note <text>
+#                          Instructor note, hidden from students (single upload only)
 #
 # Examples:
 #   # Upload a single TIFF to category 3
@@ -42,7 +44,8 @@ PASSWORD="${HRIV_PASSWORD:-password}"
 NAME=""
 CATEGORY_ID=""
 COPYRIGHT=""
-NOTE=""
+DESCRIPTION=""
+INSTRUCTOR_NOTE=""
 
 # ── Helpers ────────────────────────────────────────────────
 
@@ -74,7 +77,8 @@ cmd_upload() {
   [ -n "$NAME" ]         && args+=(-F "name=${NAME}")
   [ -n "$CATEGORY_ID" ]  && args+=(-F "category_id=${CATEGORY_ID}")
   [ -n "$COPYRIGHT" ]    && args+=(-F "copyright=${COPYRIGHT}")
-  [ -n "$NOTE" ]         && args+=(-F "note=${NOTE}")
+  [ -n "$DESCRIPTION" ]  && args+=(-F "description=${DESCRIPTION}")
+  [ -n "$INSTRUCTOR_NOTE" ] && args+=(-F "instructor_note=${INSTRUCTOR_NOTE}")
 
   local size
   size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null || echo "?")
@@ -197,7 +201,9 @@ while [ $# -gt 0 ]; do
     --name)      NAME="$2";       shift 2 ;;
     --category)  CATEGORY_ID="$2"; shift 2 ;;
     --copyright) COPYRIGHT="$2";  shift 2 ;;
-    --note)      NOTE="$2";       shift 2 ;;
+    --description) DESCRIPTION="$2"; shift 2 ;;
+    --instructor-note) INSTRUCTOR_NOTE="$2"; shift 2 ;;
+    --note)      die "--note was renamed to --description" ;;
     *)           POSITIONAL+=("$1"); shift ;;
   esac
 done

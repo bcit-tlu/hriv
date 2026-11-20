@@ -111,6 +111,19 @@ Each exported **source image** carries `uploaded_by` (the original uploader's
 `images` (via `image_id`) and `users` (via `uploaded_by`), import inserts
 `source_images` after `users` and `images`.
 
+Each exported **image** and **source image** carries its public
+`description` and its staff-only `instructor_note` (visible to admin,
+instructor and staff, never students). Import restores both. `description` is
+read from the `description` key, falling back to the legacy `note` key that
+dumps written before #1781 use (images also fall back to the older `origin`
+key); `instructor_note` is restored as-is. Reading old dumps is supported, but
+not the reverse: an older HRIV importing a newer dump only reads `note`, so
+descriptions would import empty. Dumps written before migration
+`0051_image_description_split` have no `instructor_note`, so it imports as
+`NULL`. Because the archive includes `instructor_note`, treat exported dumps as
+staff-only content. See
+[Image metadata and versioning](image-metadata-and-versioning.md#description-and-instructor-note).
+
 **Import** (`run_db_import`) clears existing data and re-inserts it. Order
 matters because of foreign keys.
 

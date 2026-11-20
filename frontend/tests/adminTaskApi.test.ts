@@ -399,7 +399,15 @@ describe('Background Admin Task API', () => {
     it('uploads bulk imports with XHR progress reporting', async () => {
       const onProgress = vi.fn()
       const zip = new File(['zip-data'], 'images.zip', { type: 'application/zip' })
-      const promise = bulkImportImages([zip], 2, 'Public Domain', 'Note', true, onProgress)
+      const promise = bulkImportImages(
+        [zip],
+        2,
+        'Public Domain',
+        'Note',
+        undefined,
+        true,
+        onProgress,
+      )
 
       const progressHandler = xhrInstance.upload.addEventListener.mock.calls.find(
         (c: unknown[]) => c[0] === 'progress',

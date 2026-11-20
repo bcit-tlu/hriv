@@ -721,7 +721,7 @@ async def test_entity_patch_noop_metadata_edit_does_not_bump_revision(db_session
     await update_image(
         imgs[0],
         ImageUpdate(
-            note="new note",
+            description="new note",
             category_id=img.category_id,
             sort_order=img.sort_order,
         ),

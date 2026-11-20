@@ -44,7 +44,7 @@ def test_image_out_from_orm() -> None:
         tile_sources="/tiles/1",
         category_id=None,
         copyright=None,
-        note=None,
+        description=None,
         active=True,
         sort_order=0,
         metadata_={"key": "val"},
@@ -72,7 +72,7 @@ def test_image_out_from_dict() -> None:
         "tile_sources": "/tiles/3",
         "category_id": None,
         "copyright": None,
-        "note": None,
+        "description": None,
         "active": True,
         "sort_order": 0,
         "metadata_": None,
@@ -96,7 +96,7 @@ def test_source_image_out_from_orm() -> None:
         name="test",
         category_id=None,
         copyright=None,
-        note=None,
+        description=None,
         active=True,
         image_id=5,
         file_size=1048576,
@@ -125,7 +125,7 @@ def test_source_image_out_from_dict() -> None:
         "name": None,
         "category_id": None,
         "copyright": None,
-        "note": None,
+        "description": None,
         "active": True,
         "image_id": None,
         "tile_cache_status": "missing",
@@ -299,23 +299,27 @@ def test_frontend_note_limit_matches_backend() -> None:
     assert int(match.group(1)) == MAX_NOTE_LENGTH
 
 
-def _image_create_with_note(note: str | None) -> ImageCreate:
+def _image_create_with_note(field: str, note: str | None) -> ImageCreate:
     return ImageCreate(
         name="test-img",
         thumb="/thumb.jpg",
         tile_sources="/tiles/1",
-        note=note,
+        **{field: note},
     )
 
 
-def _image_update_with_note(note: str | None) -> ImageUpdate:
-    return ImageUpdate(note=note)
+def _image_update_with_note(field: str, note: str | None) -> ImageUpdate:
+    return ImageUpdate(**{field: note})
 
 
-def _image_bulk_update_with_note(note: str | None) -> ImageBulkUpdate:
-    return ImageBulkUpdate(image_ids=[1], note=note)
+def _image_bulk_update_with_note(field: str, note: str | None) -> ImageBulkUpdate:
+    return ImageBulkUpdate(image_ids=[1], **{field: note})
 
 
+_NOTE_FIELDS = pytest.mark.parametrize("field", ["description", "instructor_note"])
+
+
+@_NOTE_FIELDS
 @pytest.mark.parametrize(
     ("factory", "note", "expected"),
     [
@@ -333,11 +337,12 @@ def _image_bulk_update_with_note(note: str | None) -> ImageBulkUpdate:
         (_image_bulk_update_with_note, "short note", "short note"),
     ],
 )
-def test_image_write_schemas_accept_valid_note_values(factory, note, expected) -> None:
-    schema = factory(note)
-    assert schema.note == expected
+def test_image_write_schemas_accept_valid_note_values(field, factory, note, expected) -> None:
+    schema = factory(field, note)
+    assert getattr(schema, field) == expected
 
 
+@_NOTE_FIELDS
 @pytest.mark.parametrize(
     "factory",
     [
@@ -346,9 +351,9 @@ def test_image_write_schemas_accept_valid_note_values(factory, note, expected) -
         _image_bulk_update_with_note,
     ],
 )
-def test_image_write_schemas_reject_notes_over_500_characters(factory) -> None:
-    with pytest.raises(ValueError, match="note must be 500 characters or fewer"):
-        factory("x" * 501)
+def test_image_write_schemas_reject_notes_over_500_characters(field, factory) -> None:
+    with pytest.raises(ValueError, match="must be 500 characters or fewer"):
+        factory(field, "x" * 501)
 
 
 # ── locked_overlays validation ────────────────────────────

@@ -418,7 +418,8 @@ def run_curl_upload(
     category_id: int | None,
     *,
     copyright_text: str | None,
-    note: str | None,
+    description: str | None,
+    instructor_note: str | None,
     active: bool,
 ) -> SourceImagePayload:
     content_type = mimetypes.guess_type(image.path.name)[0]
@@ -444,8 +445,10 @@ def run_curl_upload(
         args.extend(["--form-string", f"category_id={category_id}"])
     if copyright_text is not None:
         args.extend(["--form-string", f"copyright={copyright_text}"])
-    if note is not None:
-        args.extend(["--form-string", f"note={note}"])
+    if description is not None:
+        args.extend(["--form-string", f"description={description}"])
+    if instructor_note is not None:
+        args.extend(["--form-string", f"instructor_note={instructor_note}"])
 
     result = subprocess.run(args, check=False, stdout=subprocess.PIPE, text=True)
     if result.returncode != 0:
@@ -493,7 +496,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wait", action="store_true", help="Poll uploaded source images until processing completes.")
     parser.add_argument("--poll-interval", type=float, default=5.0, help="Seconds between --wait status checks (default: 5)")
     parser.add_argument("--copyright", dest="copyright_text", help="Optional copyright text applied to uploaded images")
-    parser.add_argument("--note", help="Optional note applied to uploaded images")
+    parser.add_argument("--description", help="Optional description applied to uploaded images (visible to every role)")
+    parser.add_argument("--instructor-note", help="Optional instructor note applied to uploaded images (hidden from students)")
     parser.add_argument("--inactive", action="store_true", help="Upload images with active=false")
     return parser.parse_args()
 
@@ -588,7 +592,8 @@ def main() -> int:
                 image,
                 category_id,
                 copyright_text=args.copyright_text,
-                note=args.note,
+                description=args.description,
+                instructor_note=args.instructor_note,
                 active=active,
             )
             source_id = int(response["id"])

@@ -189,6 +189,57 @@ describe('ImageDetailsDrawer', () => {
     expect(screen.getByText('No details available.')).toBeInTheDocument()
   })
 
+  it('shows a wrapping instructor note block above Copyright', async () => {
+    render(
+      <Harness
+        {...makeProps({
+          ...populatedProps,
+          image: { ...populatedProps.image, instructorNote: 'Discuss\nafter the quiz' },
+        })}
+      />,
+    )
+    fireEvent.click(trigger())
+    await screen.findByRole('heading', { name: 'Image details' })
+
+    const block = screen.getByTestId('image-details-instructor-note')
+    expect(block).toHaveTextContent('Instructor note: Discuss after the quiz')
+    expect(block).toHaveStyle({ whiteSpace: 'pre-wrap' })
+    expect(within(block).getByTitle('Visible to instructors, staff and admins')).toBeInTheDocument()
+    const copyright = screen.getByText('Copyright:', { exact: true })
+    expect(block.compareDocumentPosition(copyright) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('omits the instructor note block when there is none', async () => {
+    for (const instructorNote of [null, undefined, '  ']) {
+      const { unmount } = render(
+        <Harness
+          {...makeProps({ ...populatedProps, image: { ...populatedProps.image, instructorNote } })}
+        />,
+      )
+      fireEvent.click(trigger())
+      await screen.findByRole('heading', { name: 'Image details' })
+      expect(screen.queryByTestId('image-details-instructor-note')).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('shows the instructor note instead of the empty state when it is the only detail', async () => {
+    render(
+      <Harness
+        {...makeProps({
+          image: { instructorNote: 'Staff only' },
+          measurement: null,
+          sourceInfo: null,
+        })}
+      />,
+    )
+    fireEvent.click(trigger())
+    await screen.findByRole('heading', { name: 'Image details' })
+
+    expect(screen.getByTestId('image-details-instructor-note')).toBeInTheDocument()
+    expect(screen.queryByText('No details available.')).not.toBeInTheDocument()
+  })
+
   it('lists every field with a dash for absent values when showAll is set', () => {
     render(
       <ImageDetailsContent

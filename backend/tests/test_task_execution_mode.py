@@ -89,7 +89,8 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
         name="image",
         category_id=None,
         copyright=None,
-        note=None,
+        description=None,
+        instructor_note=None,
         active=True,
         metadata_=None,
         version=1,
@@ -115,6 +116,7 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
                 _upload_file("replacement.jpg"),
                 replace_bg,
                 MagicMock(),
+                request=MagicMock(form=AsyncMock(return_value={})),
                 db=replace_db,
             )
         except TaskQueueUnavailableError:
@@ -184,7 +186,8 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
             stored_path=str(staged),
             category_id=None,
             copyright=None,
-            note=None,
+            description=None,
+            instructor_note=None,
             active=True,
             requested_by=1,
             batch_progress=bulk_import._BulkImportProgress(

@@ -1009,7 +1009,7 @@ describe('caption note', () => {
   const noted = () =>
     syncCollection({
       images: [
-        makeImage({ id: 1, name: 'Skull — frontal', note }),
+        makeImage({ id: 1, name: 'Skull — frontal', description: note }),
         makeImage({ id: 2, name: 'Skull — lateral' }),
       ],
     })
@@ -1059,9 +1059,9 @@ describe('caption note', () => {
   it('shows the flattened note between the title and the Open image button (#1686)', () => {
     renderViewer({ collection: noted() })
 
-    // The noted pane gets the "Notes:" label plus the single-line-clamped
+    // The noted pane gets the "Description:" label plus the single-line-clamped
     // note; the blank-note pane gets neither.
-    expect(screen.getAllByText(/^Notes:/)).toHaveLength(1)
+    expect(screen.getAllByText(/^Description:/)).toHaveLength(1)
     const heading = screen.getByRole('heading', { level: 2, name: 'Skull — frontal' })
     const noteEl = screen.getByText('Frontal suture intact. No asymmetry detected.')
     const openButton = screen.getByRole('button', { name: 'Open Skull — frontal' })
@@ -1073,23 +1073,36 @@ describe('caption note', () => {
     expect(screen.queryByRole('button', { name: /^Show notes for / })).not.toBeInTheDocument()
   })
 
-  it('offers no "Show full note" control without a note', () => {
+  it('shows an instructor note only in the pane whose image has one', () => {
+    renderViewer({
+      collection: syncCollection({
+        images: [
+          makeImage({ id: 1, name: 'Skull — frontal', instructorNote: 'Staff only' }),
+          makeImage({ id: 2, name: 'Skull — lateral' }),
+        ],
+      }),
+    })
+    expect(screen.getAllByText('Instructor note:')).toHaveLength(1)
+    expect(screen.getByText('Staff only')).toBeInTheDocument()
+  })
+
+  it('offers no "Show full description" control without a note', () => {
     renderViewer()
-    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show full description' })).not.toBeInTheDocument()
   })
 
   it('treats a whitespace-only note as absent', () => {
     renderViewer({
       collection: syncCollection({
         images: [
-          makeImage({ id: 1, name: 'Skull — frontal', note: '  \n  ' }),
+          makeImage({ id: 1, name: 'Skull — frontal', description: '  \n  ' }),
           makeImage({ id: 2, name: 'Skull — lateral' }),
         ],
       }),
     })
-    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show full description' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Show notes for / })).not.toBeInTheDocument()
-    expect(screen.queryByText(/^Notes:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Description:/)).not.toBeInTheDocument()
   })
 
   it('opens the notes dialog inside the matching pane on overflow', () => {
@@ -1098,15 +1111,15 @@ describe('caption note', () => {
 
     // The clamped note overflows → the row's "…more" affordance opens the
     // dialog (only the noted pane has one).
-    const more = screen.getByRole('button', { name: 'Show full note' })
+    const more = screen.getByRole('button', { name: 'Show full description' })
     expect(more).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(more)
     // Exactly one dialog opens, inside the noted image's viewer pane.
-    const dialog = screen.getByRole('dialog', { name: 'Notes' })
+    const dialog = screen.getByRole('dialog', { name: 'Description' })
     const viewers = screen.getAllByTestId('image-viewer')
     expect(viewers).toHaveLength(2)
     const viewer = viewers.find((v) => v.getAttribute('data-image-id') === '1')!
-    expect(within(viewer).getByRole('dialog', { name: 'Notes' })).toBe(dialog)
+    expect(within(viewer).getByRole('dialog', { name: 'Description' })).toBe(dialog)
     expect(within(dialog).getByText(/Frontal suture/).textContent).toContain(
       'Frontal suture intact.\nNo asymmetry detected.',
     )

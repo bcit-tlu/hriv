@@ -1,0 +1,37 @@
+import { Canvas, Meta, Stories, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as ImageNotesContentStories from './ImageNotesContent.stories'
+
+<Meta of={ImageNotesContentStories} />
+
+<Title />
+
+<Subtitle>The body of the caption's "…more" dialog: description and instructor note.</Subtitle>
+
+## When to use
+
+The image view and both collection viewers render `ImageNotesContent` inside a `ViewportDialog`
+whose title comes from `imageNotesTitle(description, instructorNote)`:
+
+| Shown                | Title                             |
+| -------------------- | --------------------------------- |
+| Description only     | **Description**                   |
+| Both                 | **Description & instructor note** |
+| Instructor note only | **Instructor note**               |
+
+With both, each gets a heading; with one, the title already names it. The instructor note section
+ends with the "Visible to instructors, staff and admins" hint. Students never see it — the API
+sends them `instructor_note: null`.
+
+## Examples
+
+### Description only
+
+<Canvas of={ImageNotesContentStories.DescriptionOnly} />
+
+### With an instructor note
+
+<Canvas of={ImageNotesContentStories.WithInstructorNote} />
+
+## Stories
+
+<Stories includePrimary={false} />

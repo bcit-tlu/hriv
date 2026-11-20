@@ -429,7 +429,9 @@ export interface ApiImage {
   tile_sources: string
   category_id: number | null
   copyright: string | null
-  note: string | null
+  description: string | null
+  /** Staff-only; null for students (scrubbed server-side). */
+  instructor_note?: string | null
   active: boolean
   sort_order: number
   metadata_extra: Record<string, unknown> | null
@@ -670,7 +672,8 @@ export function updateImage(
     tile_sources?: string
     category_id?: number | null
     copyright?: string
-    note?: string
+    description?: string
+    instructor_note?: string
     active?: boolean
     metadata_extra?: Record<string, unknown>
     metadata_extra_merge?: Record<string, unknown | null>
@@ -697,7 +700,8 @@ export function bulkUpdateImages(body: {
   image_ids: number[]
   category_id?: number | null
   copyright?: string
-  note?: string
+  description?: string
+  instructor_note?: string
   active?: boolean
 }): Promise<ApiImage[]> {
   return request('/images/bulk', {
@@ -1668,7 +1672,9 @@ export interface ApiSourceImage {
   name: string | null
   category_id: number | null
   copyright: string | null
-  note: string | null
+  description: string | null
+  /** Staff-only; null for students (scrubbed server-side). */
+  instructor_note?: string | null
   active: boolean
   image_id: number | null
   file_size: number | null
@@ -1685,7 +1691,8 @@ export async function uploadSourceImage(
   name?: string,
   categoryId?: number | null,
   copyright?: string,
-  note?: string,
+  description?: string,
+  instructorNote?: string,
   active?: boolean,
   onProgress?: (fraction: number) => void,
   signal?: AbortSignal,
@@ -1695,7 +1702,8 @@ export async function uploadSourceImage(
   if (name) form.append('name', name)
   if (categoryId != null) form.append('category_id', String(categoryId))
   if (copyright) form.append('copyright', copyright)
-  if (note) form.append('note', note)
+  if (description) form.append('description', description)
+  if (instructorNote) form.append('instructor_note', instructorNote)
   if (active !== undefined) form.append('active', String(active))
 
   // Use XMLHttpRequest for upload progress reporting (essential for large TIFFs)
@@ -1781,7 +1789,8 @@ export async function replaceImage(
     name?: string
     category_id?: number | null
     copyright?: string
-    note?: string
+    description?: string
+    instructor_note?: string
     active?: boolean
     metadata_extra?: Record<string, unknown>
   },
@@ -1793,7 +1802,9 @@ export async function replaceImage(
     if (metadata.category_id !== undefined)
       form.append('category_id', metadata.category_id === null ? '' : String(metadata.category_id))
     if (metadata.copyright !== undefined) form.append('copyright', metadata.copyright)
-    if (metadata.note !== undefined) form.append('note', metadata.note)
+    if (metadata.description !== undefined) form.append('description', metadata.description)
+    if (metadata.instructor_note !== undefined)
+      form.append('instructor_note', metadata.instructor_note)
     if (metadata.active !== undefined) form.append('active', String(metadata.active))
     if (metadata.metadata_extra !== undefined)
       form.append('metadata_extra', JSON.stringify(metadata.metadata_extra))
@@ -1878,7 +1889,8 @@ export async function bulkImportImages(
   files: File[],
   categoryId: number | null,
   copyright?: string,
-  note?: string,
+  description?: string,
+  instructorNote?: string,
   active?: boolean,
   onProgress?: (fraction: number) => void,
   signal?: AbortSignal,
@@ -1889,7 +1901,8 @@ export async function bulkImportImages(
   }
   if (categoryId != null) form.append('category_id', String(categoryId))
   if (copyright) form.append('copyright', copyright)
-  if (note) form.append('note', note)
+  if (description) form.append('description', description)
+  if (instructorNote) form.append('instructor_note', instructorNote)
   if (active !== undefined) form.append('active', String(active))
 
   return new Promise<ApiBulkImportJob>((resolve, reject) => {

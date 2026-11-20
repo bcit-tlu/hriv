@@ -69,7 +69,7 @@ describe('ImageTile', () => {
         tile_sources: '/tiles/test.dzi?tile_token=fresh',
         category_id: null,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 0,
         metadata_extra: null,

@@ -74,7 +74,8 @@ export interface UseProcessingJobsDeps {
     tile_sources: string
     category_id: number | null
     copyright: string | null
-    note: string | null
+    description: string | null
+    instructor_note?: string | null
     active: boolean
     sort_order: number
     version: number
@@ -307,7 +308,8 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
                 tileSources: fresh.tile_sources,
                 categoryId: fresh.category_id,
                 copyright: fresh.copyright,
-                note: fresh.note,
+                description: fresh.description,
+                instructorNote: fresh.instructor_note,
                 active: fresh.active,
                 sortOrder: fresh.sort_order,
                 version: fresh.version,

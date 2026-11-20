@@ -170,7 +170,9 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 
 - **Purpose:** a processed, viewable image served via deep-zoom tiles.
 - **Key fields:** `name`; `thumb`; `tile_sources` (DZI path); `category_id`
-  (nullable FK, `SET NULL`); `copyright`; `note`; `active` (boolean — inactive
+  (nullable FK, `SET NULL`); `copyright`; `description` (public, all roles);
+  `instructor_note` (admin/instructor/staff only — scrubbed from student
+  payloads); `active` (boolean — inactive
   images are hidden from students); `metadata_` (JSONB, DB column `metadata` —
   stores `canvas_annotations`, `locked_overlays`, `measurement_scale`,
   `measurement_unit`, `detection_params` — approved DetectionTuning);
@@ -202,7 +204,8 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 - **Purpose:** original uploaded file before tiling/processing.
 - **Key fields:** `original_filename`; `stored_path`; `status` (`pending` /
   `processing` / `completed` / `failed`); `progress`; `error_message`;
-  `status_message`; `name`; `category_id` (`SET NULL`); `copyright`; `note`;
+  `status_message`; `name`; `category_id` (`SET NULL`); `copyright`;
+  `description`; `instructor_note`;
   `active`; `image_id` (FK to Image, `SET NULL` — linked after processing);
   `file_size` (BigInteger); `uploaded_by` (FK to User, `SET NULL` — audit only,
   resolved at processing time rather than snapshotting role/synthetic metadata);

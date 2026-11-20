@@ -47,23 +47,24 @@ type Story = StoryObj<typeof meta>
 
 export const Basic: Story = {
   args: {
-    note: 'Hairline fracture, week two.',
+    description: 'Hairline fracture, week two.',
   },
 }
 
 export const LongNote: Story = {
   args: {
-    note: 'Follow-up scan after the cast was removed.\nCallus forming along the medial edge.\nHealing consistent with week six.\nCompare the cortical thickening against the baseline scan; remodelling continues through week twelve.',
+    description:
+      'Follow-up scan after the cast was removed.\nCallus forming along the medial edge.\nHealing consistent with week six.\nCompare the cortical thickening against the baseline scan; remodelling continues through week twelve.',
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    const more = await canvas.findByRole('button', { name: 'Show full note' })
+    const more = await canvas.findByRole('button', { name: 'Show full description' })
     await userEvent.click(more)
     await expect(args.onShowNote).toHaveBeenCalled()
 
-    // The …more→end gap matches the title→Notes gap (within 2px).
+    // The …more→end gap matches the title→Description gap (within 2px).
     const titleRect = canvas.getByRole('heading', { level: 2 }).getBoundingClientRect()
-    const notesLabel = canvas.getByText('Notes:').getBoundingClientRect()
+    const notesLabel = canvas.getByText('Description:').getBoundingClientRect()
     const endFirst = canvas.getByText('2 of 6').getBoundingClientRect()
     const moreRect = more.getBoundingClientRect()
     const titleGap = notesLabel.left - titleRect.right
@@ -76,7 +77,7 @@ export const LongTitle: Story = {
   args: {
     // Kyle's longest real image names; both must fit without an ellipsis at 1280.
     name: 'Slide 27-117 MARK Connor Lymphoma Cells in CSF Image 10',
-    note: 'Long titles share the row with the note.',
+    description: 'Long titles share the row with the note.',
   },
   decorators: [
     // Full-width row like the image view / sequence caption (fixed 1200px so
@@ -104,6 +105,32 @@ export const LongTitle: Story = {
 
 export const NoNote: Story = {
   args: {
-    note: null,
+    description: null,
   },
+}
+
+export const WithInstructorNote: Story = {
+  args: {
+    description: 'Hairline fracture, week two.',
+    instructorNote: 'Ask students to locate the fracture line before revealing it.',
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Instructor note:')).toBeVisible()
+  },
+}
+
+export const WithInstructorNoteNarrow: Story = {
+  args: {
+    description: 'Hairline fracture, week two.',
+    instructorNote: 'Ask students to locate the fracture line before revealing it.',
+  },
+  decorators: [
+    // Phone-width pane: the row wraps instead of squeezing both cells.
+    (Story) => (
+      <Box sx={{ width: 360, bgcolor: 'background.default', p: 1 }}>
+        <Story />
+      </Box>
+    ),
+  ],
 }

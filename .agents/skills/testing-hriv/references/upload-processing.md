@@ -224,7 +224,7 @@ Key assertions:
 - `width` and `height` match the replacement image dimensions
 - `file_size` is populated
 - `metadata_extra` is `{}` (canvas metadata cleared)
-- `name`, `category_id`, `copyright`, `note`, `program_ids` are preserved
+- `name`, `category_id`, `copyright`, `description`, `instructor_note`, `program_ids` are preserved
 - `version` has incremented
 
 ### Known Limitation (Issue #271)

@@ -38,7 +38,7 @@ function apiImage(id: number) {
     tile_sources: `/tiles/${id}.dzi`,
     category_id: 1,
     copyright: null,
-    note: null,
+    description: null,
     active: true,
     sort_order: id,
     version: 1,

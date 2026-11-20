@@ -541,7 +541,8 @@ describe('SequenceCollectionViewer', () => {
 
 describe('caption note', () => {
   const note = 'Fracture line visible.\nCallus forming medially.'
-  const noted = () => seqCollection({ images: [makeImage({ id: 1, name: 'Slice A', note })] })
+  const noted = () =>
+    seqCollection({ images: [makeImage({ id: 1, name: 'Slice A', description: note })] })
 
   const originalScrollHeight = Object.getOwnPropertyDescriptor(
     HTMLElement.prototype,
@@ -593,31 +594,57 @@ describe('caption note', () => {
     expect(noteEl.compareDocumentPosition(position) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('offers no "Show full note" control without a note', () => {
+  it('shows the instructor note of the current member in the caption', () => {
+    renderViewer({
+      collection: seqCollection({
+        images: [makeImage({ id: 1, name: 'Slice A', instructorNote: 'Staff only' })],
+      }),
+    })
+    expect(screen.getByText('Instructor note:')).toBeInTheDocument()
+    expect(screen.getByText('Staff only')).toBeInTheDocument()
+  })
+
+  it('offers no "Show full description" control without a note', () => {
     renderViewer()
-    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show full description' })).not.toBeInTheDocument()
   })
 
   it('treats a whitespace-only note as absent', () => {
     renderViewer({
       collection: seqCollection({
-        images: [makeImage({ id: 1, name: 'Slice A', note: '  \n  ' })],
+        images: [makeImage({ id: 1, name: 'Slice A', description: '  \n  ' })],
       }),
     })
-    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
-    expect(screen.queryByText(/^Notes:/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show full description' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Description:/)).not.toBeInTheDocument()
   })
 
   it('opens a dialog inside the viewer with the full multi-line note on overflow', () => {
     stubOverflow()
     renderViewer({ collection: noted() })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show full description' }))
     const viewer = screen.getByTestId('image-viewer')
-    const dialog = within(viewer).getByRole('dialog', { name: 'Notes' })
+    const dialog = within(viewer).getByRole('dialog', { name: 'Description' })
     expect(within(dialog).getByText(/Fracture line/).textContent).toContain(
       'Fracture line visible.\nCallus forming medially.',
     )
+  })
+
+  it('shows both sections under the combined title when there is an instructor note', () => {
+    stubOverflow()
+    renderViewer({
+      collection: seqCollection({
+        images: [
+          makeImage({ id: 1, name: 'Slice A', description: note, instructorNote: 'Staff only' }),
+        ],
+      }),
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show full instructor note' }))
+    const dialog = screen.getByRole('dialog', { name: 'Description & instructor note' })
+    expect(within(dialog).getByText(/Fracture line/)).toBeInTheDocument()
+    expect(within(dialog).getByText('Staff only')).toBeInTheDocument()
   })
 })
 
@@ -743,7 +770,7 @@ describe('annotation and overlay editing (#1863)', () => {
       tile_sources: '/s',
       category_id: null,
       copyright: null,
-      note: null,
+      description: null,
       active: true,
       sort_order: 0,
       version: 2,
@@ -1037,18 +1064,20 @@ describe('annotation and overlay editing (#1863)', () => {
     try {
       renderViewer({
         collection: seqCollection({
-          images: [makeImage({ id: 100, name: 'Slice 1', note: 'Long note\nwith lines' })],
+          images: [makeImage({ id: 100, name: 'Slice 1', description: 'Long note\nwith lines' })],
         }),
         canEditContent: true,
       })
-      fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Show full description' }))
       const viewer = screen.getByTestId('image-viewer')
-      expect(within(viewer).getByRole('dialog', { name: 'Notes' })).toBeInTheDocument()
+      expect(within(viewer).getByRole('dialog', { name: 'Description' })).toBeInTheDocument()
 
       act(() => viewerProp<(active: boolean) => void>('onCanvasEditModeChange')(true))
 
       await waitFor(() =>
-        expect(within(viewer).queryByRole('dialog', { name: 'Notes' })).not.toBeInTheDocument(),
+        expect(
+          within(viewer).queryByRole('dialog', { name: 'Description' }),
+        ).not.toBeInTheDocument(),
       )
       expect(within(viewer).getByRole('button', { name: 'Image details' })).toBeDisabled()
 

@@ -40,7 +40,7 @@ const testCategory: Category = {
       tileSources: '/tiles/10.dzi',
       categoryId: 1,
       copyright: '2026 BCIT',
-      note: 'Reference atlas for liver tissue',
+      description: 'Reference atlas for liver tissue',
       active: true,
       sortOrder: 0,
       version: 1,
@@ -72,7 +72,7 @@ const testCategory: Category = {
       tileSources: '/tiles/11.dzi',
       categoryId: 1,
       copyright: 'Kidney Foundation 2026',
-      note: 'Cross-section of kidney cortex',
+      description: 'Cross-section of kidney cortex',
       active: true,
       sortOrder: 0,
       version: 1,
@@ -420,7 +420,7 @@ describe('SearchModal', () => {
 
     const card = cards[0].closest('[data-testid="search-result-action-area"]')!
     expect(card.textContent).toContain('Link:')
-    expect(card.textContent).not.toContain('Note:')
+    expect(card.textContent).not.toContain('Description:')
   })
 
   it('ignores text payloads attached to non-text annotations', async () => {
@@ -599,7 +599,7 @@ describe('SearchModal', () => {
     expect(cards).toHaveLength(1)
 
     const card = cards[0].closest('[data-testid="search-result-action-area"]')!
-    expect(card.textContent).toContain('Note:')
+    expect(card.textContent).toContain('Description:')
     expect(card.textContent).toContain('Link:')
   })
 
@@ -849,7 +849,7 @@ describe('SearchModal', () => {
       .getAllByTestId('search-result-action-area')
       .filter((el) => el.textContent?.includes('Kidney Cross'))
     expect(cards).toHaveLength(1)
-    expect(cards[0].textContent).toContain('Note:')
+    expect(cards[0].textContent).toContain('Description:')
   })
 
   it('narrows a quoted multi-word query to exact-phrase matches', async () => {
@@ -868,7 +868,7 @@ describe('SearchModal', () => {
       .filter((el) => el.textContent?.includes('Kidney Cross'))
     expect(cards).toHaveLength(1)
     expect(cards[0].textContent).toContain('Name:')
-    expect(cards[0].textContent).not.toContain('Note:')
+    expect(cards[0].textContent).not.toContain('Description:')
     expect(cards[0].textContent).not.toContain('Copyright:')
   })
 
@@ -914,7 +914,7 @@ describe('SearchModal', () => {
       .filter((el) => el.textContent?.includes('Kidney Cross'))
     expect(cards).toHaveLength(1)
     expect(cards[0].textContent).toContain('Name:')
-    expect(cards[0].textContent).not.toContain('Note:')
+    expect(cards[0].textContent).not.toContain('Description:')
   })
 
   it('treats smart double quotes like straight quotes', async () => {
@@ -931,7 +931,7 @@ describe('SearchModal', () => {
       .filter((el) => el.textContent?.includes('Kidney Cross'))
     expect(cards).toHaveLength(1)
     expect(cards[0].textContent).toContain('Name:')
-    expect(cards[0].textContent).not.toContain('Note:')
+    expect(cards[0].textContent).not.toContain('Description:')
   })
 
   it('matches phrases inside annotation fields', async () => {
@@ -1044,14 +1044,69 @@ describe('SearchModal', () => {
     await user.click(
       screen.getAllByTestId('type-filter-chip').find((chip) => chip.textContent === 'Images')!,
     )
-    await user.click(screen.getByText('Note'))
+    await user.click(
+      screen
+        .getAllByTestId('field-filter-chip')
+        .find((chip) => chip.textContent === 'Description')!,
+    )
 
     const cards = screen
       .getAllByTestId('search-result-action-area')
       .filter((el) => el.textContent?.includes('Liver Section'))
     expect(cards).toHaveLength(1)
-    expect(cards[0].textContent).toContain('Note:')
+    expect(cards[0].textContent).toContain('Description:')
     expect(cards[0].textContent).not.toContain('Name:')
+  })
+
+  it('matches images on their instructor note and scopes to it with its chip', async () => {
+    const user = userEvent.setup()
+    const withNote: Category = {
+      ...testCategory,
+      images: [{ ...testCategory.images[0], instructorNote: 'Quiz on hepatocytes' }],
+    }
+    render(<SearchModal {...defaultProps} categories={[withNote]} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'hepatocytes')
+    await user.click(
+      screen
+        .getAllByTestId('field-filter-chip')
+        .find((chip) => chip.textContent === 'Instructor note')!,
+    )
+
+    const cards = screen.getAllByTestId('search-result-action-area')
+    expect(cards).toHaveLength(1)
+    expect(cards[0].textContent).toContain('Liver Section')
+    expect(cards[0].textContent).toContain('Instructor note:')
+  })
+
+  it('hides the Instructor note chip from students only', async () => {
+    const chipLabels = () =>
+      screen.queryAllByTestId('field-filter-chip').map((chip) => chip.textContent)
+    const input = () =>
+      screen.getByPlaceholderText(/^Search categories, images/) as HTMLInputElement
+
+    const { rerender } = render(<SearchModal {...defaultProps} open={true} />)
+    await userEvent.setup().type(input(), 'liver')
+    expect(chipLabels()).toContain('Instructor note')
+
+    // Staff: extended results suppressed, but instructor notes still visible.
+    rerender(<SearchModal {...defaultProps} suppressExtendedResults={true} open={true} />)
+    expect(chipLabels()).toContain('Instructor note')
+
+    // Student
+    rerender(
+      <SearchModal
+        {...defaultProps}
+        excludeHidden={true}
+        suppressExtendedResults={true}
+        open={true}
+      />,
+    )
+    expect(chipLabels()).toContain('Description')
+    expect(chipLabels()).not.toContain('Instructor note')
   })
 
   // ── Collection results (#1418) ────────────────────────────────────────
@@ -1386,7 +1441,7 @@ describe('SearchModal', () => {
       tileSources: `/tiles/${id}.dzi`,
       categoryId,
       copyright: null,
-      note: null,
+      description: null,
       active: true,
       sortOrder,
       version: 1,
@@ -1479,7 +1534,7 @@ describe('SearchModal', () => {
       tileSources: `/tiles/${id}.dzi`,
       categoryId,
       copyright: null,
-      note: null,
+      description: null,
       active: true,
       sortOrder: 0,
       version: 1,
@@ -1541,7 +1596,7 @@ describe('SearchModal', () => {
       tileSources: `/tiles/${id}.dzi`,
       categoryId,
       copyright: null,
-      note: null,
+      description: null,
       active: true,
       sortOrder,
       version: 1,
@@ -1592,7 +1647,7 @@ describe('SearchModal', () => {
     tileSources: `/tiles/${id}.dzi`,
     categoryId,
     copyright: null,
-    note: null,
+    description: null,
     active: true,
     sortOrder,
     version: 1,

@@ -1,3 +1,4 @@
+import LockIcon from '@mui/icons-material/Lock'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import type { ReactNode } from 'react'
@@ -8,8 +9,10 @@ export interface ImageCaptionRowProps {
   name: string
   /** false appends an ' (inactive)' marker to the title. */
   active?: boolean
-  /** The image's note; whitespace-only notes render nothing. */
-  note?: string | null
+  /** The image's description; whitespace-only text renders nothing. */
+  description?: string | null
+  /** Staff-only note (null for students); whitespace-only renders nothing. */
+  instructorNote?: string | null
   /** Whether the caller's notes dialog is open (aria-expanded on "…more"). */
   noteDialogOpen?: boolean
   /** Open the full note (callers show a ViewportDialog). */
@@ -20,20 +23,58 @@ export interface ImageCaptionRowProps {
 
 /**
  * The caption row shared by the image view and the collection viewers:
- * `[h2 image title] [Notes: note …more] {end}`. The note clamps to one line
- * with an "…more" affordance that opens the caller's dialog. When a note is
- * present the title is capped at min(468px, 40%) so the note gets the room
- * in narrow panes while typical image names still fit.
+ * `[h2 image title] [Description: … …more] [🔒 Instructor note: … …more] {end}`.
+ * Each text cell clamps to one line with an "…more" affordance that opens the
+ * caller's dialog; the instructor note cell only renders when the API sent one
+ * (never for students). When either text is present the title is capped at
+ * min(468px, 40%) so the text gets the room in narrow panes while typical image
+ * names still fit.
  */
 export default function ImageCaptionRow({
   name,
   active = true,
-  note,
+  description,
+  instructorNote,
   noteDialogOpen = false,
   onShowNote,
   end,
 }: ImageCaptionRowProps) {
-  const noteText = note?.trim() ?? ''
+  const descriptionText = description?.trim() ?? ''
+  const instructorText = instructorNote?.trim() ?? ''
+  const hasText = descriptionText !== '' || instructorText !== ''
+
+  // One clamped "label: text …more" cell; both cells open the same dialog.
+  const segment = (label: ReactNode, text: string, moreAriaLabel: string, spaced: boolean) => (
+    <Box
+      sx={{
+        flex: 1,
+        minWidth: 0,
+        display: 'flex',
+        gap: 0.5,
+        alignItems: 'baseline',
+        // Match the title→Description gap before whatever follows.
+        ...(spaced ? { mr: 4 } : {}),
+      }}
+    >
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        component="span"
+        sx={{ whiteSpace: 'nowrap', flexShrink: 0, fontWeight: 'bold' }}
+      >
+        {label}
+      </Typography>
+      <ClampedContent
+        lines={1}
+        onMore={onShowNote}
+        expanded={noteDialogOpen}
+        moreAriaLabel={moreAriaLabel}
+        sx={{ flex: 1, minWidth: 0 }}
+      >
+        {text.replace(/\s*\n\s*/g, ' ')}
+      </ClampedContent>
+    </Box>
+  )
 
   return (
     <Box
@@ -53,7 +94,7 @@ export default function ImageCaptionRow({
         noWrap
         title={name}
         sx={
-          noteText !== ''
+          hasText
             ? { flex: '0 1 auto', minWidth: 0, maxWidth: 'min(468px, 40%)', mr: 4 }
             : { flex: 1, minWidth: 0 }
         }
@@ -61,37 +102,23 @@ export default function ImageCaptionRow({
         {name}
         {!active ? ' (inactive)' : ''}
       </Typography>
-      {note != null && noteText !== '' && (
-        <Box
-          sx={{
-            flex: 1,
-            minWidth: 0,
-            display: 'flex',
-            gap: 0.5,
-            alignItems: 'baseline',
-            // Match the title→Notes gap before the end slot.
-            ...(end != null ? { mr: 4 } : {}),
-          }}
-        >
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            component="span"
-            sx={{ whiteSpace: 'nowrap', flexShrink: 0, fontWeight: 'bold' }}
-          >
-            Notes:
-          </Typography>
-          <ClampedContent
-            lines={1}
-            onMore={onShowNote}
-            expanded={noteDialogOpen}
-            moreAriaLabel="Show full note"
-            sx={{ flex: 1, minWidth: 0 }}
-          >
-            {note.replace(/\s*\n\s*/g, ' ')}
-          </ClampedContent>
-        </Box>
-      )}
+      {descriptionText !== '' &&
+        segment(
+          'Description:',
+          descriptionText,
+          'Show full description',
+          instructorText !== '' || end != null,
+        )}
+      {instructorText !== '' &&
+        segment(
+          <>
+            <LockIcon fontSize="inherit" aria-hidden sx={{ alignSelf: 'center', mr: 0.25 }} />
+            Instructor note:
+          </>,
+          instructorText,
+          'Show full instructor note',
+          end != null,
+        )}
       {end}
     </Box>
   )

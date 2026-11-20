@@ -27,6 +27,8 @@ import ImageViewer from './ImageViewer'
 import RenewingThumbnail from './RenewingThumbnail'
 import ImageCaptionRow from './ImageCaptionRow'
 import ViewportDialog from './ViewportDialog'
+import ImageNotesContent from './ImageNotesContent'
+import { imageNotesTitle } from './imageNotesTitle'
 import {
   CollectionImageDetails,
   CollectionImageDetailsDrawer,
@@ -694,18 +696,13 @@ export default function SynchronizedCollectionViewer({
                           <CollectionImageDetailsDrawer />
                           <ViewportDialog
                             open={noteDialogImageId === memberKey(image)}
-                            title="Notes"
+                            title={imageNotesTitle(image.description, image.instructorNote)}
                             onClose={() => setNoteDialogImageId(null)}
                           >
-                            <Box
-                              sx={{
-                                typography: 'body2',
-                                whiteSpace: 'pre-wrap',
-                                overflowWrap: 'anywhere',
-                              }}
-                            >
-                              {image.note}
-                            </Box>
+                            <ImageNotesContent
+                              description={image.description}
+                              instructorNote={image.instructorNote}
+                            />
                           </ViewportDialog>
                         </>
                       }
@@ -748,7 +745,8 @@ export default function SynchronizedCollectionViewer({
                   key={`caption-${memberKey(image)}`}
                   name={markersEnabled ? image.slot?.label || image.name : image.name}
                   active={image.active}
-                  note={image.note}
+                  description={image.description}
+                  instructorNote={image.instructorNote}
                   noteDialogOpen={noteDialogImageId === memberKey(image)}
                   onShowNote={() => setNoteDialogImageId(memberKey(image))}
                   end={

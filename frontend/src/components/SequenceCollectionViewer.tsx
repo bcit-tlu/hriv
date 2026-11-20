@@ -20,6 +20,8 @@ import ImageViewer from './ImageViewer'
 import RenewingThumbnail from './RenewingThumbnail'
 import ImageCaptionRow from './ImageCaptionRow'
 import ViewportDialog from './ViewportDialog'
+import ImageNotesContent from './ImageNotesContent'
+import { imageNotesTitle } from './imageNotesTitle'
 import {
   CollectionImageDetails,
   CollectionImageDetailsDrawer,
@@ -234,7 +236,7 @@ export default function SequenceCollectionViewer({
     JSON.stringify(markersEnabled ? current?.slot?.viewport_state : null),
     () => viewportStateFromSaved(markersEnabled ? current?.slot?.viewport_state : undefined),
   )
-  // Notes dialog open state; closed on every image change (same
+  // Description dialog open state; closed on every image change (same
   // adjust-during-render pattern as the App's image-details drawer).
   const [noteDialogOpen, setNoteDialogOpen] = useState(false)
   const [noteDialogImageId, setNoteDialogImageId] = useState<number | null>(null)
@@ -622,18 +624,13 @@ export default function SequenceCollectionViewer({
                 {!markersEnabled && <CollectionImageDetailsDrawer />}
                 <ViewportDialog
                   open={noteDialogOpen}
-                  title="Notes"
+                  title={imageNotesTitle(current.description, current.instructorNote)}
                   onClose={() => setNoteDialogOpen(false)}
                 >
-                  <Box
-                    sx={{
-                      typography: 'body2',
-                      whiteSpace: 'pre-wrap',
-                      overflowWrap: 'anywhere',
-                    }}
-                  >
-                    {current.note}
-                  </Box>
+                  <ImageNotesContent
+                    description={current.description}
+                    instructorNote={current.instructorNote}
+                  />
                 </ViewportDialog>
               </>
             }
@@ -680,7 +677,8 @@ export default function SequenceCollectionViewer({
         key={`caption-${memberKey(current)}`}
         name={markersEnabled ? current.slot?.label || current.name : current.name}
         active={current.active}
-        note={current.note}
+        description={current.description}
+        instructorNote={current.instructorNote}
         noteDialogOpen={noteDialogOpen}
         onShowNote={() => setNoteDialogOpen(true)}
         end={

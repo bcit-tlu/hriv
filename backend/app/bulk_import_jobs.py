@@ -94,7 +94,8 @@ async def create_bulk_import_job(
     bulk_import_job: BulkImportJob,
     file_entries: list[tuple[str, str]],
     copyright: str | None,
-    note: str | None,
+    description: str | None,
+    instructor_note: str | None,
     active: bool,
     parallelism: int,
 ) -> Job:
@@ -108,7 +109,8 @@ async def create_bulk_import_job(
     metadata = {
         "bulk_import_job_id": bulk_import_job.id,
         "copyright": copyright,
-        "note": note,
+        "description": description,
+        "instructor_note": instructor_note,
         "active": active,
         "parallelism": parallelism,
         "coordinator_lease_seconds": (

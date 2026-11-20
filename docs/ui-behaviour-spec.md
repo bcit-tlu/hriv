@@ -170,7 +170,12 @@ images> / Empty` format used on category tiles.
   and wrap without widening the panel. Created and Modified show
   the long-form date (e.g. "October 15, 2026"); the exact timestamp shows
   in a tooltip on hover, tap or focus (the value is `tabIndex={0}`; other
-  fields keep their `title`). The panel does not contain notes or collections.
+  fields keep their `title`). When the API sends an instructor note (never
+  to students), it heads the field list as a wrapping **Instructor note:**
+  block whose lock icon carries the accessible title "Visible to
+  instructors, staff and admins"; it replaces the "No details available."
+  state when it is the only detail. The panel does not contain the
+  description or collections.
 - **When** the drawer opens, **Then** focus moves to its close button; it
   closes via the ✕ button, the "i" button, or Escape, returning focus to the
   trigger. It does not close on viewport clicks, so users can keep panning.
@@ -183,17 +188,23 @@ images> / Empty` format used on category tiles.
   the "i" button is disabled and an open drawer closes; it stays closed when
   edit mode exits.
 - The info bar is a plain row (no background) shared with the collection
-  viewers (`ImageCaptionRow`): the image title as an `h2` left, a **Notes:**
-  cell (bold label plus the note clamped to one line) when the image has a
-  note, and a **Collections:** cell at the right when the image belongs to
+  viewers (`ImageCaptionRow`): the image title as an `h2` left, a
+  **Description:** cell (bold label plus the description clamped to one
+  line) when the image has one, a lock-marked **Instructor note:** cell
+  (same treatment) when the API sends one — never to students — and a
+  **Collections:** cell at the right when the image belongs to
   any collections (see [collections.md](collections.md)). The bar always
   renders because the title is always shown. At `md` and up the row is one
-  line — the title capped at min(468px, 40%) when a note is present, the note taking the
+  line — the title capped at min(468px, 40%) when either text is present, the text cells taking the
   middle, the collections cell capped at 30% — and below `md` the
   collections cell wraps to its own left-aligned line.
-- An overflowing note gets an "…more" link at the end of the line; it opens
-  a `ViewportDialog` titled **Notes** centered over the OSD viewport (via
-  `viewportOverlay`, so it survives full-page mode), showing the full note.
+- An overflowing description or instructor note gets an "…more" link at the
+  end of its line; both open the same `ViewportDialog` centered over the OSD
+  viewport (via `viewportOverlay`, so it survives full-page mode). Its body
+  (`ImageNotesContent`) shows the full description and, when present, the
+  instructor note with the "Visible to instructors, staff and admins" hint;
+  the title follows the content — **Description**, **Description &
+  instructor note**, or **Instructor note** when the description is blank.
   The collections cell shows the largest prefix of names that fits; a
   trailing "… + N more" opens a **Collections** dialog with the full list.
   Both dialogs trap focus, close on Escape, ✕, or a backdrop click, restore
@@ -729,9 +740,11 @@ always read-only (`canEditContent={false}`).
 - **Given** a sequence collection is open with no `?item=`, **Then** the
   thumbnail filmstrip renders _above_ the viewer (#1564), the first member
   renders with the caption row under the viewport (member name `h2` left;
-  when the image has a note, a visible **Notes:** label plus the note
-  clamped to one line in the middle — "…more" opens the same **Notes**
-  `ViewportDialog` centered over the viewer — the title capped at min(468px, 40%);
+  when the image has a description, a visible **Description:** label plus
+  the text clamped to one line in the middle, followed for staff by the
+  lock-marked **Instructor note:** cell when one is set — "…more" opens the
+  same description/instructor-note `ViewportDialog` centered over the
+  viewer — the title capped at min(468px, 40%);
   `1 of N` position readout and **Open image** right — the synchronized
   pane pattern), the edge-overlay
   **Previous** button disabled, and the member's canvas annotations /
@@ -805,9 +818,11 @@ collection description rather than a blocking band above the panes (#1683).
 - **Given** a synchronized collection with two or more visible members,
   **Then** up to four render as panes — side by side for two, a 2×2 grid for
   three or four (each pane captioned with the member name as an `h2`, when
-  the member has a note a **Notes:** label plus the note clamped to one
-  line — "…more" opens a **Notes** `ViewportDialog` centered over that
-  pane (#1686) — and an **Open image** → `?image={id}` action) — and, when
+  the member has a description a **Description:** label plus the text
+  clamped to one line, followed for staff by a lock-marked **Instructor
+  note:** cell when set — either "…more" opens the description/instructor-note
+  `ViewportDialog` centered over that pane (#1686) — and an **Open image** →
+  `?image={id}` action) — and, when
   more than four are stored, a "Showing _N_ of _M_" note appears.
 - **Given** the user pans, zooms or rotates any pane, **Then** every other
   pane follows with `immediately=true`, shifted by that pane's offset from
@@ -897,14 +912,20 @@ re-checks).
   create search hits.
 - Field filters expose dedicated chips for `Annotation`, `Link`, and
   `Link URL`, so users can keep only annotation-derived image matches visible.
+- Image `description` and `instructorNote` are searched as the `Description`
+  and `Instructor note` fields, each with its own Field chip. The
+  `Instructor note` chip (lock icon) is hidden for students (`excludeHidden`);
+  staff still see it. Students never receive instructor notes anyway — the API
+  scrubs them — so the chip gate is UX only. The `Description` chip also keeps
+  board and collection results matched on their description.
 - Type filter chips scope the searched fields, not just the result types: with
   a type chip active (and no Field chips selected), the query matches only the
   field(s) most closely associated with that type — `Categories` searches
   category names, `Images` searches image titles, `Programs` searches program
   names, `People` searches people names, `Guide` searches guide titles, and
   `Collections` searches collection names and descriptions. Selecting any
-  Field chip overrides that default scope, so `Images` + `Note` still finds
-  images whose notes match.
+  Field chip overrides that default scope, so `Images` + `Description` still
+  finds images whose descriptions match.
 - Collections are a result kind for **every** role (unlike program/user/guide
   kinds, they are not hidden from students): the modal indexes the caller's
   `GET /api/collections` list, which the backend already access-filters, so a
@@ -1192,6 +1213,11 @@ committed on Save) in the edit modals.
   default; it shows `metadata_extra.objective_power` as `×40` (or `—`). The
   Edit image dialog edits the same key with an **Objective** dropdown below the
   scale and unit fields; it is independent of the scale.
+- The `Description` and `Instructor note` columns are available in the column
+  chooser but are off by default; each shows its text clamped to two lines
+  (`NoteDisplay`, or `—`) and has a matching sort header and text filter. The
+  page is editor-only, and `instructor_note` is scrubbed from student payloads
+  regardless.
 - Manage → Measurement review (`MeasurementReviewPage.tsx`) groups Scan next
   10, Scan all, Re-scan outdated and Refresh in an **Actions** menu; **Approve
   selected** stays a standalone button. A **Category** column shows the full
