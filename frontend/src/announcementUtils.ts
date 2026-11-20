@@ -113,7 +113,6 @@ export interface ComposerInitialState {
   expiresAt: string
   pinned: boolean
   banner: boolean
-  moreOpen: boolean
   mediaTokens: Record<string, string>
 }
 
@@ -155,7 +154,6 @@ export function initialComposerState(args: {
       expiresAt: duplicate ? '' : toLocalInput(source.expires_at),
       pinned: source.pinned,
       banner: source.banner,
-      moreOpen: Boolean(source.expires_at || source.pinned || source.banner),
       mediaTokens: source.media_tokens ?? {},
     }
   }
@@ -172,7 +170,6 @@ export function initialComposerState(args: {
     expiresAt: '',
     pinned: false,
     banner: false,
-    moreOpen: false,
     mediaTokens: {},
   }
 }
@@ -248,10 +245,14 @@ export function buildUpdatePatch(
 /**
  * Banner policy (#1838): live, unseen posts flagged `banner`, warnings first,
  * then pinned, then newest. The first is shown; the rest count towards "+N more".
+ * `onScreen` drops posts the page already shows in full (the Home Notices shelf).
  */
-export function selectBannerAnnouncements(rows: ApiAnnouncement[]): ApiAnnouncement[] {
+export function selectBannerAnnouncements(
+  rows: ApiAnnouncement[],
+  onScreen?: ReadonlySet<number>,
+): ApiAnnouncement[] {
   return rows
-    .filter((a) => a.banner && a.status === 'live' && !a.seen)
+    .filter((a) => a.banner && a.status === 'live' && !a.seen && !onScreen?.has(a.id))
     .sort((a, b) => {
       const aw = a.kind === 'warning' ? 0 : 1
       const bw = b.kind === 'warning' ? 0 : 1
@@ -266,22 +267,6 @@ export function selectBannerAnnouncements(rows: ApiAnnouncement[]): ApiAnnouncem
 /** Home notices shelf: up to `limit` pinned live posts, newest first. */
 export function selectNotices(rows: ApiAnnouncement[], limit = 3): ApiAnnouncement[] {
   return rows.filter((a) => a.pinned && a.status === 'live').slice(0, limit)
-}
-
-/** First non-empty line of a Markdown body, with the most common inline markup stripped. */
-export function firstLine(markdown: string): string {
-  const line = markdown
-    .split('\n')
-    .map((l) => l.trim())
-    .find((l) => l.length > 0 && !/^!\[/.test(l) && !/^\/api\/media\/\d+$/.test(l))
-  if (!line) return ''
-  return line
-    .replace(/^#+\s*/, '')
-    .replace(/^[-*]\s+/, '')
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/[*_`]/g, '')
-    .trim()
 }
 
 /**
