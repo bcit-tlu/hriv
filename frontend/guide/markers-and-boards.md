@@ -39,7 +39,10 @@ Saving a Marker does not modify the source image.
 The drawer/panel omits the redundant Markers total heading. Rows are grouped by
 their associated Boards: each Board name is a heading-link that opens the Board
 dialog right over the image — marker tiles inside it jump to their saved views,
-and **Open in Boards & Markers** reaches the full management page. Your own
+and **Open in Boards & Markers** reaches the full management page. The
+**Boards & Markers** button in the top bar lists your Boards too: choose one to
+open the same dialog wherever you are, or **Open Boards & Markers** for the full
+page. Your own
 Boards list first, then
 instructor-owned or program Boards; Boards shared by classmates sit under a
 collapsed **Public & Shared** section — open it to browse them, and their

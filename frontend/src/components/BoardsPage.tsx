@@ -383,7 +383,7 @@ function undoItems<T>(
   return previous.map((id) => item(id, versions.get(id)!))
 }
 
-function BoardCover({ board }: { board: ApiBoardSummary }) {
+export function BoardCover({ board, size = 70 }: { board: ApiBoardSummary; size?: number }) {
   const [state, setState] = useState<{ id: number; items: ApiMarker[] } | null>(null)
   const key = `${board.id}:${board.version}`
   useEffect(() => {
@@ -413,8 +413,8 @@ function BoardCover({ board }: { board: ApiBoardSummary }) {
   return (
     <Box
       sx={{
-        width: 70,
-        height: 70,
+        width: size,
+        height: size,
         flexShrink: 0,
         bgcolor: 'action.hover',
         display: 'grid',

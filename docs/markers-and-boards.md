@@ -515,7 +515,14 @@ ownership/visible-Board gates, returning 404 for missing or invisible items.
 Only visible Board IDs are projected; thumbnails carry thumbnail-only tokens.
 The response uses viewer-bound, token-epoch ETags and supports conditional 304s.
 
-The feature-gated **Boards & Markers** AppBar utility opens `?page=boards`.
+The feature-gated **Boards & Markers** AppBar utility opens a **My Boards**
+popover (`BoardsPopover`) rather than navigating: a vertical stack of the
+viewer's editable owned Boards (the page's chip row, in its order) with cover,
+name and Marker count, reloaded on each open. Choosing a Board opens the
+in-place `BoardDialog` over the current page, the same dialog the viewer drawer
+headings use; its Marker tiles jump to their saved views. **Open Boards &
+Markers** at the bottom opens `?page=boards`. On the Boards page the button
+navigates directly.
 It does not add a primary tab: students retain two mobile navigation tabs, and
 Boards uses `Tabs value={false}`. Selecting a Board writes
 `?page=boards&board={id}`; Back/Forward restores the selection.

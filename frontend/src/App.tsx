@@ -157,6 +157,7 @@ import { getSurfaceVariant, getVisibilityColors } from './theme'
 import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
 import { parseShareableUrlParams, useShareableImageState } from './useShareableImageState'
 import BoardDialog from './components/BoardDialog'
+import BoardsPopover from './components/BoardsPopover'
 import BoardsPage from './components/BoardsPage'
 import { markerViewParams, parseBoardLocation } from './boardUtils'
 import type { ApiMarker } from './types'
@@ -316,6 +317,7 @@ export default function App() {
   // Container of the viewer that opened the in-place Board dialog — the
   // dialog portals into it so it stays visible in full-page viewer mode.
   const [boardDialogContainer, setBoardDialogContainer] = useState<HTMLElement | null>(null)
+  const [boardsMenuAnchor, setBoardsMenuAnchor] = useState<HTMLElement | null>(null)
   const handleOpenBoardDialog = (id: number, container?: HTMLElement | null) => {
     setBoardDialogId(id)
     setBoardDialogContainer(container ?? null)
@@ -2595,6 +2597,7 @@ export default function App() {
       canViewPeople={canViewPeople}
       collectionsEnabled={collectionsEnabled}
       markersEnabled={features?.markers === true}
+      onBoardsMenu={setBoardsMenuAnchor}
       currentUser={currentUser}
       bannerSlot={
         bannerPost ? (
@@ -4144,7 +4147,21 @@ export default function App() {
         }}
       />
 
-      {/* Board dialog opened from a viewer drawer heading — stays on the image. */}
+      <BoardsPopover
+        anchorEl={boardsMenuAnchor}
+        currentUser={currentUser}
+        onClose={() => setBoardsMenuAnchor(null)}
+        onOpenBoard={(id) => {
+          setBoardsMenuAnchor(null)
+          handleOpenBoardDialog(id, null)
+        }}
+        onOpenBoardsPage={() => {
+          setBoardsMenuAnchor(null)
+          handleTabChange('boards')
+        }}
+      />
+      {/* Board dialog opened from a viewer drawer heading or the AppBar Boards
+          popover — stays on the current page. */}
       <BoardDialog
         boardId={boardDialogId}
         currentUser={currentUser}
