@@ -365,7 +365,7 @@ describe('ImageDetailsDrawer', () => {
     expect(trigger()).toHaveAttribute('title', 'Image details')
     expect(trigger()).toHaveAttribute('type', 'button')
     expect(trigger()).toHaveStyle({
-      backgroundImage: 'url(/openseadragon-svg-icons/info_rest.svg)',
+      backgroundImage: `url("${new URL('/openseadragon-svg-icons/info_rest.svg', document.baseURI).href}")`,
     })
     // No native ButtonFace fill behind the translucent svg.
     expect(getComputedStyle(trigger()).backgroundColor).toBe('rgba(0, 0, 0, 0)')

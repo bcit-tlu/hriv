@@ -1205,7 +1205,8 @@ describe('Marker viewer tool', () => {
   it.each([false, true])(
     'captures the same image point with flip=%s and previews it',
     async (flip) => {
-      render(<ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled />)
+      const rendered = render(<ImageViewer tileSources="/test.dzi" imageId={42} markersEnabled />)
+      rendered.container.appendChild(viewer().element)
       Object.defineProperty(viewer().canvas, 'clientWidth', { value: 200 })
       viewer().viewport.getFlip.mockReturnValue(flip)
       viewer().viewport.getZoom.mockReturnValue(4)
@@ -1361,12 +1362,13 @@ describe('ImageViewer drawer configuration', () => {
   })
 
   it('anchors viewportControl as a top-right OSD control and portals its content', async () => {
-    render(
+    const rendered = render(
       <ImageViewer
         tileSources="/tiles.dzi"
         viewportControl={<button data-testid="viewport-control">info</button>}
       />,
     )
+    rendered.container.appendChild(viewer().element)
 
     await waitFor(() =>
       expect(viewer().addControl).toHaveBeenCalledWith(

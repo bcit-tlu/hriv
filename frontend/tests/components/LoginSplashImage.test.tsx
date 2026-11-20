@@ -19,7 +19,7 @@ describe('LoginSplashImage', () => {
     const { container } = renderWithTheme(<LoginSplashImage />)
     const splash = container.firstChild as HTMLElement
     expect(splash).toHaveStyle({
-      backgroundImage: 'url(/hriv-splash2.jpg)',
+      backgroundImage: `url("${new URL('/hriv-splash2.jpg', document.baseURI).href}")`,
     })
   })
 })

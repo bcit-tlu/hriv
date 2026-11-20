@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import CollectionGraphDialog from '../../src/components/CollectionGraphDialog'
 import { GraphRenderer } from '../../src/collectionsGraph/renderer'
 import type { GraphModel, GraphNode } from '../../src/collectionsGraph/types'
@@ -112,6 +112,7 @@ describe('CollectionGraphDialog', () => {
   })
 
   afterEach(() => {
+    cleanup()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
