@@ -24,6 +24,10 @@ const lightPalette = {
   secondary: {
     main: '#7F665D',
   },
+  /** MUI's light-blue 800: white text on filled info alerts is 4.8 : 1 (default #0288d1 is 3.9 : 1). */
+  info: {
+    main: '#0277bd',
+  },
   background: {
     default: '#ECECEC',
     paper: '#FFFFFF',
@@ -71,6 +75,10 @@ const darkPalette = {
   },
   secondary: {
     main: '#A89288',
+  },
+  /** MUI's dark-mode default, kept as is (dark text on filled info alerts already passes). */
+  info: {
+    main: '#29b6f6',
   },
   background: {
     default: '#1E1E1E',
@@ -129,6 +137,7 @@ export function buildTheme(mode: HrivThemeMode) {
       mode,
       primary: palette.primary,
       secondary: palette.secondary,
+      info: palette.info,
       background: palette.background,
       text: {
         primary: palette.text.primary,
