@@ -151,7 +151,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-croniter@6.2.4
+croniter@7.0.0
 License: MIT
 Homepage: https://github.com/pallets-eco/croniter
 ================================================================================
