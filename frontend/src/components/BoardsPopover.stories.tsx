@@ -40,3 +40,29 @@ export const Basic: Story = {
     await expect(page.getByRole('button', { name: 'Open Boards & Markers' })).toBeVisible()
   },
 }
+
+export const Loading: Story = {
+  args: { services: { fetchBoards: () => new Promise(() => {}) } },
+}
+
+export const Empty: Story = {
+  args: { services: { fetchBoards: async () => [] } },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body)
+    await waitFor(() => expect(page.getByText('You have no Boards yet.')).toBeVisible())
+  },
+}
+
+export const LoadError: Story = {
+  args: {
+    services: {
+      fetchBoards: async () => {
+        throw new Error('Could not load Boards.')
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body)
+    await waitFor(() => expect(page.getByRole('alert')).toHaveTextContent('Could not load Boards.'))
+  },
+}
