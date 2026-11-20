@@ -98,7 +98,9 @@ export default function AnnouncementCard({
         ...kindAlertSx(meta),
         // Drafts sit on a grey wash so they read as "not published" at a glance.
         ...(a.status === 'draft' ? { bgcolor: 'action.hover' } : {}),
-        alignItems: 'flex-start',
+        // Collapsed cards are a single row, so centre the kind icon on it.
+        alignItems: collapsed ? 'center' : 'flex-start',
+        '& .MuiAlert-icon': collapsed ? { py: 0, '& svg': { display: 'block' } } : {},
         '& .MuiAlert-message': { flex: 1, minWidth: 0, py: 0.5 },
         boxShadow: highlighted ? (theme) => `0 0 0 2px ${theme.palette.primary.main}` : undefined,
         transition: 'box-shadow 300ms',

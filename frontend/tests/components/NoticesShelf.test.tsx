@@ -69,6 +69,15 @@ describe('NoticesShelf', () => {
     expect(screen.queryByText('Fresh body')).toBeNull()
   })
 
+  it('collapses an open post once it is seen elsewhere (bell, Announcements page)', () => {
+    const post = makeAnnouncement({ id: 4, pinned: true, message: 'Elsewhere body' })
+    const { rerender } = render(<NoticesShelf announcements={[post]} />)
+    expect(screen.getByText('Elsewhere body')).toBeInTheDocument()
+    rerender(<NoticesShelf announcements={[{ ...post, seen: true }]} />)
+    expect(screen.queryByText('Elsewhere body')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Expand' })).toBeInTheDocument()
+  })
+
   it('re-expands a collapsed post when it is re-notified', () => {
     const post = makeAnnouncement({
       id: 3,
