@@ -167,7 +167,7 @@ import { useOverlayPersistence } from './useOverlayPersistence'
 import { useCategoryActions } from './useCategoryActions'
 import { useImageActions } from './useImageActions'
 import { useAnnouncements } from './useAnnouncements'
-import { selectBannerAnnouncements } from './announcementUtils'
+import { selectBannerAnnouncements, selectNotices } from './announcementUtils'
 import { useUserProfile } from './useUserProfile'
 import { useMostSevereScope, useTileOrdering } from './useTileOrdering'
 import { tileOrderingCoordinator } from './tileOrdering'
@@ -239,8 +239,6 @@ export default function App() {
       clearInterval(timer)
     }
   }, [currentUser])
-  const bannerCandidates = selectBannerAnnouncements(announcementsFeed.announcements)
-  const bannerPost = bannerCandidates[0]
   const [announcementsFocusId, setAnnouncementsFocusId] = useState<number | null>(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('page') !== 'announcements') return null
@@ -736,6 +734,17 @@ export default function App() {
   const onViewerPage =
     (page === 'browse' && selectedImage != null) ||
     (page === 'collections' && (selectedCollectionId != null || collectionsListView === 'graph'))
+  // No banner where the post is already in view: the Announcements page lists every post, and
+  // Home shows pinned ones on the Notices shelf (#1953).
+  const homeShelfIds =
+    page === 'browse' && selectedImage == null && path.length === 0
+      ? new Set(selectNotices(announcementsFeed.announcements).map((a) => a.id))
+      : undefined
+  const bannerCandidates =
+    page === 'announcements'
+      ? []
+      : selectBannerAnnouncements(announcementsFeed.announcements, homeShelfIds)
+  const bannerPost = bannerCandidates[0]
   const myCollectionsTypesAtLimit =
     currentUser?.role === 'student' && myCollectionsCapState?.userId === currentUser.id
       ? myCollectionsCapState.types
@@ -3316,6 +3325,7 @@ export default function App() {
                 <NoticesShelf
                   announcements={announcementsFeed.announcements}
                   onOpenAnnouncements={(id) => openAnnouncementsPage(id)}
+                  onMarkSeen={announcementsFeed.markSeen}
                 />
               )}
               {/* Breadcrumbs + action buttons */}
