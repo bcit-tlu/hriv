@@ -732,7 +732,6 @@ export default function MarkerFormDialog({
                     justifyContent: 'flex-start',
                     minHeight: 42,
                     borderStyle: 'dashed',
-                    textTransform: 'none',
                   }}
                 >
                   Choose a Board
