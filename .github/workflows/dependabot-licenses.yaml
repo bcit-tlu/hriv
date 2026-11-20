@@ -87,6 +87,9 @@ jobs:
               (
                 cd "$dir"
                 poetry config virtualenvs.in-project true
+                if [ "$dir" = restore-validation ]; then
+                  poetry env use python3.15
+                fi
                 if [ "$dir" = backup ]; then
                   poetry env use python3.15
                   poetry install --no-root --quiet
