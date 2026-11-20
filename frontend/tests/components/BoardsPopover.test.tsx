@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import BoardsPopover from '../../src/components/BoardsPopover'
 import { BOARDS_FIXTURES, BOARD_USER } from '../../src/components/boardsFixtures'
+import type * as api from '../../src/api'
 import type { ApiBoardSummary } from '../../src/types'
 
 const [mine] = BOARDS_FIXTURES
@@ -19,7 +20,7 @@ const BOARDS = [
   board({ id: 10, name: 'First', marker_count: 4 }),
 ]
 
-function setup(fetchBoards = vi.fn(async () => BOARDS)) {
+function setup(fetchBoards = vi.fn<typeof api.fetchBoards>(async () => BOARDS)) {
   const anchor = document.createElement('button')
   document.body.append(anchor)
   const props = {
@@ -54,10 +55,10 @@ describe('BoardsPopover', () => {
     const others = Array.from({ length: 200 }, (_, i) =>
       board({ id: 100 + i, name: `Other ${i}`, owners: [{ ...mine.owners[0], user_id: 77 }] }),
     )
-    const fetchBoards = vi.fn(async ({ page }: { page?: number }) =>
-      page === 1 ? others : [board({ id: 10, name: 'First', marker_count: 4 })],
+    const fetchBoards = vi.fn<typeof api.fetchBoards>(async (params) =>
+      params?.page === 1 ? others : [board({ id: 10, name: 'First', marker_count: 4 })],
     )
-    setup(fetchBoards as unknown as typeof import('../../src/api').fetchBoards)
+    setup(fetchBoards)
     const paper = await screen.findByRole('dialog', { name: 'My Boards' })
     await waitFor(() => expect(within(paper).getByText('First')).toBeVisible())
     expect(fetchBoards).toHaveBeenCalledTimes(2)
