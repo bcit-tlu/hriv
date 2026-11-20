@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, userEvent, within } from 'storybook/test'
 import AnnouncementComposer from './AnnouncementComposer'
 import { storyAnnouncement } from './announcementStoryFixtures'
 import type { ApiGroup, ApiProgram } from '../api'
@@ -36,6 +37,19 @@ export const Admin: Story = {
 export const PostToGroup: Story = {
   name: 'Contextual "Post to group"',
   args: { initialGroupIds: [4] },
+}
+
+export const PinnedNeedsExpiry: Story = {
+  name: 'Pinned without expiry (Post disabled)',
+  args: { initialGroupIds: [4] },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body)
+    await userEvent.type(page.getByRole('textbox', { name: /Title/ }), 'Lab closed Friday')
+    await userEvent.click(page.getByRole('checkbox', { name: 'Pin to top' }))
+    await expect(page.getByText('Required for pinned posts')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Post' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Save draft' })).toBeEnabled()
+  },
 }
 
 export const Edit: Story = {
