@@ -91,6 +91,7 @@ jobs:
                   poetry env use python3.15
                 fi
                 if [ "$dir" = backup ]; then
+                  poetry env use python3.15
                   poetry install --no-root --quiet
                 else
                   poetry install --with dev --quiet
