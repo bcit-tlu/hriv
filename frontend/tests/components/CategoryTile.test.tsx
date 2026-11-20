@@ -161,7 +161,7 @@ describe('CategoryTile', () => {
       )
       const title = screen.getByText('Hidden Cat')
       expect(title.closest('[data-testid="category-tile-action-area"]')).toHaveStyle({
-        filter: 'grayscale(100%)',
+        filter: 'grayscale(1)',
       })
     })
 
@@ -208,7 +208,7 @@ describe('CategoryTile', () => {
       const actionArea = title.closest('[data-testid="category-tile-action-area"]')
 
       expectEffectiveOpacity(card, '1')
-      expect(actionArea).toHaveStyle({ filter: 'grayscale(100%)' })
+      expect(actionArea).toHaveStyle({ filter: 'grayscale(1)' })
     })
   })
 

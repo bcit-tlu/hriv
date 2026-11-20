@@ -127,9 +127,9 @@ For admin UI changes, also run the relevant frontend component tests and use
 ## Saved-view archive additions
 
 `board_archives.py` owns flag-independent export/import ordering for Boards,
-Inuksuks and their five association tables. Keep numeric sequence resets
+Markers and their five association tables. Keep numeric sequence resets
 in `admin_ops.py` aligned. Missing keys in older dumps mean empty saved-view tables.
-`snapshot_files.py` selects only authoritative Inuksuk/slot JPEGs inside the otherwise
+`snapshot_files.py` selects only authoritative Marker/slot JPEGs inside the otherwise
 excluded tile root. Restores merge these via the existing rollback-capable renames;
 same-source tile rebuild promotion must retain both namespaces. Run admin_ops,
 collection_slots, snapshot_files and processing regressions plus the full backend.

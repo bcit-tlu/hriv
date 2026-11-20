@@ -112,12 +112,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$work/tiles/42/image_files/0" "$work/tiles/42/inuksuks" "$work/tiles/7" "$work/stub-logs"
+mkdir -p "$work/tiles/42/image_files/0" "$work/tiles/42/markers" "$work/tiles/7" "$work/stub-logs"
 printf 'dzi-descriptor-42' > "$work/tiles/42/image.dzi"
 printf 'thumbnail-42' > "$work/tiles/42/thumbnail.jpeg"
-printf 'inuksuk-1' > "$work/tiles/42/inuksuks/1.jpg"
-printf 'inuksuk-7' > "$work/tiles/42/inuksuks/7.jpg"
-printf 'inuksuk-8' > "$work/tiles/42/inuksuks/8.jpg"
+printf 'marker-1' > "$work/tiles/42/markers/1.jpg"
+printf 'marker-7' > "$work/tiles/42/markers/7.jpg"
+printf 'marker-8' > "$work/tiles/42/markers/8.jpg"
 printf 'tile-bytes-42' > "$work/tiles/42/image_files/0/0_0.jpeg"
 printf 'dzi-descriptor-7' > "$work/tiles/7/image.dzi"
 printf '%s' "$nginx_conf" > "$work/default.conf"
@@ -139,19 +139,19 @@ map $stub_token $stub_token_image_id {
     ~^valid-([0-9]+)$ $1;
     ~^alt-([0-9]+)$ $1;
     ~^thumb-([0-9]+)$ $1;
-    ~^inuksuk-([0-9]+)-[0-9]+$ $1;
+    ~^marker-([0-9]+)-[0-9]+$ $1;
     default "";
 }
 # ``thumb-<id>`` tokens emulate the backend's thumbnail-only purpose
 # (#1609): they validate the thumbnail but nothing else.
 map $stub_token $stub_thumb_only {
     ~^thumb- 1;
-    ~^inuksuk- 1;
+    ~^marker- 1;
     default 0;
 }
 map $http_x_original_uri $stub_path_class {
     ~^/api/tiles/[0-9]+/thumbnail\.jpeg(\?|$) thumb;
-    ~^/api/tiles/[0-9]+/inuksuks/([0-9]+)\.jpg(\?|$) inuksuk-$1;
+    ~^/api/tiles/[0-9]+/markers/([0-9]+)\.jpg(\?|$) marker-$1;
     default tiles;
 }
 map "$stub_thumb_only:$stub_path_class" $stub_thumb_denied {
@@ -159,19 +159,19 @@ map "$stub_thumb_only:$stub_path_class" $stub_thumb_denied {
     "1:thumb" 0;
     default 1;
 }
-map $stub_token $stub_inuksuk_scope {
-    ~^inuksuk-[0-9]+-([0-9]+)$ inuksuk-$1;
+map $stub_token $stub_marker_scope {
+    ~^marker-[0-9]+-([0-9]+)$ marker-$1;
     default "";
 }
-map "$stub_inuksuk_scope:$stub_path_class" $stub_inuksuk_allowed {
-    ~^inuksuk-([0-9]+):inuksuk-\1$ 1;
+map "$stub_marker_scope:$stub_path_class" $stub_marker_allowed {
+    ~^marker-([0-9]+):marker-\1$ 1;
     default 0;
 }
-map $stub_token $stub_is_inuksuk {
-    ~^inuksuk- 1;
+map $stub_token $stub_is_marker {
+    ~^marker- 1;
     default 0;
 }
-map "$stub_is_inuksuk:$stub_inuksuk_allowed:$stub_thumb_denied" $stub_scope_denied {
+map "$stub_is_marker:$stub_marker_allowed:$stub_thumb_denied" $stub_scope_denied {
     ~^1:1: 0;
     ~^1:0: 1;
     ~^0:0:1$ 1;
@@ -317,8 +317,8 @@ after_second_image="$(hits)"
 # path class in the cache key this would return 200.
 expect_status 200 "$base/api/tiles/42/thumbnail.jpeg?tile_token=thumb-42" \
   "thumb token should serve the thumbnail"
-expect_status 403 "$base/api/tiles/42/inuksuks/7.jpg?tile_token=thumb-42" \
-  "card-cover token must not serve an Inuksuk after a cached thumbnail hit"
+expect_status 403 "$base/api/tiles/42/markers/7.jpg?tile_token=thumb-42" \
+  "card-cover token must not serve a Marker after a cached thumbnail hit"
 expect_status 403 "$base/api/tiles/42/image_files/0/0_0.jpeg?tile_token=thumb-42" \
   "thumb token must not unlock DZI tiles"
 expect_status 403 "${image42}?tile_token=thumb-42" \
@@ -334,18 +334,18 @@ after_token="$(hits)"
 [[ "$after_token" -eq 13 ]] || \
   fail "a new token for a cached image must hit the validator (expected 13 hits, got $after_token)"
 
-before_inuksuk="$(hits)"
+before_marker="$(hits)"
 for _ in 1 2; do
-  expect_status 200 "$base/api/tiles/42/inuksuks/7.jpg?tile_token=inuksuk-42-7" \
-    "an exact Inuksuk token should serve its JPEG, including a cached hit"
+  expect_status 200 "$base/api/tiles/42/markers/7.jpg?tile_token=marker-42-7" \
+    "an exact Marker token should serve its JPEG, including a cached hit"
 done
-[[ "$(hits)" -eq $((before_inuksuk + 1)) ]] || fail "repeat Inuksuk request should use its cached verdict"
-expect_status 403 "$base/api/tiles/42/inuksuks/8.jpg?tile_token=inuksuk-42-7" \
-  "cached Inuksuk 7 verdict must not authorize Inuksuk 8"
-expect_status 403 "$base/api/tiles/42/thumbnail.jpeg?tile_token=inuksuk-42-7" \
-  "Inuksuk token must not authorize the whole-image thumbnail"
-expect_status 403 "$base/api/tiles/42/image_files/0/0_0.jpeg?tile_token=inuksuk-42-7" \
-  "Inuksuk token must not authorize DZI tiles"
+[[ "$(hits)" -eq $((before_marker + 1)) ]] || fail "repeat Marker request should use its cached verdict"
+expect_status 403 "$base/api/tiles/42/markers/8.jpg?tile_token=marker-42-7" \
+  "cached Marker 7 verdict must not authorize Marker 8"
+expect_status 403 "$base/api/tiles/42/thumbnail.jpeg?tile_token=marker-42-7" \
+  "Marker token must not authorize the whole-image thumbnail"
+expect_status 403 "$base/api/tiles/42/image_files/0/0_0.jpeg?tile_token=marker-42-7" \
+  "Marker token must not authorize DZI tiles"
 # Dot-segment path confusion: the validator reads the raw request URI but
 # nginx serves the normalized one, so ``/api/tiles/42/../7/image.dzi``
 # would be authorized as image 42 and served from image 7. The stub

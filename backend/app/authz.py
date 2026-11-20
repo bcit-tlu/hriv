@@ -46,16 +46,16 @@ def can_transfer_board(user, board) -> bool:
     return can_transfer_collection(user, board)
 
 
-def is_inuksuk_owner(user, inuksuk) -> bool:
-    return any(owner.id == user.id for owner in inuksuk.owners)
+def is_marker_owner(user, marker) -> bool:
+    return any(owner.id == user.id for owner in marker.owners)
 
 
-def can_edit_inuksuk(user, inuksuk) -> bool:
-    return user.role == "admin" or is_inuksuk_owner(user, inuksuk)
+def can_edit_marker(user, marker) -> bool:
+    return user.role == "admin" or is_marker_owner(user, marker)
 
 
-def can_delete_inuksuk(user, inuksuk) -> bool:
-    return can_edit_inuksuk(user, inuksuk)
+def can_delete_marker(user, marker) -> bool:
+    return can_edit_marker(user, marker)
 
 
 def user_has_admin_program(user) -> bool:

@@ -1,4 +1,5 @@
-import type { ApiBoard, ApiBoardSummary, ApiInuksuk, User } from './types'
+import type { ApiBoard, ApiBoardSummary, ApiMarker, User } from './types'
+import { apiCollectionOwnerToOwner, describeCollectionOwners } from './collectionUtils'
 
 export function ownsBoard(board: ApiBoardSummary, user: User | null): boolean {
   return (
@@ -8,15 +9,29 @@ export function ownsBoard(board: ApiBoardSummary, user: User | null): boolean {
   )
 }
 
-export function moveBoardMember(board: ApiBoard, id: number, index: number) {
-  const ids = board.inuksuks.filter((item) => item.id !== id).map((item) => item.id)
-  ids.splice(Math.max(0, Math.min(index, ids.length)), 0, id)
-  return ids.map((inuksuk_id) => ({ inuksuk_id }))
+export function boardManagerText(board: ApiBoardSummary) {
+  const owners = board.owners.flatMap((owner) => {
+    const mapped = apiCollectionOwnerToOwner(owner)
+    return mapped ? [mapped] : []
+  })
+  const programOwner = owners.find((owner) => owner.kind === 'program')
+  return programOwner
+    ? `Managed by program ${programOwner.name}`
+    : owners.length
+      ? `Managed by ${describeCollectionOwners(owners)}`
+      : 'No owner'
 }
 
-export function inuksukViewParams(item: ApiInuksuk): Record<string, string> {
+export function moveBoardMember(board: ApiBoard, id: number, index: number) {
+  const ids = board.markers.filter((item) => item.id !== id).map((item) => item.id)
+  ids.splice(Math.max(0, Math.min(index, ids.length)), 0, id)
+  return ids.map((marker_id) => ({ marker_id }))
+}
+
+export function markerViewParams(item: ApiMarker): Record<string, string> {
   return {
     image: String(item.image_id),
+    marker: String(item.id),
     x: String(item.x),
     y: String(item.y),
     zoom: String(item.zoom),

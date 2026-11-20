@@ -1,5 +1,5 @@
-import { BOARD_FIXTURE, INUKSUK_FIXTURE } from './inuksukFixtures'
-import type { ApiBoard, ApiInuksuk, Group, Program, User } from '../types'
+import { BOARD_FIXTURE, MARKER_FIXTURE } from './markerFixtures'
+import type { ApiBoard, ApiMarker, Group, Program, User } from '../types'
 import type { AuthContextValue } from '../authContextValue'
 
 export const BOARD_USER: User = {
@@ -17,8 +17,8 @@ export const BOARD_PROGRAMS: Program[] = [1, 2].map((id) => ({
   id,
   name: id === 1 ? 'Design' : 'Engineering',
   oidc_group: null,
-  created_at: INUKSUK_FIXTURE.created_at,
-  updated_at: INUKSUK_FIXTURE.updated_at,
+  created_at: MARKER_FIXTURE.created_at,
+  updated_at: MARKER_FIXTURE.updated_at,
 }))
 export const BOARD_GROUPS: Group[] = [
   {
@@ -28,8 +28,8 @@ export const BOARD_GROUPS: Group[] = [
     createdByUserId: 9,
     memberIds: [],
     instructorIds: [9],
-    createdAt: INUKSUK_FIXTURE.created_at,
-    updatedAt: INUKSUK_FIXTURE.updated_at,
+    createdAt: MARKER_FIXTURE.created_at,
+    updatedAt: MARKER_FIXTURE.updated_at,
   },
 ]
 export const BOARD_AUTH: AuthContextValue = {
@@ -48,7 +48,7 @@ export const BOARD_AUTH: AuthContextValue = {
   oidcError: null,
   clearOidcError: () => {},
 }
-export const BOARD_ITEMS: ApiInuksuk[] = [
+export const BOARD_ITEMS: ApiMarker[] = [
   'Rose window',
   'Stone columns',
   'Tracery details',
@@ -56,9 +56,10 @@ export const BOARD_ITEMS: ApiInuksuk[] = [
   'A study in geometry',
   'Light through glass',
 ].map((title, index) => ({
-  ...INUKSUK_FIXTURE,
+  ...MARKER_FIXTURE,
   id: index + 7,
   title,
+  category_name: index === 5 ? null : 'Architectural details',
   thumb: '/hriv-splash2.jpg',
   description:
     index % 2
@@ -71,9 +72,9 @@ export const BOARDS_FIXTURES: ApiBoard[] = [
     ...BOARD_FIXTURE,
     description: 'Details worth a second look — our studio inspiration board.',
     permissions: { ...BOARD_FIXTURE.permissions, can_transfer: true },
-    inuksuk_count: BOARD_ITEMS.length,
+    marker_count: BOARD_ITEMS.length,
 
-    inuksuks: BOARD_ITEMS.map((item) => ({
+    markers: BOARD_ITEMS.map((item) => ({
       ...item,
     })),
   },
@@ -82,8 +83,8 @@ export const BOARDS_FIXTURES: ApiBoard[] = [
     id: 3,
     name: 'Next studio project',
 
-    inuksuks: [],
-    inuksuk_count: 0,
+    markers: [],
+    marker_count: 0,
   },
   {
     ...BOARD_FIXTURE,
@@ -98,8 +99,37 @@ export const BOARDS_FIXTURES: ApiBoard[] = [
       can_transfer: false,
     },
 
-    inuksuks: [],
-    inuksuk_count: 0,
+    markers: [
+      {
+        ...BOARD_ITEMS[0],
+        id: 90,
+        title: 'Morgan’s shared view',
+        owners: [{ user_id: 77, program_id: null, name: 'Morgan', role: 'instructor' }],
+        board_ids: [2],
+        permissions: { can_edit: false, can_delete: false },
+      },
+    ],
+    marker_count: 1,
+  },
+]
+
+export const BOARD_DISCOVERY_FIXTURES: ApiBoard[] = [
+  ...BOARDS_FIXTURES,
+  {
+    ...BOARDS_FIXTURES[2],
+    id: 5,
+    name: 'Morgan’s private studies',
+    visibility: 'private',
+  },
+  {
+    ...BOARDS_FIXTURES[2],
+    id: 6,
+    name: 'Studio reference library',
+    visibility: 'restricted',
+    program_ids: [1],
+    group_ids: [],
+    owner_program_id: 2,
+    owners: [{ user_id: null, program_id: 2, name: 'Engineering', role: null }],
   },
 ]
 
@@ -110,7 +140,12 @@ export function installBoardsFetch(
 ) {
   const original = globalThis.fetch
   let boards = structuredClone(initialBoards)
-  let items = structuredClone(BOARD_ITEMS)
+  let items = structuredClone([
+    ...BOARD_ITEMS,
+    ...initialBoards
+      .flatMap((board) => board.markers)
+      .filter((item) => !BOARD_ITEMS.some((owned) => owned.id === item.id)),
+  ])
   globalThis.fetch = async (input, init) => {
     const url = new URL(
       typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
@@ -120,7 +155,7 @@ export function installBoardsFetch(
     const method = init?.method ?? 'GET'
     if (
       !path.startsWith('/api/boards') &&
-      !path.startsWith('/api/inuksuks') &&
+      !path.startsWith('/api/markers') &&
       !path.startsWith('/api/users')
     )
       return original(input, init)
@@ -128,14 +163,18 @@ export function installBoardsFetch(
       return Response.json({ detail: 'Boards are temporarily unavailable.' }, { status: 503 })
     if (path.startsWith('/api/users'))
       return Response.json([], { headers: { 'X-Total-Count': '0' } })
-    if (path === '/api/inuksuks' && method === 'GET') {
+    if (path === '/api/markers' && method === 'GET') {
       let rows = state === 'empty' ? [] : items
       const boardId = Number(url.searchParams.get('board_id'))
-      if (boardId) rows = boards.find((board) => board.id === boardId)?.inuksuks ?? []
+      if (boardId) rows = boards.find((board) => board.id === boardId)?.markers ?? []
       if (url.searchParams.get('favourite') === 'true') rows = rows.filter((item) => item.favourite)
-      return Response.json(rows.slice(0, Number(url.searchParams.get('limit') ?? 60)))
+      const pageSize = Number(
+        url.searchParams.get('page_size') ?? url.searchParams.get('limit') ?? rows.length,
+      )
+      const start = (Number(url.searchParams.get('page') ?? 1) - 1) * pageSize
+      return Response.json(rows.slice(start, start + pageSize))
     }
-    const itemId = Number(path.match(/^\/api\/inuksuks\/(\d+)$/)?.[1])
+    const itemId = Number(path.match(/^\/api\/markers\/(\d+)$/)?.[1])
     if (itemId && method === 'GET') return Response.json(items.find((item) => item.id === itemId))
     if (path === '/api/boards' && method === 'GET')
       return Response.json(state === 'empty' ? [] : boards)
@@ -170,6 +209,54 @@ export function installBoardsFetch(
       itemId &&
       body &&
       typeof body === 'object' &&
+      'board_assignments' in body &&
+      Array.isArray(body.board_assignments)
+    ) {
+      const assignments = body.board_assignments.flatMap(
+        (entry): { board_id: number; sort_order?: number }[] =>
+          entry &&
+          typeof entry === 'object' &&
+          'board_id' in entry &&
+          typeof entry.board_id === 'number'
+            ? [
+                {
+                  board_id: entry.board_id,
+                  ...('sort_order' in entry && typeof entry.sort_order === 'number'
+                    ? { sort_order: entry.sort_order }
+                    : {}),
+                },
+              ]
+            : [],
+      )
+      const item = items.find((row) => row.id === itemId)
+      if (!item) return Response.json({ detail: 'Marker not found' }, { status: 404 })
+      const boardIds = [
+        ...new Set([
+          ...item.board_ids.filter(
+            (id) => !boards.find((board) => board.id === id)?.permissions.can_edit,
+          ),
+          ...assignments.map((assignment) => assignment.board_id),
+        ]),
+      ]
+      const saved = { ...item, board_ids: boardIds, version: item.version + 1 }
+      items = items.map((row) => (row.id === itemId ? saved : row))
+      boards = boards.map((board) => {
+        const members = board.markers.filter((row) => row.id !== itemId)
+        if (boardIds.includes(board.id))
+          members.push({
+            ...saved,
+            sort_order:
+              assignments.find((assignment) => assignment.board_id === board.id)?.sort_order ??
+              members.length,
+          })
+        return { ...board, markers: members, marker_count: members.length }
+      })
+      return Response.json(saved)
+    }
+    if (
+      itemId &&
+      body &&
+      typeof body === 'object' &&
       'favourite' in body &&
       typeof body.favourite === 'boolean'
     ) {
@@ -184,7 +271,7 @@ export function installBoardsFetch(
       ...BOARDS_FIXTURES[0],
       id: 40,
 
-      inuksuks: [],
+      markers: [],
     }
     const saved = {
       ...existing,

@@ -14,11 +14,11 @@ from ..browse_state import bump_browse_revision
 from ..board_memberships import bump_board_membership_versions
 from ..board_views import load_memberships
 from ..board_writes import (
-    cleanup_thumbnails, delete_orphans, lock_boards, lock_inuksuks,
-    thumbnail_target, touch_inuksuks,
+    cleanup_thumbnails, delete_orphans, lock_boards, lock_markers,
+    thumbnail_target, touch_markers,
 )
 from ..database import get_db
-from ..models import Board, BoardInuksuk, Collection, Image, Inuksuk, Program, User
+from ..models import Board, BoardMarker, Collection, Image, Marker, Program, User
 from ..password_tokens import issue_password_setup_token, validate_password_setup_token
 from ..tile_order import bump_scopes, collection_scope_keys
 from ..schemas import (
@@ -105,7 +105,7 @@ async def _delete_sole_owned_collections(
     return bool(affected) or creator_linked
 
 
-async def _delete_sole_owned_inuksuks_and_boards(
+async def _delete_sole_owned_markers_and_boards(
     db: AsyncSession, departing_ids: set[int]
 ) -> list[tuple[Image, int]]:
     if not departing_ids:
@@ -117,13 +117,13 @@ async def _delete_sole_owned_inuksuks_and_boards(
         select(Board.id).where(Board.owners.any(User.id.in_(departing_ids)))
     )).scalars().unique().all())
     owned_item_ids = set((await db.execute(
-        select(Inuksuk.id).where(Inuksuk.owners.any(User.id.in_(departing_ids)))
+        select(Marker.id).where(Marker.owners.any(User.id.in_(departing_ids)))
     )).scalars().unique().all())
     candidate_ids = set((await db.execute(
-        select(BoardInuksuk.inuksuk_id).where(BoardInuksuk.board_id.in_(board_ids))
+        select(BoardMarker.marker_id).where(BoardMarker.board_id.in_(board_ids))
     )).scalars().unique().all())
     parent_ids = set((await db.execute(
-        select(BoardInuksuk.board_id).where(BoardInuksuk.inuksuk_id.in_(owned_item_ids | candidate_ids))
+        select(BoardMarker.board_id).where(BoardMarker.marker_id.in_(owned_item_ids | candidate_ids))
     )).scalars().unique().all())
     locked = await lock_boards(db, board_ids | parent_ids) if board_ids or parent_ids else {}
     dying = [
@@ -131,8 +131,8 @@ async def _delete_sole_owned_inuksuks_and_boards(
         if board.id in board_ids and board.owner_program_id is None
         and all(owner.id in departing_ids for owner in board.owners)
     ]
-    affected_ids = {link.inuksuk_id for board in dying for link in board.inuksuk_links}
-    items = await lock_inuksuks(db, owned_item_ids | affected_ids) if owned_item_ids or affected_ids else []
+    affected_ids = {link.marker_id for board in dying for link in board.marker_links}
+    items = await lock_markers(db, owned_item_ids | affected_ids) if owned_item_ids or affected_ids else []
     links = await load_memberships(db, (item.id for item in items)) if items else {}
     if any(link.board_id not in locked for memberships in links.values() for link in memberships):
         raise HTTPException(409, "Board membership changed; retry user deletion")
@@ -142,14 +142,14 @@ async def _delete_sole_owned_inuksuks_and_boards(
         and all(owner.id in departing_ids for owner in item.owners)
     ]
     deleted_ids = {item.id for item in sole_owned}
-    await bump_board_membership_versions(db, inuksuk_ids=deleted_ids)
+    await bump_board_membership_versions(db, marker_ids=deleted_ids)
     for item in sole_owned:
         targets.append(thumbnail_target(item))
         await db.delete(item)
     for board in dying:
         await db.delete(board)
     await db.flush()
-    await touch_inuksuks(db, affected_ids - deleted_ids)
+    await touch_markers(db, affected_ids - deleted_ids)
     targets.extend(await delete_orphans(db, [item for item in items if item.id in affected_ids - deleted_ids]))
     return targets
 
@@ -380,7 +380,7 @@ async def bulk_delete_users(
     collections_affected = await _delete_sole_owned_collections(
         db, set(body.user_ids)
     )
-    thumbnail_targets = await _delete_sole_owned_inuksuks_and_boards(db, set(body.user_ids))
+    thumbnail_targets = await _delete_sole_owned_markers_and_boards(db, set(body.user_ids))
     for user in users:
         await db.delete(user)
     if collections_affected:
@@ -513,7 +513,7 @@ async def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     collections_affected = await _delete_sole_owned_collections(db, {user_id})
-    thumbnail_targets = await _delete_sole_owned_inuksuks_and_boards(db, {user_id})
+    thumbnail_targets = await _delete_sole_owned_markers_and_boards(db, {user_id})
     await db.delete(user)
     if collections_affected:
         await bump_browse_revision(db)

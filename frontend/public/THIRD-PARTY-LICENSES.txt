@@ -356,7 +356,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/abstract@0.5.1
+@dnd-kit/abstract@0.5.3
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -384,7 +384,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/collision@0.5.1
+@dnd-kit/collision@0.5.3
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -412,7 +412,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/dom@0.5.1
+@dnd-kit/dom@0.5.3
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -440,7 +440,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/geometry@0.5.1
+@dnd-kit/geometry@0.5.3
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -468,7 +468,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/helpers@0.5.1
+@dnd-kit/helpers@0.5.3
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -496,7 +496,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/react@0.5.1
+@dnd-kit/react@0.5.3
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -524,7 +524,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/state@0.5.1
+@dnd-kit/state@0.5.3
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -1327,7 +1327,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@mui/x-date-pickers@9.17.0
+@mui/x-date-pickers@9.18.0
 License: MIT
 Repository: git+https://github.com/mui/mui-x.git
 ================================================================================
@@ -1357,7 +1357,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@mui/x-internals@9.17.0
+@mui/x-internals@9.18.0
 License: MIT
 Repository: git+https://github.com/mui/mui-x.git
 ================================================================================
@@ -1595,7 +1595,7 @@ Repository: open-telemetry/opentelemetry-js
    limitations under the License.
 
 ================================================================================
-@opentelemetry/core@3.1.0
+@opentelemetry/core@3.1.1
 License: Apache-2.0
 Repository: open-telemetry/opentelemetry-js
 ================================================================================
@@ -1803,7 +1803,7 @@ Repository: open-telemetry/opentelemetry-js
    limitations under the License.
 
 ================================================================================
-@opentelemetry/exporter-trace-otlp-http@0.301.0
+@opentelemetry/exporter-trace-otlp-http@0.301.2
 License: Apache-2.0
 Repository: open-telemetry/opentelemetry-js
 ================================================================================
@@ -2011,7 +2011,7 @@ Repository: open-telemetry/opentelemetry-js
    limitations under the License.
 
 ================================================================================
-@opentelemetry/instrumentation@0.301.0
+@opentelemetry/instrumentation@0.301.2
 License: Apache-2.0
 Repository: git+https://github.com/open-telemetry/opentelemetry-js.git
 ================================================================================
@@ -2219,7 +2219,7 @@ Repository: git+https://github.com/open-telemetry/opentelemetry-js.git
    limitations under the License.
 
 ================================================================================
-@opentelemetry/instrumentation-fetch@0.301.0
+@opentelemetry/instrumentation-fetch@0.301.2
 License: Apache-2.0
 Repository: open-telemetry/opentelemetry-js
 ================================================================================
@@ -2427,7 +2427,7 @@ Repository: open-telemetry/opentelemetry-js
    limitations under the License.
 
 ================================================================================
-@opentelemetry/otlp-exporter-base@0.301.0
+@opentelemetry/otlp-exporter-base@0.301.2
 License: Apache-2.0
 Repository: open-telemetry/opentelemetry-js
 ================================================================================
@@ -2635,7 +2635,7 @@ Repository: open-telemetry/opentelemetry-js
    limitations under the License.
 
 ================================================================================
-@opentelemetry/otlp-transformer@0.301.0
+@opentelemetry/otlp-transformer@0.301.2
 License: Apache-2.0
 Repository: open-telemetry/opentelemetry-js
 ================================================================================
@@ -2843,7 +2843,7 @@ Repository: open-telemetry/opentelemetry-js
    limitations under the License.
 
 ================================================================================
-@opentelemetry/resources@3.1.0
+@opentelemetry/resources@3.1.1
 License: Apache-2.0
 Repository: open-telemetry/opentelemetry-js
 ================================================================================
@@ -3051,7 +3051,7 @@ Repository: open-telemetry/opentelemetry-js
    limitations under the License.
 
 ================================================================================
-@opentelemetry/sdk-logs@3.1.0
+@opentelemetry/sdk-logs@3.1.1
 License: Apache-2.0
 Repository: git+https://github.com/open-telemetry/opentelemetry-js.git
 ================================================================================
@@ -3259,7 +3259,7 @@ Repository: git+https://github.com/open-telemetry/opentelemetry-js.git
    limitations under the License.
 
 ================================================================================
-@opentelemetry/sdk-metrics@3.1.0
+@opentelemetry/sdk-metrics@3.1.1
 License: Apache-2.0
 Repository: open-telemetry/opentelemetry-js
 ================================================================================
@@ -3467,7 +3467,7 @@ Repository: open-telemetry/opentelemetry-js
    limitations under the License.
 
 ================================================================================
-@opentelemetry/sdk-trace@3.1.0
+@opentelemetry/sdk-trace@3.1.1
 License: Apache-2.0
 Repository: open-telemetry/opentelemetry-js
 ================================================================================
@@ -3883,7 +3883,7 @@ Repository: open-telemetry/opentelemetry-js
    limitations under the License.
 
 ================================================================================
-@opentelemetry/web-common@0.301.0
+@opentelemetry/web-common@0.301.2
 License: Apache-2.0
 Repository: git+https://github.com/open-telemetry/opentelemetry-js.git
 ================================================================================
@@ -4430,12 +4430,12 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ================================================================================
-d3-drag@3.0.0
+d3-drag@3.0.1
 License: ISC
 Repository: https://github.com/d3/d3-drag.git
 ================================================================================
 
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -4485,12 +4485,12 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-d3-force@3.0.0
+d3-force@3.0.1
 License: ISC
 Repository: https://github.com/d3/d3-force.git
 ================================================================================
 
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -4525,12 +4525,12 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ================================================================================
-d3-quadtree@3.0.1
+d3-quadtree@3.0.2
 License: ISC
 Repository: https://github.com/d3/d3-quadtree.git
 ================================================================================
 
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -4545,12 +4545,12 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ================================================================================
-d3-selection@3.0.0
+d3-selection@3.0.1
 License: ISC
 Repository: https://github.com/d3/d3-selection.git
 ================================================================================
 
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -4585,12 +4585,12 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ================================================================================
-d3-transition@3.0.1
+d3-transition@3.0.2
 License: ISC
 Repository: https://github.com/d3/d3-transition.git
 ================================================================================
 
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -4605,12 +4605,12 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ================================================================================
-d3-zoom@3.0.0
+d3-zoom@3.0.1
 License: ISC
 Repository: https://github.com/d3/d3-zoom.git
 ================================================================================
 
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice

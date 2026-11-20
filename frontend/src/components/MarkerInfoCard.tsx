@@ -1,0 +1,242 @@
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { Alert, Box, Button, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material'
+import { alpha } from '@mui/material/styles'
+import { markerAccentColor, markerFavouriteButtonSx } from '../theme'
+import { Edit, Room, Star, StarBorder } from '@mui/icons-material'
+import { ApiError, fetchBoards, fetchMarker, updateMarker, userMessage } from '../api'
+import type { ApiBoardSummary, ApiMarker } from '../types'
+
+import { markerPanelSx } from './markerPanelStyles'
+import MarkerFormDialog from './MarkerFormDialog'
+
+export default function MarkerInfoCard({
+  item,
+  container,
+  onClose,
+  onEdit,
+  editing = false,
+  userId,
+  onCancelEdit,
+  onChanged,
+}: {
+  item: ApiMarker
+  container: HTMLElement
+  onClose: () => void
+  onEdit: (item: ApiMarker) => void
+  editing?: boolean
+  userId?: number
+  onCancelEdit?: () => void
+  onChanged?: () => Promise<void> | void
+}) {
+  const cardRef = useRef<HTMLElement>(null)
+  const [boards, setBoards] = useState<ApiBoardSummary[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  const [savedItem, setSavedItem] = useState<ApiMarker | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [favouriteError, setFavouriteError] = useState<string | null>(null)
+  const [favouriteConflict, setFavouriteConflict] = useState(false)
+  const current = savedItem?.id === item.id && savedItem.version > item.version ? savedItem : item
+  const changeFavourite = async (reload = false) => {
+    setBusy(true)
+    setFavouriteError(null)
+    try {
+      const updated = reload
+        ? await fetchMarker(current.id)
+        : await updateMarker(current.id, {
+            version: current.version,
+            favourite: !current.favourite,
+          })
+      setSavedItem(updated)
+      setFavouriteConflict(false)
+      await onChanged?.()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setFavouriteConflict(true)
+        setFavouriteError('This Marker changed. Reload current values before trying again.')
+      } else
+        setFavouriteError(
+          userMessage(err, reload ? 'Unable to reload Marker.' : 'Unable to change favourite.'),
+        )
+    } finally {
+      setBusy(false)
+    }
+  }
+  useEffect(() => {
+    const document = container.ownerDocument
+    const outside = (event: PointerEvent) => {
+      if (!editing && event.target instanceof Node && !cardRef.current?.contains(event.target))
+        onClose()
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (!editing && event.key === 'Escape' && !event.defaultPrevented) {
+        event.stopPropagation()
+        onClose()
+      }
+    }
+    document.addEventListener('pointerdown', outside, true)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('pointerdown', outside, true)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [container, editing, onClose])
+  useEffect(() => {
+    if (editing) return
+    let cancelled = false
+    fetchBoards().then(
+      (rows) => {
+        if (!cancelled) {
+          setError(null)
+          setBoards(rows)
+          setLoaded(true)
+        }
+      },
+      (err) => {
+        if (!cancelled) setError(userMessage(err, 'Unable to load Board names.'))
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [item.id, editing])
+  return createPortal(
+    <Paper
+      ref={cardRef}
+      component="section"
+      aria-label="Marker information"
+      data-hriv-canvas-ui
+      elevation={8}
+      sx={{ ...markerPanelSx, p: 2 }}
+    >
+      {editing && current.permissions.can_edit ? (
+        <MarkerFormDialog
+          key={item.id}
+          inline
+          imageId={item.image_id}
+          item={current}
+          view={item}
+          userId={userId}
+          container={container}
+          onChanged={() => onChanged?.()}
+          onClose={onCancelEdit ?? onClose}
+          onEscape={onClose}
+        />
+      ) : (
+        <>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1, minWidth: 0 }}>
+              <Room sx={{ color: markerAccentColor }} />
+              <Typography
+                component="h2"
+                variant="subtitle1"
+                sx={{ minWidth: 0, overflowWrap: 'anywhere' }}
+              >
+                {current.title}
+              </Typography>
+              {current.permissions.can_edit && (
+                <Tooltip title="Edit Marker">
+                  <IconButton
+                    size="small"
+                    aria-label={`Edit ${current.title}`}
+                    disabled={favouriteConflict}
+                    onClick={() => {
+                      if (!busy) onEdit(current)
+                    }}
+                    sx={{ flexShrink: 0 }}
+                  >
+                    <Edit fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
+            {current.permissions.can_edit ? (
+              <Tooltip title={current.favourite ? 'Remove favourite' : 'Add favourite'}>
+                <IconButton
+                  size="small"
+                  aria-label="Favourite"
+                  aria-pressed={current.favourite}
+                  disabled={busy || favouriteConflict}
+                  onClick={() => void changeFavourite()}
+                  sx={markerFavouriteButtonSx(current.favourite)}
+                >
+                  {current.favourite ? (
+                    <Star sx={{ color: 'common.white' }} fontSize="small" />
+                  ) : (
+                    <StarBorder sx={{ color: 'common.white' }} fontSize="small" />
+                  )}
+                </IconButton>
+              </Tooltip>
+            ) : (
+              <Tooltip title={current.favourite ? 'Favourite' : 'Not favourited'}>
+                <Box
+                  component="span"
+                  role="img"
+                  aria-label={current.favourite ? 'Favourite' : 'Not favourited'}
+                  sx={{
+                    display: 'inline-flex',
+                    flexShrink: 0,
+                    p: 0.5,
+                    borderRadius: '50%',
+                    bgcolor: (theme) =>
+                      current.favourite
+                        ? markerAccentColor(theme)
+                        : alpha(theme.palette.common.black, 0.25),
+                  }}
+                >
+                  {current.favourite ? (
+                    <Star sx={{ color: 'common.white' }} fontSize="small" />
+                  ) : (
+                    <StarBorder sx={{ color: 'common.white' }} fontSize="small" />
+                  )}
+                </Box>
+              </Tooltip>
+            )}
+          </Box>
+          <Stack spacing={1} sx={{ mt: 0.5 }}>
+            {favouriteError && (
+              <Alert
+                severity="error"
+                action={
+                  favouriteConflict ? (
+                    <Button
+                      size="small"
+                      color="inherit"
+                      disabled={busy}
+                      onClick={() => void changeFavourite(true)}
+                    >
+                      Reload current
+                    </Button>
+                  ) : undefined
+                }
+              >
+                {favouriteError}
+              </Alert>
+            )}
+            {current.description && (
+              <Typography
+                variant="caption"
+                component="p"
+                sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+              >
+                {current.description}
+              </Typography>
+            )}
+            {error ? (
+              <Alert severity="error">{error}</Alert>
+            ) : (
+              <Typography variant="caption" component="p" color="text.secondary">
+                {boards
+                  .filter((board) => current.board_ids.includes(board.id))
+                  .map((board) => board.name)
+                  .join(' · ') || (loaded ? 'No visible Boards' : 'Loading Boards…')}
+              </Typography>
+            )}
+          </Stack>
+        </>
+      )}
+    </Paper>,
+    container,
+  )
+}
