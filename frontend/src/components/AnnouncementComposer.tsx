@@ -489,7 +489,6 @@ function ComposerDialog({
         <Button size="small" onClick={onClose} disabled={saving}>
           Cancel
         </Button>
-        <Box sx={{ flex: 1 }} />
         {(!isEdit || source?.status === 'draft') && (
           <Button size="small" onClick={() => void submit(true)} disabled={!canSubmit}>
             Save draft
