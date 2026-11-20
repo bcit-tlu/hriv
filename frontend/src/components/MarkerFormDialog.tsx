@@ -8,7 +8,6 @@ import { markerPanelSx } from './markerPanelStyles'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import ButtonGroup from '@mui/material/ButtonGroup'
 import IconButton from '@mui/material/IconButton'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
@@ -19,7 +18,6 @@ import Tooltip from '@mui/material/Tooltip'
 import Star from '@mui/icons-material/Star'
 import StarBorder from '@mui/icons-material/StarBorder'
 import Add from '@mui/icons-material/Add'
-import ArrowDropDown from '@mui/icons-material/ArrowDropDown'
 import CheckCircle from '@mui/icons-material/CheckCircle'
 import Close from '@mui/icons-material/Close'
 import RadioButtonUnchecked from '@mui/icons-material/RadioButtonUnchecked'
@@ -73,6 +71,9 @@ export interface MarkerFormDialogProps {
   placement?: boolean
   onTitleChange?: (title: string) => void
   onRemoveFromBoard?: () => void
+  /** Called after a new Marker saves, with its Board names, so the host can
+   *  offer "Saved to … · Change". */
+  onSaved?: (marker: ApiMarker, boardNames: string[]) => void
   onViewMarker?: () => void
   inline?: boolean
   onEscape?: () => void
@@ -299,6 +300,7 @@ export function MarkerDeleteDialog({
 
 export default function MarkerFormDialog({
   onRemoveFromBoard,
+  onSaved,
   onViewMarker,
   imageId,
   view,
@@ -347,7 +349,6 @@ export default function MarkerFormDialog({
     setPanesEl(el)
   }, [])
   const boardsButtonRef = useRef<HTMLButtonElement>(null)
-  const splitRef = useRef<HTMLDivElement>(null)
   const savedToId = useId()
   const titleRef = useRef<HTMLInputElement>(null)
   const editable = !baseline || baseline.permissions.can_edit
@@ -510,6 +511,11 @@ export default function MarkerFormDialog({
         if (userId != null && assignments.length)
           rememberBoards(userId, assignments.map((link) => link.board_id).reverse())
       }
+      if (created)
+        onSaved?.(
+          created,
+          selectedBoards.map((board) => board.name),
+        )
       await onChanged(created)
       onClose()
     } catch (err) {
@@ -539,7 +545,7 @@ export default function MarkerFormDialog({
   const selectedBoards = assignments.flatMap(
     (link) => boards.find((board) => board.id === link.board_id) ?? [],
   )
-  const openPicker = () => setPickerAnchor(splitRef.current ?? boardsButtonRef.current)
+  const openPicker = () => setPickerAnchor(boardsButtonRef.current)
   const empty = !loading && assignments.length === 0
   const missingDetails = assignments.some((link) => !details[link.board_id])
   const canSave =
@@ -793,36 +799,18 @@ export default function MarkerFormDialog({
           </Button>
         )}
         {editable && !baseline && (
-          <ButtonGroup ref={splitRef} size="small" variant="contained" sx={{ minWidth: 0 }}>
-            <Button
-              disabled={assignments.length ? !canSave : busy || loading}
-              onClick={() => (assignments.length ? void persist() : openPicker())}
-              sx={{ minWidth: 0 }}
-            >
-              <Box
-                component="span"
-                sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-              >
-                {busy
-                  ? 'Saving…'
-                  : selectedBoards.length === 0
-                    ? 'Save to…'
-                    : selectedBoards.length === 1
-                      ? `Save to ${selectedBoards[0].name}`
-                      : `Save to ${selectedBoards.length} Boards`}
-              </Box>
-            </Button>
-            <Button
-              ref={boardsButtonRef}
-              aria-label="Choose Boards"
-              aria-haspopup="dialog"
-              disabled={busy || loading}
-              onClick={openPicker}
-              sx={{ px: 0.25, minWidth: 0 }}
-            >
-              <ArrowDropDown />
-            </Button>
-          </ButtonGroup>
+          // Save first, change after: new Markers go to the default Board and
+          // the host's "Saved to … · Change" toast reopens the choice.
+          <Button
+            ref={boardsButtonRef}
+            size="small"
+            variant="contained"
+            aria-haspopup={assignments.length ? undefined : 'dialog'}
+            disabled={assignments.length ? !canSave : busy || loading}
+            onClick={() => (assignments.length ? void persist() : openPicker())}
+          >
+            {busy ? 'Saving…' : assignments.length ? 'Save' : 'Choose a Board'}
+          </Button>
         )}
       </DialogActions>
     </>

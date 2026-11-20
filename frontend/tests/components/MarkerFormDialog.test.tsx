@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext } from '../../src/authContextValue'
@@ -63,7 +63,7 @@ function services() {
 }
 const LAST_BOARD = 'hrivpref:marker:lastBoard:9'
 const RECENT_BOARDS = 'hrivpref:marker:recentBoards:9'
-const BOARDS_BUTTON = /^(Choose Boards|Choose a Board|Save to another Board)$/
+const BOARDS_BUTTON = /^(Choose a Board|Save to another Board)$/
 const picker = () => screen.getByRole('dialog', { name: 'Save to' })
 const row = (name: string) =>
   within(picker()).getByText(name, { exact: true }).closest('[role="button"]') as HTMLElement
@@ -98,8 +98,11 @@ async function setup(props: Partial<React.ComponentProps<typeof MarkerFormDialog
       />
     </AuthContext.Provider>,
   )
-  if (!props.item || props.item.permissions.can_edit)
-    await waitFor(() => expect(screen.getByRole('button', { name: BOARDS_BUTTON })).toBeEnabled())
+  if (!props.item || props.item.permissions.can_edit) {
+    await waitFor(() => expect((props.services ?? api).fetchBoards).toHaveBeenCalled())
+    // Let the Board list and selected Board details settle.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+  }
   return { api, onChanged, onClose, user: userEvent.setup() }
 }
 async function openCreate(user: ReturnType<typeof userEvent.setup>) {
@@ -166,7 +169,7 @@ describe('MarkerFormDialog', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Delete denied')
     expect(onClose).not.toHaveBeenCalled()
   })
-  it('names the Board on the Save button, orders picker rows selected, recent, then by name, and creates Boards in the pane', async () => {
+  it('orders picker rows selected, recent, then by name, and creates Boards in the pane', async () => {
     localStorage.setItem(RECENT_BOARDS, JSON.stringify([2, 4]))
     const api = services()
     api.fetchBoards.mockResolvedValue(
@@ -177,9 +180,7 @@ describe('MarkerFormDialog', () => {
       })),
     )
     api.fetchBoard.mockImplementation(async (id: number) => ({ ...BOARD_FIXTURE, id }))
-    const { user } = await setup({ services: api })
-    expect(screen.getByRole('button', { name: 'Save to beta' })).toBeDisabled()
-    expect(screen.queryByRole('region', { name: 'Saved to' })).toBeNull()
+    const { user } = await setup({ services: api, item: { ...MARKER_FIXTURE, board_ids: [2] } })
     await openPicker(user)
     expect(rowNames()).toEqual(['beta', 'gamma', 'Alpha', 'zeta'])
     expect(row('beta')).toHaveAttribute('aria-pressed', 'true')
@@ -191,7 +192,9 @@ describe('MarkerFormDialog', () => {
     expect(rowNames()).toEqual(['beta', 'gamma', 'Alpha', 'zeta'])
     expect(screen.queryByLabelText('Search Boards')).toBeNull()
     await closePicker(user)
-    expect(screen.getByRole('button', { name: 'Save to 2 Boards' })).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('region', { name: 'Saved to' })).getAllByRole('listitem'),
+    ).toHaveLength(2)
     await openCreate(user)
     await user.type(screen.getByLabelText('Name *'), 'My new Board')
     await user.click(screen.getByRole('button', { name: 'Create Board' }))
@@ -200,14 +203,15 @@ describe('MarkerFormDialog', () => {
         expect.objectContaining({ name: 'My new Board', visibility: 'private' }),
       ),
     )
+    // MARKER_FIXTURE starts as a favourite; the star toggles it off.
     expect(screen.getByRole('button', { name: 'Favourite' })).toHaveAttribute(
       'aria-pressed',
-      'false',
+      'true',
     )
     await user.click(screen.getByRole('button', { name: 'Favourite' }))
     expect(screen.getByRole('button', { name: 'Favourite' })).toHaveAttribute(
       'aria-pressed',
-      'true',
+      'false',
     )
     expect(screen.queryByRole('checkbox', { name: 'Favourite' })).toBeNull()
   })
@@ -226,7 +230,7 @@ describe('MarkerFormDialog', () => {
     expect(screen.queryByRole('checkbox', { name: 'Favourite' })).not.toBeInTheDocument()
     await user.type(screen.getByLabelText('Description'), 'A saved detail')
     await user.click(screen.getByRole('button', { name: 'Favourite' }))
-    await user.click(screen.getByRole('button', { name: 'Save to Architecture inspiration' }))
+    await user.click(screen.getByRole('button', { name: 'Save', exact: true }))
     expect(api.createMarker).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'New Marker',
@@ -263,7 +267,7 @@ describe('MarkerFormDialog', () => {
     const { user } = await setup({ services: api })
     await user.type(screen.getByLabelText('Title *'), 'A view')
     // Without a Board the main button opens the picker instead of saving.
-    await user.click(screen.getByRole('button', { name: 'Save to…' }))
+    await user.click(screen.getByRole('button', { name: 'Choose a Board' }))
     expect(within(picker()).getByText('You have no Boards you can edit yet.')).toBeVisible()
     expect(api.createMarker).not.toHaveBeenCalled()
     await user.click(within(picker()).getByRole('button', { name: 'Create Board' }))
@@ -278,7 +282,7 @@ describe('MarkerFormDialog', () => {
     await user.click(row('Architecture inspiration'))
     await closePicker(user)
     await user.click(screen.getByRole('button', { name: 'Favourite' }))
-    await user.click(screen.getByRole('button', { name: 'Save to Architecture inspiration' }))
+    await user.click(screen.getByRole('button', { name: 'Save', exact: true }))
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
     expect(api.createMarker).toHaveBeenCalledWith({
       x: 0.46,
@@ -299,9 +303,7 @@ describe('MarkerFormDialog', () => {
     localStorage.setItem(LAST_BOARD, '1')
     const { api } = await setup()
     await waitFor(() => expect(api.fetchBoard).toHaveBeenCalledWith(1))
-    expect(
-      screen.getByRole('button', { name: 'Save to Architecture inspiration' }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save', exact: true })).toBeInTheDocument()
   })
   it.each(['99', 'not-json', '500'])(
     'ignores unavailable/non-editable persisted Board %s',
@@ -322,11 +324,13 @@ describe('MarkerFormDialog', () => {
     await openCreate(user)
     await user.type(screen.getByLabelText('Name *'), 'My new Board')
     await user.click(screen.getByRole('button', { name: 'Create Board' }))
-    const save = await screen.findByRole('button', { name: 'Save to My new Board' })
+    const save = await screen.findByRole('button', { name: 'Save', exact: true })
     expect(api.createBoard).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'My new Board', visibility: 'private' }),
     )
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Choose Boards' })).toHaveFocus())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save', exact: true })).toHaveFocus(),
+    )
     await user.click(save)
     await waitFor(() =>
       expect(api.createMarker).toHaveBeenCalledWith(
@@ -431,7 +435,7 @@ describe('MarkerFormDialog', () => {
     expect(within(picker()).getByText('No matching Boards.')).toBeVisible()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Save to' })).toBeNull())
-    expect(screen.getByRole('button', { name: 'Save to Board 12' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save', exact: true })).toBeInTheDocument()
   })
   it('removes a Board from Saved to and requires one before saving an edit', async () => {
     const { api, user } = await setup({ item: MARKER_FIXTURE })
@@ -451,9 +455,7 @@ describe('MarkerFormDialog', () => {
   it('reads the legacy last-Board key when no recent list exists', async () => {
     localStorage.setItem(LAST_BOARD, '1')
     await setup()
-    expect(
-      await screen.findByRole('button', { name: 'Save to Architecture inspiration' }),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Save', exact: true })).toBeInTheDocument()
   })
   it('opens the Add Board pane over the form, returns via back or Escape, and keeps the draft', async () => {
     const { user, onClose } = await setup()
@@ -510,7 +512,7 @@ describe('MarkerFormDialog', () => {
     await waitFor(() => expect(screen.getByLabelText('Title *')).toBeVisible())
     await user.type(screen.getByLabelText('Title *'), 'A view')
     api.createMarker.mockRejectedValueOnce(new ApiError(422, 'Marker limit reached'))
-    await user.click(screen.getByRole('button', { name: 'Save to Architecture inspiration' }))
+    await user.click(screen.getByRole('button', { name: 'Save', exact: true }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Marker limit reached')
     expect(onClose).not.toHaveBeenCalled()
   })
