@@ -101,6 +101,13 @@ The restore-validation `kubernetes` Python client is also held at its current
 major: each client major targets one Kubernetes minor, and the clusters stay on
 Kubernetes 1.35. Drop the ignore and bump the client by hand when they upgrade.
 
+`python` base-image minor and major bumps are ignored for `backend`, `backup`
+and `restore-validation`: a `python:3.x` → `3.y` move is an interpreter
+migration (native wheels, Dockerfile site-packages paths, CI `setup-python`
+pins and venv cache keys change together), so it is taken as one co-ordinated
+PR across all three components, not as per-component Dependabot PRs. The
+floating `3.x-slim` tag still picks up patch releases on every image build.
+
 Checklist when merging one:
 
 - **Runtime Python/npm dependency changed?** `dependabot-licenses.yaml`
