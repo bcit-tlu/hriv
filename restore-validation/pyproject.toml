@@ -13,10 +13,10 @@ PyYAML = "6.0.3"
 opentelemetry-distro = "0.57b0"
 opentelemetry-exporter-otlp = "1.36.0"
 grpcio = ">=1.85.3,<2"
-psycopg = {version = "3.3.8", extras = ["binary"]}
+psycopg = {version = "3.3.9", extras = ["binary"]}
 
 [tool.poetry.group.dev.dependencies]
-coverage = "7.17.2"
+coverage = "7.17.3"
 
 [tool.poetry.scripts]
 hriv-restore-validation = "hriv_restore_validation.cli:main"
