@@ -19,7 +19,7 @@ from .auth import auth_settings
 from .authz import (
     can_change_board_scope, can_delete_board, can_delete_marker,
     can_edit_board, can_edit_marker, can_transfer_board, can_view_board,
-    is_marker_owner,
+    is_board_owner, is_marker_owner,
 )
 from .collection_views import _owners_out
 from .models import Board, BoardMarker, Image, Marker, User
@@ -70,9 +70,18 @@ class BoardViewerContext:
             or bool(boards)
         )
 
+    def discoverable(self, board: Board) -> bool:
+        """Private Boards surface only to their owners; other staff can still
+        open them deliberately (All Boards, detail, Organize list)."""
+        return board.visibility != "private" or is_board_owner(self.user, board) or (
+            board.owner_program_id is not None
+            and board.owner_program_id in self.program_ids
+        )
+
     def source(self, marker: Marker, boards: list[Board]) -> str | None:
         if is_marker_owner(self.user, marker):
             return "mine"
+        boards = [b for b in boards if self.discoverable(b)]
         if any(
             b.owner_program_id is not None
             or any(o.role in ("admin", "instructor") for o in b.owners)

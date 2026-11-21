@@ -123,9 +123,16 @@ The drawer returns 404 for an invisible or nonexistent image.
 Source tags have strict precedence:
 
 1. `mine`: the caller is a Marker owner.
-2. `instructor`: a **visible** containing Board has an instructor/admin
+2. `instructor`: a **discoverable** containing Board has an instructor/admin
    owner or an `owner_program`.
 3. `public`: another user's Marker is on a public Board.
+
+A Board is discoverable unless it is private and the caller neither owns it nor
+belongs to its owner program. Admins, instructors and staff can still open
+another user's private Board deliberately (All Boards, Board detail, the
+Organize list's `board_ids`), but it never tags a Marker's source. `board_ids`
+stay complete everywhere, because Marker edits replace the caller's editable
+assignments from them.
 
 Other visible Markers have `source: null` in the Organize list and remain
 reachable through Boards, but are omitted from the drawer. For example,
