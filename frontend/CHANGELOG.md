@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/bcit-tlu/hriv/compare/frontend-v1.1.0...frontend-v1.2.0) (2026-11-20)
+
+
+### Features
+
+* **boards:** open a My Boards popover from the AppBar ([#1957](https://github.com/bcit-tlu/hriv/issues/1957)) ([f4990d5](https://github.com/bcit-tlu/hriv/commit/f4990d532a91afb03b5457a478012e19e3a60ced))
+* **markers:** save new Markers first and change Boards afterwards ([#1956](https://github.com/bcit-tlu/hriv/issues/1956)) ([48a20b1](https://github.com/bcit-tlu/hriv/commit/48a20b169f84d05d4bdc4cde1f6a9578179087ef))
+
 ## [1.1.0](https://github.com/bcit-tlu/hriv/compare/frontend-v1.0.0...frontend-v1.1.0) (2026-11-20)
 
 
