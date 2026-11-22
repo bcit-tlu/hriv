@@ -347,13 +347,8 @@ function DialogBody({
                 {imageError}
               </Alert>
             ) : tileSources == null ? (
-              <Stack
-                alignItems="center"
-                justifyContent="center"
-                sx={{ height: '100%' }}
-                aria-label="Loading image"
-              >
-                <CircularProgress />
+              <Stack alignItems="center" justifyContent="center" sx={{ height: '100%' }}>
+                <CircularProgress aria-label="Loading image" />
               </Stack>
             ) : null}
             {/* The ref'd div hosts OSD; it must exist before tileSources resolves. */}
@@ -388,7 +383,7 @@ function DialogBody({
 
           <Stack spacing={2} sx={{ width: { xs: '100%', md: 320 }, flexShrink: 0 }}>
             <Box>
-              <Typography variant="subtitle2" gutterBottom>
+              <Typography variant="subtitle2" component="h3" gutterBottom>
                 Detection sensitivity
               </Typography>
               <Slider
@@ -409,7 +404,7 @@ function DialogBody({
               </Stack>
             </Box>
             <Box>
-              <Typography variant="subtitle2" gutterBottom>
+              <Typography variant="subtitle2" component="h3" gutterBottom>
                 Minimum cell size
               </Typography>
               <Slider
@@ -448,7 +443,9 @@ function DialogBody({
 
             <Box sx={{ minHeight: 96 }}>
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-                <Typography variant="subtitle2">Preview</Typography>
+                <Typography variant="subtitle2" component="h3">
+                  Preview
+                </Typography>
                 {dirty && <Chip size="small" variant="outlined" color="primary" label="Unsaved" />}
               </Stack>
               {previewing && <LinearProgress sx={{ mb: 1 }} aria-label="Previewing" />}
