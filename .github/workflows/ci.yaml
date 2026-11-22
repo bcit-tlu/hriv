@@ -285,6 +285,15 @@ jobs:
       - name: Test with coverage (Vitest)
         run: npm run test:coverage
 
+      # Storybook play functions + axe checks (vitest.config.ts) run in
+      # headless Chromium. Files run one at a time: in parallel, dialog
+      # transitions time out under load and fail at random (#1961).
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps --only-shell chromium
+
+      - name: Storybook play tests (Vitest browser)
+        run: npm run test:storybook -- --run --no-file-parallelism
+
   synthetic-checks:
     needs: [changes]
     if: needs.changes.outputs.synthetic == 'true'
