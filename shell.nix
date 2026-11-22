@@ -6,7 +6,7 @@ pkgs.mkShell {
     nodejs_24
 
     # Backend
-    python3
+    python315
     poetry
 
     # Kubernetes / deployment
