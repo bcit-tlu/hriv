@@ -281,6 +281,12 @@ export const HiddenRows: Story = {
       canvas.getByRole('switch', { name: 'Visibility for In hidden category' }),
     ).toBeDisabled()
     await expect(canvas.getByRole('checkbox', { name: 'Select Hidden set' })).toBeChecked()
+    // One of three selected: "Select all" is mixed via the native property.
+    const selectAll = canvas.getByRole<HTMLInputElement>('checkbox', {
+      name: 'Select all collections on this page',
+    })
+    await expect(selectAll.indeterminate).toBe(true)
+    await expect(selectAll).not.toHaveAttribute('aria-checked')
   },
 }
 

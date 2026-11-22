@@ -90,34 +90,39 @@ if (
 // flag is absent the native global is unavailable yet still shadows jsdom's,
 // so storage-backed code under test sees `undefined`. Install a working
 // in-memory implementation. (No-op effect on CI's Node 22, which uses jsdom's.)
+// Methods live on the class prototype, which also becomes the global `Storage`,
+// so tests that spy on `Storage.prototype` see calls as they do under jsdom.
+class MemoryStorage {
+  #store = new Map<string, string>()
+  get length() {
+    return this.#store.size
+  }
+  clear() {
+    this.#store.clear()
+  }
+  getItem(key: string) {
+    return this.#store.has(key) ? (this.#store.get(key) as string) : null
+  }
+  key(index: number) {
+    return Array.from(this.#store.keys())[index] ?? null
+  }
+  removeItem(key: string) {
+    this.#store.delete(key)
+  }
+  setItem(key: string, value: string) {
+    this.#store.set(key, String(value))
+  }
+}
+
 function createMemoryStorage(): Storage {
-  const store = new Map<string, string>()
-  return {
-    get length() {
-      return store.size
-    },
-    clear() {
-      store.clear()
-    },
-    getItem(key: string) {
-      return store.has(key) ? (store.get(key) as string) : null
-    },
-    key(index: number) {
-      return Array.from(store.keys())[index] ?? null
-    },
-    removeItem(key: string) {
-      store.delete(key)
-    },
-    setItem(key: string, value: string) {
-      store.set(key, String(value))
-    },
-  } as Storage
+  return new MemoryStorage() as unknown as Storage
 }
 
 for (const name of ['localStorage', 'sessionStorage'] as const) {
   const existing = (globalThis as Record<string, unknown>)[name]
   const usable = existing != null && typeof (existing as Storage).clear === 'function'
   if (usable) continue
+  ;(globalThis as Record<string, unknown>).Storage = MemoryStorage
   try {
     Object.defineProperty(globalThis, name, {
       configurable: true,

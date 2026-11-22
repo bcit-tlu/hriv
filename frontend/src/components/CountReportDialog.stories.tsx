@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, within } from 'storybook/test'
+import { expect, waitFor, within } from 'storybook/test'
 
 import CountReportDialog from './CountReportDialog'
 import type { ApiCountObject } from '../api'
@@ -123,8 +123,9 @@ export const AdjustMode: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body)
-    await expect(
-      canvas.getByText(/Click an outline to remove it — click again to undo/),
-    ).toBeVisible()
+    // The dialog fades in from opacity 0; wait for it to finish.
+    await waitFor(() =>
+      expect(canvas.getByText(/Click an outline to remove it — click again to undo/)).toBeVisible(),
+    )
   },
 }

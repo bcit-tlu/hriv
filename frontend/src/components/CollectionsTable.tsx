@@ -254,6 +254,7 @@ export default function CollectionsTable({
     (canFileCollections || collections.some((c) => c.permissions.canDelete))
   const selectableInView = pageRows.filter(rowSelectable)
   const selectedInView = selectableInView.filter((c) => selectedIds.has(c.id)).length
+  const someSelectedInView = selectedInView > 0 && selectedInView < selectableInView.length
 
   const handleSelectAll = (checked: boolean) => {
     const next = new Set(selectedIds)
@@ -574,12 +575,22 @@ export default function CollectionsTable({
               {selectionEnabled && (
                 <TableCell padding="checkbox">
                   <Checkbox
-                    indeterminate={selectedInView > 0 && selectedInView < selectableInView.length}
+                    indeterminate={someSelectedInView}
                     checked={
                       selectableInView.length > 0 && selectedInView === selectableInView.length
                     }
                     onChange={(e) => handleSelectAll(e.target.checked)}
-                    slotProps={{ input: { 'aria-label': 'Select all collections on this page' } }}
+                    // Browsers ignore aria-checked on a native checkbox (MUI sets
+                    // "mixed"); the DOM `indeterminate` property is what they announce.
+                    inputRef={(input: HTMLInputElement | null) => {
+                      if (input) input.indeterminate = someSelectedInView
+                    }}
+                    slotProps={{
+                      input: {
+                        'aria-label': 'Select all collections on this page',
+                        'aria-checked': undefined,
+                      },
+                    }}
                   />
                 </TableCell>
               )}

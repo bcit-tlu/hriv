@@ -53,12 +53,17 @@ export const Basic: Story = {
   },
 }
 
+// The side panel passes `showAll`, so missing values render as "—" rather than
+// dropping their row.
+const row = (canvasElement: HTMLElement, label: string) =>
+  within(canvasElement).getByText(label, { exact: true }).parentElement
+
 export const MetadataOnly: Story = {
   parameters: { emptySource: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Educational specimen')).toBeVisible()
-    await expect(canvas.queryByText('Original file:')).not.toBeInTheDocument()
+    await expect(row(canvasElement, 'Original file:')).toHaveTextContent('Original file: —')
   },
 }
 
@@ -69,6 +74,8 @@ export const Empty: Story = {
     programNames: [],
   },
   play: async ({ canvasElement }) => {
-    await expect(within(canvasElement).getByText('No details available.')).toBeVisible()
+    for (const label of ['Copyright:', 'Dimensions:', 'Original file:'])
+      await expect(row(canvasElement, label)).toHaveTextContent(`${label} —`)
+    await expect(within(canvasElement).queryByText('No details available.')).not.toBeInTheDocument()
   },
 }

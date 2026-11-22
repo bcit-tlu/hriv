@@ -132,7 +132,10 @@ export const Empty: Story = {
 export const ScanQueued: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(await canvas.findByRole('button', { name: 'Scan next 10' }))
+    // Scanning lives in the Actions menu (#1801); the menu renders in a portal.
+    await userEvent.click(await canvas.findByRole('button', { name: 'Actions' }))
+    const body = within(canvasElement.ownerDocument.body)
+    await userEvent.click(await body.findByRole('menuitem', { name: /^Scan next 10/ }))
     await expect(await canvas.findByText(/Scanning images: 0 of 3 done/)).toBeInTheDocument()
   },
 }

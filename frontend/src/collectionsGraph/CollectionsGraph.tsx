@@ -457,8 +457,10 @@ export default function CollectionsGraph({
             data-testid="graph-legend"
             sx={{ position: 'absolute', left: 8, bottom: 8, px: 1, py: 0.75 }}
           >
+            {/* A caption, not a heading: the graph sits under an h1 (page) or h2 (dialog). */}
             <Typography
               variant="subtitle1"
+              component="p"
               sx={{ fontWeight: 600, whiteSpace: 'nowrap', lineHeight: 1.3, mb: '5px' }}
             >
               Legend
