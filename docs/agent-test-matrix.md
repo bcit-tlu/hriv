@@ -10,10 +10,17 @@ commands.
   gate in `pyproject.toml` still applies to the full run before merge).
 - Frontend: from `frontend/`, `npm test -- <pattern>` — Vitest matches `<pattern>`
   as a substring of the test file path (tests live in `frontend/tests/`).
+- Storybook stories (`play` functions + axe checks): from `frontend/`,
+  `npm run test:storybook -- --run <story files>`. CI runs the whole suite with
+  `--no-file-parallelism` (see [Storybook and Chromatic](storybook-chromatic.md));
+  do the same for a full local run.
 
 All test file names below are verified against `backend/tests/` and
 `frontend/tests/`. Run the **full** suite (`poetry run pytest` / `npm test`)
 before opening a PR; the targeted subsets are for fast inner-loop iteration.
+If you changed a component that has stories, also run its story file — CI runs
+every story's `play` function and axe check (axe violations only report, not
+fail, in stories marked `a11y.test: 'todo'`).
 
 ## Matrix
 

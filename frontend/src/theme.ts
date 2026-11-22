@@ -24,6 +24,10 @@ const lightPalette = {
   secondary: {
     main: '#7F665D',
   },
+  /** MUI's light-blue 800: white text on filled info alerts is 4.8 : 1 (default #0288d1 is 3.9 : 1). */
+  info: {
+    main: '#0277bd',
+  },
   background: {
     default: '#ECECEC',
     paper: '#FFFFFF',
@@ -48,9 +52,10 @@ const lightPalette = {
   /**
    * Visibility status colours. Active uses a neutral dark-grey so the
    * default "visible" state stays unremarkable; inactive uses text.primary
-   * at 0.7 alpha (#3E3C3Ab3) giving ≈ 4.7 : 1 contrast on white — WCAG-AA.
+   * at 0.75 alpha (#3E3C3Abf) giving ≈ 5.2 : 1 on white and ≈ 4.9 : 1 on a
+   * selected table row — WCAG-AA (0.7 alpha fell to 4.3 : 1 when selected).
    */
-  visibility: { active: 'rgba(0,0,0,0.45)', inactive: '#3E3C3Ab3', inactiveChipBg: '#6B6966' },
+  visibility: { active: 'rgba(0,0,0,0.45)', inactive: '#3E3C3Abf', inactiveChipBg: '#6B6966' },
   /**
    * Presentation pointer tools (epic #1876). A laser-green dot and bright
    * cyan ink — both must read against stained-tissue imagery and a
@@ -71,6 +76,10 @@ const darkPalette = {
   },
   secondary: {
     main: '#A89288',
+  },
+  /** MUI's dark-mode default, kept as is (dark text on filled info alerts already passes). */
+  info: {
+    main: '#29b6f6',
   },
   background: {
     default: '#1E1E1E',
@@ -129,6 +138,7 @@ export function buildTheme(mode: HrivThemeMode) {
       mode,
       primary: palette.primary,
       secondary: palette.secondary,
+      info: palette.info,
       background: palette.background,
       text: {
         primary: palette.text.primary,

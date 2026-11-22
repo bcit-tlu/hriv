@@ -375,8 +375,10 @@ export const Filtered: Story = {
     const body = within(canvasElement.ownerDocument.body)
     await userEvent.click(await body.findByRole('menuitemradio', { name: 'My collections' }))
     await expect(canvas.getByText('Owner: My collections')).toBeInTheDocument()
-    // Both fixtures owned by Ada remain — ids 1 and 4.
-    await expect(canvas.getAllByTestId('collection-card')).toHaveLength(2)
+    // Only Ada's collection remains — id 1 (id 4 is Sam Student's since #1698).
+    const cards = canvas.getAllByTestId('collection-card')
+    await expect(cards).toHaveLength(1)
+    await expect(cards[0]).toHaveTextContent('Skull comparison')
     await expect(canvas.getAllByRole('button', { name: /^Edit / })).not.toHaveLength(0)
   },
 }
