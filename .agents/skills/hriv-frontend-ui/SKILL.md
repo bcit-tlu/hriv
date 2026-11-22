@@ -86,12 +86,13 @@ npm run format:check
 ```
 
 When touching `*.stories.*` or `*.docs.mdx`, also verify the Storybook build
-and story tests (play functions run in Chromium):
+and story tests (play functions run in Chromium; CI's `frontend-checks` runs
+them one file at a time, because dialog/popover stories time out in parallel):
 
 ```bash
 npm run build-storybook
 npx playwright install chromium  # once per machine
-npm run test:storybook
+npm run test:storybook -- --run --no-file-parallelism
 ```
 
 Run the frontend suite before a PR when practical:
