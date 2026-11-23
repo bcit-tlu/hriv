@@ -112,6 +112,12 @@ export const WithInstructorNote: Story = {
     await expect(
       await canvas.findByTitle('Visible to instructors, staff and admins'),
     ).toBeInTheDocument()
+    // Its own section below the metadata, after a divider.
+    const divider = canvas.getByRole('separator')
+    await expect(
+      divider.compareDocumentPosition(canvas.getByTestId('image-details-instructor-note')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   },
 }
 

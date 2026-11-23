@@ -189,7 +189,7 @@ describe('ImageDetailsDrawer', () => {
     expect(screen.getByText('No details available.')).toBeInTheDocument()
   })
 
-  it('shows a wrapping instructor note block above Copyright', async () => {
+  it('shows a wrapping instructor note block below the metadata, after a divider', async () => {
     render(
       <Harness
         {...makeProps({
@@ -205,8 +205,12 @@ describe('ImageDetailsDrawer', () => {
     expect(block).toHaveTextContent('Instructor note: Discuss after the quiz')
     expect(block).toHaveStyle({ whiteSpace: 'pre-wrap' })
     expect(within(block).getByTitle('Visible to instructors, staff and admins')).toBeInTheDocument()
-    const copyright = screen.getByText('Copyright:', { exact: true })
-    expect(block.compareDocumentPosition(copyright) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const after = (a: Node, b: Node) =>
+      (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+    const uploadedBy = screen.getByText('Uploaded by:', { exact: true })
+    const divider = screen.getByRole('separator')
+    expect(after(uploadedBy, divider)).toBe(true)
+    expect(after(divider, block)).toBe(true)
   })
 
   it('omits the instructor note block when there is none', async () => {
@@ -238,6 +242,8 @@ describe('ImageDetailsDrawer', () => {
 
     expect(screen.getByTestId('image-details-instructor-note')).toBeInTheDocument()
     expect(screen.queryByText('No details available.')).not.toBeInTheDocument()
+    // Nothing above it to separate from.
+    expect(screen.queryByRole('separator')).not.toBeInTheDocument()
   })
 
   it('lists every field with a dash for absent values when showAll is set', () => {

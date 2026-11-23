@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import type { RefObject } from 'react'
 import Box from '@mui/material/Box'
+import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Slide from '@mui/material/Slide'
@@ -363,23 +364,6 @@ export function ImageDetailsContent({
 
   return (
     <Stack spacing={dense ? 0.5 : 0.75}>
-      {instructorNote !== '' && (
-        // Wraps (unlike the single-line fields): it can run to 500 characters.
-        <Typography
-          variant={dense ? 'caption' : 'body2'}
-          component="p"
-          color="text.secondary"
-          data-testid="image-details-instructor-note"
-          sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
-        >
-          <LockIcon
-            fontSize="inherit"
-            titleAccess={INSTRUCTOR_NOTE_VISIBILITY}
-            sx={{ verticalAlign: 'text-bottom', mr: 0.5 }}
-          />
-          <strong>Instructor note:</strong> {instructorNote}
-        </Typography>
-      )}
       {fields.length === 0 && instructorNote === '' ? (
         <Typography variant={dense ? 'caption' : 'body2'} component="p" color="text.secondary">
           No details available.
@@ -395,6 +379,27 @@ export function ImageDetailsContent({
             dense={dense}
           />
         ))
+      )}
+      {instructorNote !== '' && (
+        // Its own section below the metadata, so it isn't read as one of the fields.
+        <>
+          {fields.length > 0 && <Divider />}
+          {/* Wraps (unlike the single-line fields): it can run to 500 characters. */}
+          <Typography
+            variant={dense ? 'caption' : 'body2'}
+            component="p"
+            color="text.secondary"
+            data-testid="image-details-instructor-note"
+            sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+          >
+            <LockIcon
+              fontSize="inherit"
+              titleAccess={INSTRUCTOR_NOTE_VISIBILITY}
+              sx={{ verticalAlign: 'text-bottom', mr: 0.5 }}
+            />
+            <strong>Instructor note:</strong> {instructorNote}
+          </Typography>
+        </>
       )}
     </Stack>
   )
