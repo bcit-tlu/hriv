@@ -1455,12 +1455,11 @@ absent from the caller's tree get no entry and those rows are omitted.
 **Caption.** A caption row under the viewport — the same `ImageCaptionRow`
 the synchronized panes and the image-view info bar use — holds the member
 name as an `h2` (left), then, when the image has a description, a visible
-**Description:** label plus the text clamped to one line (`ClampedContent`)
-and, when the API sends one (never to students), a lock-marked **Instructor
-note:** cell treated the same way. Either "…more" opens a `ViewportDialog`
-over the viewer whose body is `ImageNotesContent` (title **Description**,
-**Description & instructor note**, or **Instructor note**). The title is
-capped at min(468px, 40%) when either text is present. At the
+**Description:** label plus the text clamped to one line (`ClampedContent`),
+whose "…more" opens a **Description** `ViewportDialog` over the viewer. The
+staff-only instructor note never shows in the caption or the dialog — the
+viewer is shared on projectors — only in the image details. The title is
+capped at min(468px, 40%) when a description is present. At the
 right, the `n of N` live region plus the **Open image** action. Member
 management moved into the detail header's **Manage Images** dialog
 (#1566/#1567).

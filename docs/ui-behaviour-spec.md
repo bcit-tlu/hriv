@@ -171,8 +171,8 @@ images> / Empty` format used on category tiles.
   the long-form date (e.g. "October 15, 2026"); the exact timestamp shows
   in a tooltip on hover, tap or focus (the value is `tabIndex={0}`; other
   fields keep their `title`). When the API sends an instructor note (never
-  to students), it heads the field list as a wrapping **Instructor note:**
-  block whose lock icon carries the accessible title "Visible to
+  to students), it follows the field list as its own wrapping
+  **Instructor note:** section below a divider, whose lock icon carries the accessible title "Visible to
   instructors, staff and admins"; it replaces the "No details available."
   state when it is the only detail. The panel does not contain the
   description or collections.
@@ -190,21 +190,20 @@ images> / Empty` format used on category tiles.
 - The info bar is a plain row (no background) shared with the collection
   viewers (`ImageCaptionRow`): the image title as an `h2` left, a
   **Description:** cell (bold label plus the description clamped to one
-  line) when the image has one, a lock-marked **Instructor note:** cell
-  (same treatment) when the API sends one — never to students — and a
-  **Collections:** cell at the right when the image belongs to
+  line) when the image has one, and a **Collections:** cell at the right when the image belongs to
   any collections (see [collections.md](collections.md)). The bar always
   renders because the title is always shown. At `md` and up the row is one
-  line — the title capped at min(468px, 40%) when either text is present, the text cells taking the
-  middle, the collections cell capped at 30% — and below `md` the
+  line — the title capped at min(468px, 40%) when a description is present, the description taking
+  the middle, the collections cell capped at 30% — and below `md` the
   collections cell wraps to its own left-aligned line.
-- An overflowing description or instructor note gets an "…more" link at the
-  end of its line; both open the same `ViewportDialog` centered over the OSD
-  viewport (via `viewportOverlay`, so it survives full-page mode). Its body
-  (`ImageNotesContent`) shows the full description and, when present, the
-  instructor note with the "Visible to instructors, staff and admins" hint;
-  the title follows the content — **Description**, **Description &
-  instructor note**, or **Instructor note** when the description is blank.
+- An overflowing description gets an "…more" link at the end of its line
+  that opens a **Description** `ViewportDialog` centered over the OSD
+  viewport (via `viewportOverlay`, so it survives full-page mode) with the
+  full text.
+- The staff-only instructor note never shows in the info bar or its dialogs:
+  instructors share the viewer on a projector. It shows only in the image
+  details (the **i** drawer and the viewer sidebar), in its own section below
+  the metadata.
   The collections cell shows the largest prefix of names that fits; a
   trailing "… + N more" opens a **Collections** dialog with the full list.
   Both dialogs trap focus, close on Escape, ✕, or a backdrop click, restore
@@ -741,10 +740,9 @@ always read-only (`canEditContent={false}`).
   thumbnail filmstrip renders _above_ the viewer (#1564), the first member
   renders with the caption row under the viewport (member name `h2` left;
   when the image has a description, a visible **Description:** label plus
-  the text clamped to one line in the middle, followed for staff by the
-  lock-marked **Instructor note:** cell when one is set — "…more" opens the
-  same description/instructor-note `ViewportDialog` centered over the
-  viewer — the title capped at min(468px, 40%);
+  the text clamped to one line in the middle — "…more" opens the
+  **Description** `ViewportDialog` centered over the viewer; the
+  instructor note never shows here — the title capped at min(468px, 40%);
   `1 of N` position readout and **Open image** right — the synchronized
   pane pattern), the edge-overlay
   **Previous** button disabled, and the member's canvas annotations /

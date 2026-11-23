@@ -20,8 +20,6 @@ import ImageViewer from './ImageViewer'
 import RenewingThumbnail from './RenewingThumbnail'
 import ImageCaptionRow from './ImageCaptionRow'
 import ViewportDialog from './ViewportDialog'
-import ImageNotesContent from './ImageNotesContent'
-import { imageNotesTitle } from './imageNotesTitle'
 import {
   CollectionImageDetails,
   CollectionImageDetailsDrawer,
@@ -624,13 +622,15 @@ export default function SequenceCollectionViewer({
                 {!markersEnabled && <CollectionImageDetailsDrawer />}
                 <ViewportDialog
                   open={noteDialogOpen}
-                  title={imageNotesTitle(current.description, current.instructorNote)}
+                  title="Description"
                   onClose={() => setNoteDialogOpen(false)}
                 >
-                  <ImageNotesContent
-                    description={current.description}
-                    instructorNote={current.instructorNote}
-                  />
+                  {/* Over the shared viewport, so never the instructor note. */}
+                  <Box
+                    sx={{ typography: 'body2', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+                  >
+                    {current.description}
+                  </Box>
                 </ViewportDialog>
               </>
             }

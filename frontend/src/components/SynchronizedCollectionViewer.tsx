@@ -27,8 +27,6 @@ import ImageViewer from './ImageViewer'
 import RenewingThumbnail from './RenewingThumbnail'
 import ImageCaptionRow from './ImageCaptionRow'
 import ViewportDialog from './ViewportDialog'
-import ImageNotesContent from './ImageNotesContent'
-import { imageNotesTitle } from './imageNotesTitle'
 import {
   CollectionImageDetails,
   CollectionImageDetailsDrawer,
@@ -696,13 +694,19 @@ export default function SynchronizedCollectionViewer({
                           <CollectionImageDetailsDrawer />
                           <ViewportDialog
                             open={noteDialogImageId === memberKey(image)}
-                            title={imageNotesTitle(image.description, image.instructorNote)}
+                            title="Description"
                             onClose={() => setNoteDialogImageId(null)}
                           >
-                            <ImageNotesContent
-                              description={image.description}
-                              instructorNote={image.instructorNote}
-                            />
+                            {/* Over the shared viewport, so never the instructor note. */}
+                            <Box
+                              sx={{
+                                typography: 'body2',
+                                whiteSpace: 'pre-wrap',
+                                overflowWrap: 'anywhere',
+                              }}
+                            >
+                              {image.description}
+                            </Box>
                           </ViewportDialog>
                         </>
                       }

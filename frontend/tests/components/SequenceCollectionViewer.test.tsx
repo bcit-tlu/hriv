@@ -632,7 +632,7 @@ describe('caption note', () => {
     )
   })
 
-  it('shows both sections under the combined title when there is an instructor note', () => {
+  it('keeps the instructor note out of the description dialog over the viewer', () => {
     stubOverflow()
     renderViewer({
       collection: seqCollection({
@@ -643,9 +643,9 @@ describe('caption note', () => {
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Show full description' }))
-    const dialog = screen.getByRole('dialog', { name: 'Description & instructor note' })
+    const dialog = screen.getByRole('dialog', { name: 'Description' })
     expect(within(dialog).getByText(/Fracture line/)).toBeInTheDocument()
-    expect(within(dialog).getByText('Staff only')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Staff only')).not.toBeInTheDocument()
   })
 })
 

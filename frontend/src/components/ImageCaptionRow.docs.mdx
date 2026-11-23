@@ -21,8 +21,8 @@ import * as ImageCaptionRowStories from './ImageCaptionRow.stories'
 ## When to use
 
 `ImageCaptionRow` renders `[h2 image title] [Description: … …more] {end}`. The description clamps
-to one line with an "…more" affordance that opens the caller's `ViewportDialog` (`onShowNote`),
-whose body is `ImageNotesContent`. `end` carries the right-hand actions (position readout,
+to one line with an "…more" affordance that opens the caller's **Description**
+`ViewportDialog` (`onShowNote`). `end` carries the right-hand actions (position readout,
 **Open image**, or the fitted collections cell). When a description is present the title is
 capped at min(468px, 40%) so the text gets the room; without one the title takes the full width.
 On narrow screens the row wraps.

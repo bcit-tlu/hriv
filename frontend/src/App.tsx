@@ -32,8 +32,6 @@ import ImageViewer from './components/ImageViewer'
 import ChangePasswordDialog from './components/ChangePasswordDialog'
 import ViewerImageDetails from './components/ViewerImageDetails'
 import ImageDetailsDrawer, { ImageDetailsTrigger } from './components/ImageDetailsDrawer'
-import ImageNotesContent from './components/ImageNotesContent'
-import { imageNotesTitle } from './components/imageNotesTitle'
 import ImageViewerInfoBar from './components/ImageViewerInfoBar'
 import ViewportDialog from './components/ViewportDialog'
 import SortableTileGrid from './components/SortableTileGrid'
@@ -3267,16 +3265,19 @@ export default function App() {
                       )}
                       <ViewportDialog
                         open={viewerDialog === 'note'}
-                        title={imageNotesTitle(
-                          selectedImage.description,
-                          selectedImage.instructorNote,
-                        )}
+                        title="Description"
                         onClose={() => setViewerDialog(null)}
                       >
-                        <ImageNotesContent
-                          description={selectedImage.description}
-                          instructorNote={selectedImage.instructorNote}
-                        />
+                        {/* Over the shared viewport, so never the instructor note. */}
+                        <Box
+                          sx={{
+                            typography: 'body2',
+                            whiteSpace: 'pre-wrap',
+                            overflowWrap: 'anywhere',
+                          }}
+                        >
+                          {selectedImage.description}
+                        </Box>
                       </ViewportDialog>
                       <ViewportDialog
                         open={viewerDialog === 'collections'}

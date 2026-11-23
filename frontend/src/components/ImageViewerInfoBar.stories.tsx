@@ -6,8 +6,6 @@ import type { ImageViewerInfoBarProps } from './ImageViewerInfoBar'
 import ImageViewerInfoBar from './ImageViewerInfoBar'
 import ImageCollectionsList from './ImageCollectionsList'
 import ViewportDialog from './ViewportDialog'
-import ImageNotesContent from './ImageNotesContent'
-import { imageNotesTitle } from './imageNotesTitle'
 
 const COLLECTIONS = [
   { id: 1621, name: 'Duomo archive' },
@@ -33,10 +31,12 @@ function InfoBarExample(args: ImageViewerInfoBarProps) {
       >
         <ViewportDialog
           open={dialog === 'note'}
-          title={imageNotesTitle(args.description)}
+          title="Description"
           onClose={() => setDialog(null)}
         >
-          <ImageNotesContent description={args.description} />
+          <Box sx={{ typography: 'body2', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+            {args.description}
+          </Box>
         </ViewportDialog>
         <ViewportDialog
           open={dialog === 'collections'}
