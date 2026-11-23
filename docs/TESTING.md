@@ -519,21 +519,22 @@ staff-only Instructor note never reaches students — in the UI or the API.
    and admins".
 2. In the viewer, **Assert:** the caption row shows **Description:** but no
    instructor note, and **…more** opens a dialog titled "Description" with
-   the description only — the viewer is shared on projectors. The **i**
-   details drawer shows the locked **Instructor note:** in its own section
+   the description only — the viewer is shared on projectors. **Image
+   details** (the info icon in the viewer side panel; the **i** button when
+   Markers is off) shows the locked **Instructor note:** in its own section
    below the metadata, after a divider. Add the image to a sequence
-   collection and open it — **Assert:** the same caption, dialog and
-   drawer.
+   collection and open it — **Assert:** the same caption, dialog and Image
+   details.
 3. Open **Manage**, enable the **Description** and **Instructor note**
    columns in **Choose columns**. **Assert:** both render, sort and filter.
    Open **Search**, type a word from the instructor note, and click the
    **Instructor note** chip — **Assert:** the image is the only match.
 4. As `staff@example.ca`, repeat steps 2 and the Search part of 3.
-   **Assert:** the Instructor note shows in the details drawer and Search as
+   **Assert:** the Instructor note shows in Image details and Search as
    it did for the instructor, and staff have no way to edit it (no Edit Details, no Manage).
 5. As `student@example.ca`, open the same image, its collection and Search.
    **Assert:** the Description shows; the Instructor note appears nowhere
-   (caption, dialog, drawer, collection viewer), and Search shows no
+   (caption, dialog, Image details, collection viewer), and Search shows no
    **Instructor note** chip and no match on its words.
 6. As the student, request the image over the API:
 
