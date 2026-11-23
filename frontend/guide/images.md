@@ -28,7 +28,9 @@ to open **Edit Details**.
 - **Name**, **Category**, **Copyright**, and **Description** — the
   description shows alongside the image for everyone, students included.
 - **Instructor note** (marked with a lock) — for teaching notes such as quiz
-  answers. Instructors, staff and admins see it; students never do.
+  answers. Instructors, staff and admins see it in the image details (the
+  **i** button); students never do. It never shows under the image, so you
+  can share your screen in class without revealing it.
 - **Scale** and **Unit** — optional: pixels per real-world unit (e.g.
   `8` px per `um`). This unlocks measurement boxes in the viewer.
 

@@ -92,6 +92,13 @@ at the four student-reachable image read paths: `GET /images/`,
 which would mark the row dirty and persist `NULL` on a later commit. Any new
 endpoint that returns `ImageOut` to students must go through `image_out`.
 
+Staff see the instructor note only in the image details (the **i** drawer and
+the viewer sidebar), in its own section below the metadata. It never shows in
+the caption row under the viewer or the **…more** description dialog over it,
+because instructors share the viewer on a projector (see
+[`product-decisions.md`](product-decisions.md)). In **Edit Details**, Category
+sits between Description and Instructor note so the two notes aren't mixed up.
+
 Every write path accepts both fields (admin/instructor only; staff are
 read-only):
 

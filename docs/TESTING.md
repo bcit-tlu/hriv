@@ -513,21 +513,24 @@ behind. Any role works — presenting is a student activity too.
 staff-only Instructor note never reaches students — in the UI or the API.
 
 1. As `instructor@example.ca`, open an image and **Edit Details**. Enter a
-   Description and an Instructor note and save. **Assert:** the Instructor
-   note field shows a lock icon and "Visible to instructors, staff and
-   admins".
-2. In the viewer, **Assert:** the caption row shows **Description:** and a
-   locked **Instructor note:**; **…more** opens a dialog titled "Description
-   & instructor note" with both sections; the **i** details drawer shows the
-   Instructor note block at the top. Add the image to a sequence collection
-   and open it — **Assert:** the same caption and dialog.
+   Description and an Instructor note and save. **Assert:** the fields run
+   Name, Description, Category, Instructor note, Copyright, and the
+   Instructor note field shows a lock icon and "Visible to instructors, staff
+   and admins".
+2. In the viewer, **Assert:** the caption row shows **Description:** but no
+   instructor note, and **…more** opens a dialog titled "Description" with
+   the description only — the viewer is shared on projectors. The **i**
+   details drawer shows the locked **Instructor note:** in its own section
+   below the metadata, after a divider. Add the image to a sequence
+   collection and open it — **Assert:** the same caption, dialog and
+   drawer.
 3. Open **Manage**, enable the **Description** and **Instructor note**
    columns in **Choose columns**. **Assert:** both render, sort and filter.
    Open **Search**, type a word from the instructor note, and click the
    **Instructor note** chip — **Assert:** the image is the only match.
 4. As `staff@example.ca`, repeat steps 2 and the Search part of 3.
-   **Assert:** the Instructor note shows everywhere it did for the
-   instructor, and staff have no way to edit it (no Edit Details, no Manage).
+   **Assert:** the Instructor note shows in the details drawer and Search as
+   it did for the instructor, and staff have no way to edit it (no Edit Details, no Manage).
 5. As `student@example.ca`, open the same image, its collection and Search.
    **Assert:** the Description shows; the Instructor note appears nowhere
    (caption, dialog, drawer, collection viewer), and Search shows no

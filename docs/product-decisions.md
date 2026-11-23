@@ -20,6 +20,11 @@ specified in detail.
   [`groups.md`](groups.md) and [`OIDC_SETUP.md`](OIDC_SETUP.md).
 - Instructor-set collection visibility overrides student scope.
   See [`collections.md`](collections.md).
+- The staff-only instructor note never shows on or under the image viewport
+  (the caption row and its **…more** dialog): instructors share the viewer on
+  a projector in class. It shows only in the image details, in its own section
+  below the metadata. See
+  [`image-metadata-and-versioning.md`](image-metadata-and-versioning.md).
 
 ## Collections
 
