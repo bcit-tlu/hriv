@@ -16,10 +16,9 @@ Two to four read-only OpenSeadragon panes for `synchronized` collections, mounte
   callbacks). A member count above the pane cap produces a "Showing _N_ of _M_" note.
 - Each pane has a caption with the member name (plus an _inactive_ marker) as an `h2` and an
   **Open image** action that navigates to the regular `?image={id}` view where annotations can
-  be edited; between them sit, when present, a **Description:** label plus the text clamped to
-  one line and a lock-marked **Instructor note:** cell clamped the same way (the API never sends
-  it to students). Either "…more" opens the pane's dialog with both as labeled sections (#1686,
-  #1783).
+  be edited; between them sits, when present, a **Description:** label plus the text clamped to
+  one line, whose "…more" opens the pane's dialog (#1686, #1783). The staff-only instructor note
+  stays out of the caption, which is shared on projectors; it shows in the pane's image details.
 - A **link** button sits at the top-right of each pane's viewport (#1564, #1567). Panes start
   linked; unlinking detaches that pane so it pans/zooms/rotates independently, and the link vs
   link-off icon plus the button's pressed state show which panes are linked.

@@ -594,14 +594,15 @@ describe('caption note', () => {
     expect(noteEl.compareDocumentPosition(position) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('shows the instructor note of the current member in the caption', () => {
+  it('keeps the instructor note out of the caption (it is shared on projectors)', () => {
     renderViewer({
       collection: seqCollection({
         images: [makeImage({ id: 1, name: 'Slice A', instructorNote: 'Staff only' })],
       }),
     })
-    expect(screen.getByText('Instructor note:')).toBeInTheDocument()
-    expect(screen.getByText('Staff only')).toBeInTheDocument()
+    const caption = screen.getByRole('heading', { level: 2, name: 'Slice A' }).parentElement!
+    expect(within(caption).queryByText('Staff only')).not.toBeInTheDocument()
+    expect(within(caption).queryByText(/Instructor note/)).not.toBeInTheDocument()
   })
 
   it('offers no "Show full description" control without a note', () => {
@@ -641,7 +642,7 @@ describe('caption note', () => {
       }),
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show full instructor note' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show full description' }))
     const dialog = screen.getByRole('dialog', { name: 'Description & instructor note' })
     expect(within(dialog).getByText(/Fracture line/)).toBeInTheDocument()
     expect(within(dialog).getByText('Staff only')).toBeInTheDocument()

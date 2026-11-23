@@ -746,7 +746,6 @@ export default function SynchronizedCollectionViewer({
                   name={markersEnabled ? image.slot?.label || image.name : image.name}
                   active={image.active}
                   description={image.description}
-                  instructorNote={image.instructorNote}
                   noteDialogOpen={noteDialogImageId === memberKey(image)}
                   onShowNote={() => setNoteDialogImageId(memberKey(image))}
                   end={

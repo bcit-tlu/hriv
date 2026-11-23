@@ -14,22 +14,21 @@ import * as ImageCaptionRowStories from './ImageCaptionRow.stories'
 <Title />
 
 <Subtitle>
-  The caption row shared by the image view and the collection viewers: title, description,
-  instructor note, and actions.
+  The caption row shared by the image view and the collection viewers: title, description, and
+  actions.
 </Subtitle>
 
 ## When to use
 
-`ImageCaptionRow` renders `[h2 image title] [Description: … …more] [🔒 Instructor note: … …more] {end}`.
-Each text cell clamps to one line with an "…more" affordance; both open the caller's
-`ViewportDialog` (`onShowNote`), whose body is `ImageNotesContent`. `end` carries the right-hand
-actions (position readout, **Open image**, or the fitted collections cell). When either text is
-present the title is capped at min(468px, 40%) so the text gets the room; without one the title
-takes the full width.
+`ImageCaptionRow` renders `[h2 image title] [Description: … …more] {end}`. The description clamps
+to one line with an "…more" affordance that opens the caller's `ViewportDialog` (`onShowNote`),
+whose body is `ImageNotesContent`. `end` carries the right-hand actions (position readout,
+**Open image**, or the fitted collections cell). When a description is present the title is
+capped at min(468px, 40%) so the text gets the room; without one the title takes the full width.
+On narrow screens the row wraps.
 
-The instructor note cell renders only when `instructorNote` has text. The API sends `null` to
-students, so the component needs no role check; on narrow screens the row wraps instead of
-squeezing both cells.
+The row never shows the staff-only instructor note: it sits under the viewer, which instructors
+share on a projector. The note lives in the image details (`ImageDetailsDrawer`) instead.
 
 Used by `ImageViewerInfoBar`, `SequenceCollectionViewer`, and `SynchronizedCollectionViewer`.
 
@@ -46,12 +45,6 @@ Used by `ImageViewerInfoBar`, `SequenceCollectionViewer`, and `SynchronizedColle
 A note longer than one line clamps behind an "…more" link.
 
 <Canvas of={ImageCaptionRowStories.LongNote} />
-
-### With an instructor note
-
-Staff-only text gets its own lock-marked cell after the description.
-
-<Canvas of={ImageCaptionRowStories.WithInstructorNote} />
 
 ## Stories
 

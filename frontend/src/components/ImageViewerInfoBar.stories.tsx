@@ -33,10 +33,10 @@ function InfoBarExample(args: ImageViewerInfoBarProps) {
       >
         <ViewportDialog
           open={dialog === 'note'}
-          title={imageNotesTitle(args.description, args.instructorNote)}
+          title={imageNotesTitle(args.description)}
           onClose={() => setDialog(null)}
         >
-          <ImageNotesContent description={args.description} instructorNote={args.instructorNote} />
+          <ImageNotesContent description={args.description} />
         </ViewportDialog>
         <ViewportDialog
           open={dialog === 'collections'}

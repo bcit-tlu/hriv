@@ -1073,7 +1073,7 @@ describe('caption note', () => {
     expect(screen.queryByRole('button', { name: /^Show notes for / })).not.toBeInTheDocument()
   })
 
-  it('shows an instructor note only in the pane whose image has one', () => {
+  it('keeps the instructor note out of the pane captions (they are shared on projectors)', () => {
     renderViewer({
       collection: syncCollection({
         images: [
@@ -1082,8 +1082,11 @@ describe('caption note', () => {
         ],
       }),
     })
-    expect(screen.getAllByText('Instructor note:')).toHaveLength(1)
-    expect(screen.getByText('Staff only')).toBeInTheDocument()
+    for (const name of ['Skull — frontal', 'Skull — lateral']) {
+      const caption = screen.getByRole('heading', { level: 2, name }).parentElement!
+      expect(within(caption).queryByText('Staff only')).not.toBeInTheDocument()
+      expect(within(caption).queryByText(/Instructor note/)).not.toBeInTheDocument()
+    }
   })
 
   it('offers no "Show full description" control without a note', () => {

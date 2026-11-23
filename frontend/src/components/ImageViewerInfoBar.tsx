@@ -9,8 +9,6 @@ export interface ImageViewerInfoBarProps {
   /** false appends an ' (inactive)' marker. */
   active?: boolean
   description?: string | null
-  /** Staff-only note; null for students. */
-  instructorNote?: string | null
   /** Collections the image belongs to (may be empty). */
   collections: ImageCollectionsListItem[]
   onOpenCollection: (id: number) => void
@@ -25,7 +23,7 @@ export interface ImageViewerInfoBarProps {
 
 /**
  * Always-visible caption row below the regular image viewer (#1677): the
- * image title on the left, its note clamped to one line ("…more" opens the
+ * image title on the left, its description clamped to one line ("…more" opens the
  * caller's notes dialog), and the fitted collections cell on the right
  * ("+ N more" opens the caller's collections dialog). The row always renders
  * because the title is always shown.
@@ -35,7 +33,6 @@ export default function ImageViewerInfoBar({
   name,
   active = true,
   description,
-  instructorNote,
   collections,
   onOpenCollection,
   hrefForCollection,
@@ -51,7 +48,6 @@ export default function ImageViewerInfoBar({
         name={name}
         active={active}
         description={description}
-        instructorNote={instructorNote}
         noteDialogOpen={noteDialogOpen}
         onShowNote={onShowNote}
         end={

@@ -3313,7 +3313,6 @@ export default function App() {
                 name={selectedImage.name}
                 active={selectedImage.active}
                 description={selectedImage.description}
-                instructorNote={selectedImage.instructorNote}
                 collections={selectedImageCollections}
                 onOpenCollection={handleOpenCollection}
                 hrefForCollection={(id) => `${window.location.pathname}?collection=${id}`}

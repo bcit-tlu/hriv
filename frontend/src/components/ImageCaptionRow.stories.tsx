@@ -108,29 +108,3 @@ export const NoNote: Story = {
     description: null,
   },
 }
-
-export const WithInstructorNote: Story = {
-  args: {
-    description: 'Hairline fracture, week two.',
-    instructorNote: 'Ask students to locate the fracture line before revealing it.',
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    await expect(canvas.getByText('Instructor note:')).toBeVisible()
-  },
-}
-
-export const WithInstructorNoteNarrow: Story = {
-  args: {
-    description: 'Hairline fracture, week two.',
-    instructorNote: 'Ask students to locate the fracture line before revealing it.',
-  },
-  decorators: [
-    // Phone-width pane: the row wraps instead of squeezing both cells.
-    (Story) => (
-      <Box sx={{ width: 360, bgcolor: 'background.default', p: 1 }}>
-        <Story />
-      </Box>
-    ),
-  ],
-}

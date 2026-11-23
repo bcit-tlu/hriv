@@ -1902,15 +1902,16 @@ describe('App breadcrumbs', () => {
     expect(within(crumb).getByText('Leaf')).toBeInTheDocument()
   })
 
-  it('shows the instructor note in the viewer caption', () => {
+  it('keeps the instructor note out of the viewer caption (it is shared on projectors)', () => {
     mockImage.description = 'Public text'
     mockImage.instructorNote = 'Staff only'
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
 
     const infoBar = screen.getByTestId('image-viewer-info-bar')
-    expect(within(infoBar).getByText('Instructor note:')).toBeInTheDocument()
-    expect(within(infoBar).getByText('Staff only')).toBeInTheDocument()
+    expect(within(infoBar).getByText('Public text')).toBeInTheDocument()
+    expect(within(infoBar).queryByText('Staff only')).not.toBeInTheDocument()
+    expect(within(infoBar).queryByText(/Instructor note/)).not.toBeInTheDocument()
   })
 
   it('resets the notes dialog state when selecting another image', async () => {
