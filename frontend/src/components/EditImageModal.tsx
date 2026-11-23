@@ -489,7 +489,7 @@ function EditImageForm({
           slotProps={{ htmlInput: { maxLength: MAX_NOTE_LENGTH } }}
           helperText={`${description.length}/${MAX_NOTE_LENGTH}`}
         />
-        <InstructorNoteField value={instructorNote} onChange={setInstructorNote} />
+        {/* Category sits between the two notes so they aren't filled in by mistake. */}
         <Box>
           <CategoryPickerSelect
             categories={categories}
@@ -502,6 +502,7 @@ function EditImageForm({
             groups={groups}
           />
         </Box>
+        <InstructorNoteField value={instructorNote} onChange={setInstructorNote} />
         <TextField
           label="Copyright"
           fullWidth

@@ -214,13 +214,21 @@ describe('EditImageModal – form fields and save', () => {
     ).toBeInTheDocument()
   })
 
-  it('places Description and Instructor note right after Name', () => {
+  it('orders Name, Description, Category, Instructor note, Copyright', () => {
     renderModal()
 
-    const labels = screen
-      .getAllByRole('textbox')
-      .map((el) => el.getAttribute('aria-label') ?? el.labels?.[0]?.textContent ?? '')
-    expect(labels.slice(0, 3)).toEqual(['Name', 'Description', 'Instructor note'])
+    const fields = [
+      screen.getByRole('textbox', { name: 'Name' }),
+      screen.getByRole('textbox', { name: 'Description' }),
+      screen.getByRole('combobox', { name: 'Category' }),
+      screen.getByRole('textbox', { name: 'Instructor note' }),
+      screen.getByRole('textbox', { name: 'Copyright' }),
+    ]
+    fields.slice(1).forEach((field, i) => {
+      expect(fields[i].compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      )
+    })
   })
 
   it('calls onSave with form data when Save is clicked', async () => {
