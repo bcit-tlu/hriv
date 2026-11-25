@@ -167,7 +167,7 @@ open for retry.
 
 **Testing flow (Manage > Categories):**
 
-1. Click `+` next to "Root level" → type an existing root name (e.g. "Architecture") → Create → expect error
+1. Click `+` next to "Top level" → type an existing top-level name (e.g. "Architecture") → Create → expect error
 2. Click `+` next to a different parent (e.g. Panoramas) → type a name that exists elsewhere (e.g. "American") → Create → expect success
 3. Click pencil on a category → type an existing sibling name → Save → expect error
 4. **Clean up** any test categories created during step 2 (delete via the trash icon)

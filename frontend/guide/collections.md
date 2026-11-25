@@ -179,7 +179,7 @@ category. An unfiled collection is not a Browse tile; it remains available in
 the Collections tab and collection-management views. Open a filed tile to
 view the collection; its breadcrumb shows the filed location and links back
 into Browse. To feature a collection near the top of Browse, file it into a
-root-level category such as **Featured**.
+top-level category such as **Featured**.
 
 - Tiles keep a fixed width and can be dragged to reorder them among the
   images and categories in the same folder; the order is shared for every
@@ -193,7 +193,7 @@ root-level category such as **Featured**.
 - Filing a private collection shows a warning: only its owners and staff,
   instructors, and admins can see its Browse tile — not other students.
 - **Add to Collection** remains available for adding images to unfiled
-  collections. The former root-tile drag-add path is no longer available to
+  collections. The former top-level tile drag-add path is no longer available to
   students adding images to their own unfiled collections.
 - A category tile's detail line counts the collections inside its subtree
   (`N collections`).

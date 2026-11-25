@@ -680,7 +680,7 @@ returned by the API (UX only — the backend re-checks).
   holding only collections, **Then** the empty-state message does not render.
 - **Given** an unfiled collection, **Then** it remains available in
   collection-management views and the `uncategorized=true` API queue, but
-  does not appear in Browse or the root tile-order scope. A root-level
+  does not appear in Browse or the root tile-order scope. A top-level
   category such as **Featured** is the way to feature a collection near the
   top of Browse.
 - **Given** a private collection is filed into a non-null category, **Then**
@@ -693,7 +693,7 @@ returned by the API (UX only — the backend re-checks).
   show no warning.
 - **Given** a collection filing picker, **Then** its null option reads
   **None. Access in Collections.** in Move, Edit, and Bulk Edit;
-  the shared picker default remains **None (root level)**. The Move dialog says:
+  the shared picker default remains **None (top level)**. The Move dialog says:
   “File “<name>” into a Browse category. Collections that aren't filed don't
   appear on Browse.”
 - **Given** a private selection is filed in Bulk Edit, **Then** the warning

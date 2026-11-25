@@ -12,8 +12,8 @@ The **Home** tab is the image library — the same view your students get
 - **Image tiles** show a thumbnail. Click to open the viewer.
 - **Collection tiles** appear inside a category only after a curator files
   the collection there. Unfiled collections do not appear as Browse tiles;
-  use a root-level category such as **Featured** to highlight one near the top.
-- When enabled, a bottom-left **My collections** button appears on Browse root,
+  use a top-level category such as **Featured** to highlight one near the top.
+- When enabled, a bottom-left **My collections** button appears on the top level of Browse,
   inside categories, in the image viewer, and on the Collections pages when you
   own a visible collection. Open the bottom
   drawer to create or visit a collection, use **See all** for your collections
