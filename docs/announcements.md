@@ -115,7 +115,9 @@ in the Inbox (quieter styling); nothing is ever dismissed/deleted for a reader.
 
 Admin, instructor and staff callers receive `seen_count` (readers whose marker
 matches the current version) and `audience_size` (distinct users the post can
-reach: `null` for `everyone`, active head-count of the matching role(s) for `staff` / `admins` / `instructors` / `staff_only`, the
+reach: active head-count of every role for `everyone` (#1935; signed-in users
+only, so anonymous views of the login banner are not counted), active
+head-count of the matching role(s) for `staff` / `admins` / `instructors` / `staff_only`, the
 distinct union of program members, group members and group instructors for
 `targeted`). Students never receive these fields and no payload ever lists
 _who_ has seen or reacted — only counts and the caller's own reactions.

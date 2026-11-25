@@ -130,7 +130,7 @@ regardless of source address (see `docs/deployment-proxy-chain.md`).
 6. Open `Manage → Groups`, use a group's row menu → `Post to group`. **Assert:** The composer opens with that group pre-selected.
 7. Logout, login as a student in that group. **Assert:** The bell shows a badge; the peek lists the post; clicking it opens the page focused on the card; the badge clears but the card stays listed (quieter). Add a 👍 reaction. **Assert:** the pill count increments.
 8. Login as `admin@example.ca`. **Assert:** The composer offers `Everyone` / `Admins, Instructors, and Staff` / `Admins` / `Instructors` / `Staff` (picking one clears targets), hides the reserved `Administration` / `Synthetic Monitoring` programs, offers all six kinds, and `Show as banner` / `Pin to top` carry a hint line. Edit the instructor's post straight from the stream (admins can edit any post) → `Notify readers again` → `Save`. **Assert:** The student sees it unseen again.
-9. **Assert:** The post shows `Seen by N of M`; Duplicate prefills with "(copy)" and no schedule; Delete asks for confirmation.
+9. **Assert:** The post shows `Seen by N of M`; Duplicate prefills with "(copy)" and no schedule; Delete asks for confirmation. Post one to `Everyone`. **Assert:** it also shows `Seen by N of M`, with M the number of active users across all roles (#1935).
 10. **Assert:** Documentation and About are in the profile popover; the bell menu has no `What's New`.
 
 ---
