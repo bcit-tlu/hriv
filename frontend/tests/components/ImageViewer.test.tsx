@@ -27,6 +27,12 @@ const hadExitFullscreenOwnProperty = Object.prototype.hasOwnProperty.call(
 const originalExitFullscreenDescriptor =
   Object.getOwnPropertyDescriptor(document, 'exitFullscreen') ??
   Object.getOwnPropertyDescriptor(Document.prototype, 'exitFullscreen')
+// WebKit-prefixed fullscreen globals (#1841), saved and restored like the
+// standard ones above.
+const WEBKIT_FULLSCREEN_PROPS = ['webkitFullscreenElement', 'webkitExitFullscreen'] as const
+const originalWebkitFullscreenDescriptors = new Map(
+  WEBKIT_FULLSCREEN_PROPS.map((prop) => [prop, Object.getOwnPropertyDescriptor(document, prop)]),
+)
 
 interface MockButton {
   options: {
@@ -360,7 +366,11 @@ vi.mock('openseadragon', () => {
     (osdState.prefixedFullScreen ? doc().webkitFullscreenElement : document.fullscreenElement) !=
     null
   OSD.exitFullScreen = () => {
-    void document.exitFullscreen?.()
+    if (osdState.prefixedFullScreen) {
+      ;(document as Document & { webkitExitFullscreen?: () => void }).webkitExitFullscreen?.()
+    } else {
+      void document.exitFullscreen?.()
+    }
   }
   Object.defineProperty(OSD, 'fullScreenEventName', {
     get: () => (osdState.prefixedFullScreen ? 'webkitfullscreenchange' : 'fullscreenchange'),
@@ -441,6 +451,23 @@ function setFullscreenElement(element: Element | null) {
   Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: element })
 }
 
+/** WebKit-prefixed fullscreen only (#1841); afterEach restores both globals. */
+function enterPrefixedFullscreen(element: Element | null) {
+  osdState.prefixedFullScreen = true
+  setFullscreenElement(null)
+  const webkitExitFullscreen = vi.fn()
+  const exitFullscreen = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(document, 'exitFullscreen', { configurable: true, value: exitFullscreen })
+  Object.defineProperty(document, 'webkitExitFullscreen', {
+    configurable: true,
+    value: webkitExitFullscreen,
+  })
+  const setElement = (next: Element | null) =>
+    Object.defineProperty(document, 'webkitFullscreenElement', { configurable: true, value: next })
+  setElement(element)
+  return { webkitExitFullscreen, exitFullscreen, setElement }
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (reason?: unknown) => void
@@ -499,6 +526,11 @@ afterEach(() => {
     Object.defineProperty(document, 'exitFullscreen', originalExitFullscreenDescriptor)
   } else {
     Reflect.deleteProperty(document, 'exitFullscreen')
+  }
+  for (const prop of WEBKIT_FULLSCREEN_PROPS) {
+    const descriptor = originalWebkitFullscreenDescriptors.get(prop)
+    if (descriptor) Object.defineProperty(document, prop, descriptor)
+    else Reflect.deleteProperty(document, prop)
   }
 })
 
@@ -1734,33 +1766,53 @@ describe('ImageViewer lifecycle telemetry', () => {
   })
 
   it('treats WebKit-prefixed fullscreen as native, not the fallback, across a handoff (#1841)', () => {
-    osdState.prefixedFullScreen = true
-    setFullscreenElement(null)
-    const setWebkitElement = (element: Element | null) =>
-      Object.defineProperty(document, 'webkitFullscreenElement', {
-        configurable: true,
-        value: element,
-      })
+    const { setElement } = enterPrefixedFullscreen(null)
+    const { rerender } = render(
+      <ImageViewer key="first" fullScreenHandoffKey="sequence:1" tileSources="/first.dzi" />,
+    )
+    viewer().isFullPage.mockReturnValue(true)
+    setElement(document.body)
+
+    rerender(
+      <ImageViewer key="second" fullScreenHandoffKey="sequence:1" tileSources="/second.dzi" />,
+    )
+    const second = viewer()
+    expect(second.setFullPage).toHaveBeenCalledWith(true)
+    second.isFullPage.mockReturnValue(true)
+
+    // The browser leaves prefixed fullscreen: the replacement must follow.
+    setElement(null)
+    act(() => document.dispatchEvent(new Event('webkitfullscreenchange')))
+    expect(second.setFullPage).toHaveBeenLastCalledWith(false)
+  })
+
+  it('exits prefixed fullscreen when a keyless viewer unmounts (#1841)', () => {
+    const { webkitExitFullscreen, exitFullscreen } = enterPrefixedFullscreen(document.body)
+    const { unmount } = render(<ImageViewer tileSources="/tiles.dzi" />)
+    viewer().isFullPage.mockReturnValue(true)
+
+    unmount()
+
+    expect(webkitExitFullscreen).toHaveBeenCalledOnce()
+    expect(exitFullscreen).not.toHaveBeenCalled()
+  })
+
+  it('exits prefixed fullscreen when an unclaimed handoff expires (#1841)', () => {
+    vi.useFakeTimers()
     try {
-      const { rerender } = render(
-        <ImageViewer key="first" fullScreenHandoffKey="sequence:1" tileSources="/first.dzi" />,
+      const { webkitExitFullscreen, exitFullscreen } = enterPrefixedFullscreen(document.body)
+      const { unmount } = render(
+        <ImageViewer fullScreenHandoffKey="sequence:1" tileSources="/tiles.dzi" />,
       )
       viewer().isFullPage.mockReturnValue(true)
-      setWebkitElement(document.body)
 
-      rerender(
-        <ImageViewer key="second" fullScreenHandoffKey="sequence:1" tileSources="/second.dzi" />,
-      )
-      const second = viewer()
-      expect(second.setFullPage).toHaveBeenCalledWith(true)
-      second.isFullPage.mockReturnValue(true)
-
-      // The browser leaves prefixed fullscreen: the replacement must follow.
-      setWebkitElement(null)
-      act(() => document.dispatchEvent(new Event('webkitfullscreenchange')))
-      expect(second.setFullPage).toHaveBeenLastCalledWith(false)
+      unmount()
+      expect(webkitExitFullscreen).not.toHaveBeenCalled()
+      act(() => vi.advanceTimersByTime(0))
+      expect(webkitExitFullscreen).toHaveBeenCalledOnce()
+      expect(exitFullscreen).not.toHaveBeenCalled()
     } finally {
-      Reflect.deleteProperty(document, 'webkitFullscreenElement')
+      vi.useRealTimers()
     }
   })
 
