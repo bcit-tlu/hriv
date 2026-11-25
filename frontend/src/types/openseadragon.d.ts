@@ -31,6 +31,15 @@ declare module 'openseadragon' {
   }
 
   /**
+   * Fullscreen helpers OSD copies onto the namespace (`$.extend($, fullScreenApi)`),
+   * normalizing the standard and vendor-prefixed APIs. The bundled types only
+   * declare them under `fullScreenApi`.
+   */
+  function isFullScreen(): boolean
+  function exitFullScreen(): void
+  const fullScreenEventName: string
+
+  /**
    * Drag and release tracker events carry a `position` property at runtime
    * but @types/openseadragon only declares it on PointerMouseTrackerEvent.
    */

@@ -124,6 +124,8 @@ const osdState = vi.hoisted(() => ({
   buttons: [] as MockButton[],
   trackers: [] as { options: MockTrackerOptions; destroy: ReturnType<typeof vi.fn> }[],
   initError: null as Error | null,
+  // Emulates a browser with only WebKit-prefixed fullscreen (#1841).
+  prefixedFullScreen: false,
 }))
 
 const observabilityMocks = vi.hoisted(() => ({
@@ -352,6 +354,17 @@ vi.mock('openseadragon', () => {
   OSD.Button = OSDButton
   OSD.MouseTracker = OSDMouseTracker
   OSD.ControlAnchor = { TOP_RIGHT: 1, TOP_LEFT: 2, BOTTOM_LEFT: 3 }
+  // OSD's normalized fullscreen helpers, standard or WebKit-prefixed.
+  const doc = () => document as Document & { webkitFullscreenElement?: Element | null }
+  OSD.isFullScreen = () =>
+    (osdState.prefixedFullScreen ? doc().webkitFullscreenElement : document.fullscreenElement) !=
+    null
+  OSD.exitFullScreen = () => {
+    void document.exitFullscreen?.()
+  }
+  Object.defineProperty(OSD, 'fullScreenEventName', {
+    get: () => (osdState.prefixedFullScreen ? 'webkitfullscreenchange' : 'fullscreenchange'),
+  })
   return { default: OSD }
 })
 
@@ -461,6 +474,7 @@ beforeEach(() => {
   osdState.buttons.length = 0
   osdState.trackers.length = 0
   osdState.initError = null
+  osdState.prefixedFullScreen = false
   canvasOverlayMockState.cancelKeepsEditing = false
   resetTileTokenRenewalCacheForTests()
   resetViewerPanelPrefsForTests()
@@ -1717,6 +1731,37 @@ describe('ImageViewer lifecycle telemetry', () => {
     act(() => vi.advanceTimersByTime(0))
     expect(viewer().setFullPage).not.toHaveBeenCalledWith(true)
     vi.useRealTimers()
+  })
+
+  it('treats WebKit-prefixed fullscreen as native, not the fallback, across a handoff (#1841)', () => {
+    osdState.prefixedFullScreen = true
+    setFullscreenElement(null)
+    const setWebkitElement = (element: Element | null) =>
+      Object.defineProperty(document, 'webkitFullscreenElement', {
+        configurable: true,
+        value: element,
+      })
+    try {
+      const { rerender } = render(
+        <ImageViewer key="first" fullScreenHandoffKey="sequence:1" tileSources="/first.dzi" />,
+      )
+      viewer().isFullPage.mockReturnValue(true)
+      setWebkitElement(document.body)
+
+      rerender(
+        <ImageViewer key="second" fullScreenHandoffKey="sequence:1" tileSources="/second.dzi" />,
+      )
+      const second = viewer()
+      expect(second.setFullPage).toHaveBeenCalledWith(true)
+      second.isFullPage.mockReturnValue(true)
+
+      // The browser leaves prefixed fullscreen: the replacement must follow.
+      setWebkitElement(null)
+      act(() => document.dispatchEvent(new Event('webkitfullscreenchange')))
+      expect(second.setFullPage).toHaveBeenLastCalledWith(false)
+    } finally {
+      Reflect.deleteProperty(document, 'webkitFullscreenElement')
+    }
   })
 
   it('does not enter full-page mode without a pending handoff', () => {

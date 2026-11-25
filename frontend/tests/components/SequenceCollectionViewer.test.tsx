@@ -144,23 +144,33 @@ describe('SequenceCollectionViewer', () => {
       expect(within(viewerEl).getByTestId('sequence-nav-overlay')).toBeInTheDocument()
     })
 
-    it('releases a focused chevron hold when the full-page image changes', () => {
+    it('releases a focused chevron hold when a full-page step replaces the viewer', () => {
       vi.useFakeTimers()
       try {
-        renderViewer({ itemId: 101 })
+        const { props, rerender } = renderViewer({ itemId: 101 })
         const { setFullPage } = fakeViewer()
         setFullPage(true)
-        const nav = screen.getByTestId('sequence-nav-overlay')
-        // Keyboard focus holds the nav open with no hide clock.
-        act(() => {
-          screen.getByRole('button', { name: 'Next image' }).focus()
+        // Keyboard focus on a chevron holds the nav open with no hide clock.
+        const next = within(screen.getByTestId('image-viewer')).getByRole('button', {
+          name: 'Next image',
         })
+        act(() => next.focus())
+        fireEvent.click(next)
+        expect(props.onSelectItem).toHaveBeenCalledWith(102)
+
+        // The parent steps to 102: the keyed viewer — and the focused chevron
+        // portaled into it — unmount without a blur.
+        rerender(<SequenceCollectionViewer {...props} itemId={102} />)
+        expect(next).not.toBeInTheDocument()
+        expect(screen.getByTestId('image-viewer')).toHaveAttribute('data-image-id', '102')
         act(() => {
           vi.advanceTimersByTime(5000)
         })
-        expect(nav).toHaveStyle({ opacity: '1' })
-        // Stepping mounts a new viewer (already full-page); the focused
-        // chevron went with the old one, so no blur ever fired.
+        // Still held: the stale focus flag survived the unmount.
+        expect(screen.getByTestId('sequence-nav-overlay')).toHaveStyle({ opacity: '1' })
+
+        // The replacement viewer comes up already full-page (the handoff) and
+        // releases the hold, so the nav fades on the normal idle clock.
         fakeViewer(true)
         act(() => {
           vi.advanceTimersByTime(2000)

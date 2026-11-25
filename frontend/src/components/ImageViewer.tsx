@@ -855,17 +855,18 @@ export default function ImageViewer({
     if (claimedFallback) {
       // Full-page fallback: there is no browser fullscreen to rejoin or watch.
       viewer.setFullPage(true)
-    } else if (claimedHandoff && document.fullscreenElement) {
+    } else if (claimedHandoff && OpenSeadragon.isFullScreen()) {
       viewer.setFullPage(true)
       viewer.element.style.width = '100%'
       viewer.element.style.height = '100%'
       handleFullscreenChange = () => {
-        if (document.fullscreenElement || !viewer.isFullPage()) return
+        if (OpenSeadragon.isFullScreen() || !viewer.isFullPage()) return
         viewer.setFullPage(false)
         viewer.element.style.width = initialViewerWidth
         viewer.element.style.height = initialViewerHeight
       }
-      document.addEventListener('fullscreenchange', handleFullscreenChange)
+      // OSD's normalized name covers vendor-prefixed fullscreen (e.g. older WebKit).
+      document.addEventListener(OpenSeadragon.fullScreenEventName, handleFullscreenChange)
     }
 
     // --- Measurement label container (lives inside the OSD canvas) ---
@@ -2029,23 +2030,23 @@ export default function ImageViewer({
       setLeftControlWrapper(null)
       onViewerReadyRef.current?.(null)
       if (handleFullscreenChange) {
-        document.removeEventListener('fullscreenchange', handleFullscreenChange)
+        document.removeEventListener(OpenSeadragon.fullScreenEventName, handleFullscreenChange)
       }
       const cleanupHandoffKey = fullScreenHandoffKeyRef.current
       if (viewer.isFullPage()) {
         viewer.setFullPage(false)
-        if (document.fullscreenElement) {
+        // Native fullscreen in any form (standard or prefixed) takes this path;
+        // only full-page without browser fullscreen is the fallback below.
+        if (OpenSeadragon.isFullScreen()) {
           if (cleanupHandoffKey == null) {
-            void document.exitFullscreen().catch(() => {})
+            OpenSeadragon.exitFullScreen()
           } else {
             pendingFullScreenHandoff = cleanupHandoffKey
             pendingHandoffIsFallback = false
             window.setTimeout(() => {
               if (pendingFullScreenHandoff !== cleanupHandoffKey) return
               pendingFullScreenHandoff = null
-              if (document.fullscreenElement) {
-                void document.exitFullscreen().catch(() => {})
-              }
+              if (OpenSeadragon.isFullScreen()) OpenSeadragon.exitFullScreen()
             }, 0)
           }
         } else if (cleanupHandoffKey != null) {
