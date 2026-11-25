@@ -98,6 +98,78 @@ describe('SequenceCollectionViewer', () => {
     expect(screen.getByTestId('sequence-nav-overlay')).toHaveStyle({ right: '0px' })
   })
 
+  describe('full-page mode (#1841)', () => {
+    // A stand-in OSD viewer: tests drive the 'full-page' event by hand.
+    function fakeViewer(initiallyFullPage = false) {
+      let onFullPage: ((event: { fullPage: boolean }) => void) | null = null
+      const viewer = {
+        container: document.createElement('div'),
+        isFullPage: () => initiallyFullPage,
+        addHandler: (name: string, handler: (event: { fullPage: boolean }) => void) => {
+          if (name === 'full-page') onFullPage = handler
+        },
+      }
+      const ready = lastViewerProps?.onViewerReady
+      if (typeof ready !== 'function') throw new Error('Missing onViewerReady')
+      act(() => ready(viewer))
+      return {
+        viewer,
+        setFullPage: (fullPage: boolean) => act(() => onFullPage?.({ fullPage })),
+      }
+    }
+
+    it('moves the edge nav into the viewer while full-page and back on exit', () => {
+      const { props } = renderViewer({ itemId: 101 })
+      const viewerEl = screen.getByTestId('image-viewer')
+      const frame = screen.getByTestId('sequence-viewer-frame')
+      expect(within(viewerEl).queryByTestId('sequence-nav-overlay')).toBeNull()
+      const { setFullPage } = fakeViewer()
+
+      setFullPage(true)
+      const nav = within(viewerEl).getByTestId('sequence-nav-overlay')
+      expect(nav).toHaveStyle({ right: '0px' })
+      expect(screen.getAllByRole('button', { name: 'Next image' })).toHaveLength(1)
+      fireEvent.click(within(viewerEl).getByRole('button', { name: 'Next image' }))
+      expect(props.onSelectItem).toHaveBeenCalledWith(102)
+
+      setFullPage(false)
+      expect(within(viewerEl).queryByTestId('sequence-nav-overlay')).toBeNull()
+      expect(within(frame).getByTestId('sequence-nav-overlay')).toBeInTheDocument()
+    })
+
+    it('shows the nav at once when the viewer opens already full-page', () => {
+      renderViewer({ itemId: 101 })
+      fakeViewer(true)
+      const viewerEl = screen.getByTestId('image-viewer')
+      expect(within(viewerEl).getByTestId('sequence-nav-overlay')).toBeInTheDocument()
+    })
+
+    it('reveals the nav on pointer activity over the viewer', () => {
+      vi.useFakeTimers()
+      try {
+        renderViewer({ itemId: 101 })
+        const { viewer, setFullPage } = fakeViewer()
+        setFullPage(true)
+        const nav = screen.getByTestId('sequence-nav-overlay')
+        // Let any reveal from mounting fade out first.
+        act(() => {
+          vi.advanceTimersByTime(2000)
+        })
+        expect(nav).toHaveStyle({ opacity: '0' })
+        act(() => {
+          viewer.container.dispatchEvent(new Event('pointermove'))
+        })
+        expect(nav).toHaveStyle({ opacity: '1' })
+        act(() => {
+          vi.advanceTimersByTime(2000)
+        })
+        expect(nav).toHaveStyle({ opacity: '0' })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
   it('keeps navigation from covering an open Markers drawer', () => {
     renderViewer({ markersEnabled: true })
     const frame = screen.getByTestId('sequence-viewer-frame')

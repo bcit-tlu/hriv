@@ -36,6 +36,9 @@ function fakeViewer(initial?: SlotViewport) {
     },
     addOnceHandler: vi.fn(),
     removeHandler: (name: string, callback: () => void) => handlers.get(name)?.delete(callback),
+    // The Sequence viewer tracks OSD full-page mode (#1841).
+    isFullPage: () => false,
+    container: document.createElement('div'),
   }
 }
 

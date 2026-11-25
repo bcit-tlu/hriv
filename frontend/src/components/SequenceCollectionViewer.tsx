@@ -10,6 +10,7 @@ import { alpha, type Theme } from '@mui/material/styles'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ImageIcon from '@mui/icons-material/Image'
+import type OpenSeadragon from 'openseadragon'
 
 import { type ApiImage } from '../api'
 import type { Collection, ImageItem } from '../types'
@@ -197,6 +198,25 @@ export default function SequenceCollectionViewer({
       if (navHideTimer.current) clearTimeout(navHideTimer.current)
     },
     [],
+  )
+  // OSD full-page mode reparents the viewer out of the frame (#1841), leaving
+  // the edge nav and the frame's pointer handlers behind. Track it so the nav
+  // can be portaled into the viewer while full-page, and reveal it on pointer
+  // activity over the viewer itself.
+  const [fullPage, setFullPage] = useState(false)
+  const handleViewerReady = useCallback(
+    (viewer: OpenSeadragon.Viewer | null) => {
+      if (!viewer) {
+        setFullPage(false)
+        return
+      }
+      // The full-screen handoff enters full-page before this callback runs.
+      setFullPage(viewer.isFullPage())
+      viewer.addHandler('full-page', (event) => setFullPage(event.fullPage))
+      viewer.container.addEventListener('pointermove', showNav)
+      viewer.container.addEventListener('pointerdown', showNav)
+    },
+    [showNav],
   )
   const regionRef = useRef<HTMLDivElement | null>(null)
   const focusedForCollection = useRef<number | null>(null)
@@ -453,6 +473,45 @@ export default function SequenceCollectionViewer({
     return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [currentIndex, goTo])
 
+  // Edge nav: in the frame normally, portaled into the viewer while full-page
+  // (#1841). There the viewer container already shrinks for the side panel.
+  const navOverlay = (
+    <Box
+      data-testid="sequence-nav-overlay"
+      style={{ opacity: navShown ? 1 : 0 }}
+      onFocusCapture={holdNavForFocus}
+      onBlurCapture={releaseNavForBlur}
+      sx={{
+        position: 'absolute',
+        inset: 0,
+        right: fullPage ? 0 : viewerPanelWidth,
+        pointerEvents: 'none',
+        transition: 'opacity 0.25s ease',
+      }}
+    >
+      <IconButton
+        onClick={() => goTo(currentIndex - 1)}
+        disabled={currentIndex <= 0}
+        aria-label="Previous image"
+        tabIndex={markersDrawerOpen ? -1 : 0}
+        style={{ pointerEvents: navShown ? 'auto' : 'none' }}
+        sx={{ ...navEdgeButton, left: 8 }}
+      >
+        <ChevronLeftIcon sx={{ fontSize: 52.5 }} />
+      </IconButton>
+      <IconButton
+        onClick={() => goTo(currentIndex + 1)}
+        disabled={currentIndex >= available.length - 1}
+        aria-label="Next image"
+        tabIndex={markersDrawerOpen ? -1 : 0}
+        style={{ pointerEvents: navShown ? 'auto' : 'none' }}
+        sx={{ ...navEdgeButton, right: 8 }}
+      >
+        <ChevronRightIcon sx={{ fontSize: 52.5 }} />
+      </IconButton>
+    </Box>
+  )
+
   if (images.length === 0) {
     return (
       <Alert severity="info" sx={{ mt: 3 }} data-testid="sequence-viewer-empty">
@@ -617,8 +676,10 @@ export default function SequenceCollectionViewer({
             onTileSourceRenewed={onImageRenewed}
             onError={handleViewerError}
             viewportControl={markersEnabled ? null : <CollectionImageDetailsTrigger />}
+            onViewerReady={handleViewerReady}
             viewportOverlay={
               <>
+                {fullPage && navOverlay}
                 {!markersEnabled && <CollectionImageDetailsDrawer />}
                 <ViewportDialog
                   open={noteDialogOpen}
@@ -639,40 +700,7 @@ export default function SequenceCollectionViewer({
             }
           />
         </CollectionImageDetails>
-        <Box
-          data-testid="sequence-nav-overlay"
-          style={{ opacity: navShown ? 1 : 0 }}
-          onFocusCapture={holdNavForFocus}
-          onBlurCapture={releaseNavForBlur}
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            right: viewerPanelWidth,
-            pointerEvents: 'none',
-            transition: 'opacity 0.25s ease',
-          }}
-        >
-          <IconButton
-            onClick={() => goTo(currentIndex - 1)}
-            disabled={currentIndex <= 0}
-            aria-label="Previous image"
-            tabIndex={markersDrawerOpen ? -1 : 0}
-            style={{ pointerEvents: navShown ? 'auto' : 'none' }}
-            sx={{ ...navEdgeButton, left: 8 }}
-          >
-            <ChevronLeftIcon sx={{ fontSize: 52.5 }} />
-          </IconButton>
-          <IconButton
-            onClick={() => goTo(currentIndex + 1)}
-            disabled={currentIndex >= available.length - 1}
-            aria-label="Next image"
-            tabIndex={markersDrawerOpen ? -1 : 0}
-            style={{ pointerEvents: navShown ? 'auto' : 'none' }}
-            sx={{ ...navEdgeButton, right: 8 }}
-          >
-            <ChevronRightIcon sx={{ fontSize: 52.5 }} />
-          </IconButton>
-        </Box>
+        {!fullPage && navOverlay}
       </Paper>
       {/* Caption row mirrors the synchronized pane captions (#1564): the
           member name + note left, the position readout + Open image right. */}
