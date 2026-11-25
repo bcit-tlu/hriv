@@ -1952,26 +1952,23 @@ describe('App breadcrumbs', () => {
     }
   })
 
-  it('fetches component versions for instructors (canEditContent)', async () => {
-    render(<App />)
+  // Every role sees the same versions in the footer and About dialog (#1963).
+  it.each(['student', 'staff', 'instructor', 'admin'] as const)(
+    'fetches all component versions for %s users',
+    async (role) => {
+      authState = {
+        ...authState,
+        currentUser: { ...mockCurrentUser, role },
+        canEditContent: role === 'admin' || role === 'instructor',
+      }
 
-    expect(vi.mocked(fetchVersions)).toHaveBeenCalledOnce()
-    expect(vi.mocked(fetchFrontendVersion)).toHaveBeenCalledOnce()
-  })
+      render(<App />)
 
-  it('fetches the frontend version but not backend/backup versions for students', async () => {
-    authState = {
-      ...authState,
-      currentUser: { ...mockCurrentUser, role: 'student' as const },
-      canEditContent: false,
-    }
-
-    render(<App />)
-
-    expect(await screen.findByText('versions: 1.0.0/null')).toBeInTheDocument()
-    expect(vi.mocked(fetchVersions)).not.toHaveBeenCalled()
-    expect(vi.mocked(fetchFrontendVersion)).toHaveBeenCalledOnce()
-  })
+      expect(await screen.findByText('versions: 1.0.0/1.0.0')).toBeInTheDocument()
+      expect(vi.mocked(fetchVersions)).toHaveBeenCalledOnce()
+      expect(vi.mocked(fetchFrontendVersion)).toHaveBeenCalledOnce()
+    },
+  )
 
   it.each(['student', 'instructor', 'admin'] as const)(
     'fetches the frontend version for %s users',
@@ -2231,31 +2228,26 @@ describe('App shell interactions', () => {
     expect(await screen.findByText('search users: 0')).toBeInTheDocument()
   })
 
-  it('fetches deployed component versions when content editing is allowed', async () => {
-    authState = { ...authState, canEditContent: true }
+  it('fetches deployed component versions when content editing is disallowed', async () => {
+    authState = { ...authState, canEditContent: false }
     render(<App />)
 
     expect(await screen.findByText('versions: 1.0.0/1.0.0')).toBeInTheDocument()
   })
 
-  it('clears backend/backup versions when content editing is disallowed, but keeps the frontend version', async () => {
+  it('clears backend/backup versions when the version fetch fails, but keeps the frontend version', async () => {
     // Seed successful versions first so the null state is attributable to
-    // the catch handlers rather than the initial render state.
-    authState = { ...authState, canEditContent: true }
+    // the catch handler rather than the initial render state.
     const { rerender } = render(<App />)
     expect(await screen.findByText('versions: 1.0.0/1.0.0')).toBeInTheDocument()
 
-    authState = { ...authState, canEditContent: false }
-    rerender(<App />)
-    // Frontend version is keyed off the authenticated user, not
-    // canEditContent, so it survives the backend/backup fetch clearing.
-    expect(await screen.findByText('versions: 1.0.0/null')).toBeInTheDocument()
-
+    // A different signed-in user refetches; the failed fetch clears only
+    // backend/backup.
     vi.mocked(fetchVersions).mockRejectedValueOnce(new Error('down'))
-    authState = { ...authState, canEditContent: true }
+    authState = { ...authState, currentUser: { ...mockCurrentUser, id: 2 } }
     rerender(<App />)
     await waitFor(() => expect(fetchVersions).toHaveBeenCalledTimes(2))
-    expect(screen.getByText('versions: 1.0.0/null')).toBeInTheDocument()
+    expect(await screen.findByText('versions: 1.0.0/null')).toBeInTheDocument()
   })
 
   it('clears the frontend version when the /version fetch fails, without blocking submission', async () => {
