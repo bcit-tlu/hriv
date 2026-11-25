@@ -1190,8 +1190,8 @@ async def get_version(
     admin panel in sync with independently deployed components without
     requiring a backend pod restart.
 
-    Any signed-in user: the About dialog and footer show these to every
-    role (#1963), so anyone filing an issue can quote the versions.
+    Any signed-in user: the About dialog shows these to every role
+    (#1963), so anyone filing an issue can quote the versions.
     """
     synthetic_state = await load_stored_synthetic_result_state()
     latest_synthetic_version = None

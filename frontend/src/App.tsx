@@ -1381,9 +1381,9 @@ export default function App() {
       })
   }, [currentUser])
 
-  // Load deployed backend/backup component versions for the footer and
-  // About dialog. ``/api/admin/version`` answers every signed-in role, so
-  // students and staff see the same versions as admins (#1963).
+  // Load deployed backend/backup component versions for the About dialog
+  // (every role, #1963) and the admin-only footer. ``/api/admin/version``
+  // answers every signed-in role.
   useEffect(() => {
     if (!currentUser) {
       /* eslint-disable-next-line react-hooks/set-state-in-effect -- early-return cleanup in conditional fetch effect */

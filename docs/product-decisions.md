@@ -12,6 +12,10 @@ specified in detail.
 
 - Only admins can see or download source images; instructors and students
   never can. See [`category-visibility-and-programs.md`](category-visibility-and-programs.md).
+- Every signed-in role sees the deployed component versions (frontend,
+  backend, backup) in the About dialog, so anyone reporting an issue can quote
+  them (#1963). The footer versions stay admin-only. See
+  [`feedback-subsystem.md`](feedback-subsystem.md).
 - Program membership for OIDC users is driven by the OIDC group → program
   mapping (`Program.oidc_group`): login sync adds and removes mapped programs,
   while assignments to programs that have no `oidc_group` are manual and are

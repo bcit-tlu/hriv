@@ -1952,7 +1952,7 @@ describe('App breadcrumbs', () => {
     }
   })
 
-  // Every role sees the same versions in the footer and About dialog (#1963).
+  // Every role sees the same versions in the About dialog (#1963).
   it.each(['student', 'staff', 'instructor', 'admin'] as const)(
     'fetches all component versions for %s users',
     async (role) => {

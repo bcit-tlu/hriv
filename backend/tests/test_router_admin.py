@@ -241,7 +241,7 @@ def test_get_version_endpoint_allows_instructor() -> None:
 
 @pytest.mark.parametrize("user_role", ["student", "staff"])
 def test_get_version_endpoint_allows_every_role(user_role: str) -> None:
-    # The About dialog and footer show versions to every role (#1963).
+    # The About dialog shows versions to every role (#1963).
     with patch.dict(
         os.environ, _version_env(APP_VERSION="0.6.0", BACKUP_VERSION="0.3.0"), clear=True
     ), patch(
