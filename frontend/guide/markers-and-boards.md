@@ -149,7 +149,7 @@ Boards and Markers you can view.
 ## Turn saved views into a Collection
 
 Use a Board's **Create Collection** action to make an ordered
-walkthrough. In **Select** mode, select any number of cards for a Sequence, or 2–4
+walkthrough. With **Multi-select** on, select any number of cards for a Sequence, or 2–4
 cards for a Synchronized comparison. You can also add selected views to an existing
 Collection, subject to that Collection's limits and your editing permissions.
 

@@ -1543,9 +1543,12 @@ it('tells users what to select until the first Marker is picked (#1976)', async 
   await setup(1)
   const dialog = await screen.findByRole('dialog')
   const hint = 'Select Markers to add to a Collection'
-  expect(within(dialog).queryByText(hint)).not.toBeInTheDocument()
+  // The live region is mounted empty before activation, so the text arrives as an announced update.
+  const status = within(dialog).getByRole('status')
+  expect(status).toBeEmptyDOMElement()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Multi-select' }))
-  expect(within(dialog).getByRole('status')).toHaveTextContent(hint)
+  expect(within(dialog).getByRole('status')).toBe(status)
+  expect(status).toHaveTextContent(hint)
   const checks = within(dialog).getAllByRole('checkbox', { name: /^Select / })
   fireEvent.click(checks[0])
   expect(within(dialog).queryByText(hint)).not.toBeInTheDocument()
@@ -1554,6 +1557,7 @@ it('tells users what to select until the first Marker is picked (#1976)', async 
   expect(within(dialog).getByText(hint)).toBeVisible()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Multi-select' }))
   expect(within(dialog).queryByText(hint)).not.toBeInTheDocument()
+  expect(status).toBeEmptyDOMElement()
 })
 
 it('does not expose collection controls when collections are disabled', async () => {

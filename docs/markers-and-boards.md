@@ -596,7 +596,9 @@ matches Favourite if it holds a favourite Marker. Active filters have removable
 chips and a Clear filters action. Multi-select sits at the right of the collage toolbar.
 While it is on and nothing is picked, a `role="status"` hint — _Select Markers to add to a
 Collection_ — fills the selection slot to its left; the "N selected" toolbar replaces it
-after the first pick (#1976).
+after the first pick (#1976). The status region stays mounted empty in the open Board's
+toolbar, so screen readers announce the hint when Multi-select turns on, and the hint wraps
+rather than overflowing narrow or zoomed dialogs.
 Opening a Board shows all authorized members, independent of overview filters,
 in a large dialog, full-screen on mobile. Its fixed heading keeps the title,
 editable-only pencil, count and Multi-select visible while members scroll. The exact

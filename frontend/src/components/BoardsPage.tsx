@@ -1466,10 +1466,12 @@ export default function BoardsPage({
     </Button>
   )
   // Fills the toolbar's empty slot until the first pick, so users know what Multi-select wants (#1976).
-  const selectionHint = collectionsEnabled && selecting && selectedIds.length === 0 && (
-    // text.secondary measured 3.45:1 on the dark dialog surface (#4D4D4D); primary text passes AA.
-    <Typography role="status" variant="body2" sx={{ whiteSpace: 'nowrap' }}>
-      Select Markers to add to a Collection
+  // The status region stays mounted (empty) so screen readers announce the text when it appears;
+  // while empty it is absolutely positioned, which keeps it out of the flex row and its gap.
+  // text.secondary measured 3.45:1 on the dark dialog surface (#4D4D4D); primary text passes AA.
+  const selectionHint = collectionsEnabled && (
+    <Typography role="status" variant="body2" sx={{ '&:empty': { position: 'absolute' } }}>
+      {selecting && selectedIds.length === 0 && 'Select Markers to add to a Collection'}
     </Typography>
   )
   const selectedItems = (board ? board.markers : filteredItems).filter((item) =>
