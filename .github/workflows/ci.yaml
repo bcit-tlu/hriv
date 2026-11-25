@@ -342,7 +342,7 @@ jobs:
           mkdir -p /tmp/kubeconform-dl && cd /tmp/kubeconform-dl
           for attempt in 1 2 3 4 5; do
             if curl -fsSL --connect-timeout 10 --max-time 120 -o "$asset" "$base/$asset" \
-              && curl -fsSL --connect-timeout 10 --max-time 60 -o CHECKSUMS "$base/CHECKSUMS" \
+              && curl -fsSL --connect-timeout 10 --max-time 20 -o CHECKSUMS "$base/CHECKSUMS" \
               && grep " ${asset}\$" CHECKSUMS | sha256sum -c --strict --quiet - \
               && tar -tzf "$asset" kubeconform >/dev/null 2>&1; then
               sudo tar -xzf "$asset" -C /usr/local/bin kubeconform
