@@ -234,9 +234,11 @@ missed deliveries — it is not the rollout path.
   catches up — the staleness guard in `release-please.yaml` will fail
   the next main-push workflow until you do. The full sequence, as used
   for the 1.0.0 release:
-  1. Add `"release-as": "<rc version>"` to the component's entry in
-     `release-please-config.json` and merge it (#1947); release-please
-     retitles the open release PR to that version.
+  1. Add `"release-as": "<X.Y.Z>"` to the component's entry in
+     `release-please-config.json`, using the rc's base version without
+     `-rc.*` (e.g. `1.0.0` for `1.0.0-rc.<ts>.g<short>`; the release
+     workflows only accept `X.Y.Z` tags), and merge it (#1947);
+     release-please retitles the open release PR to that version.
   2. Merge the release PR (#1902 backend, #1907 frontend), so
      `.release-please-manifest.json` reaches that version.
   3. Remove the `release-as` entry in a follow-up PR (#1954) and check
