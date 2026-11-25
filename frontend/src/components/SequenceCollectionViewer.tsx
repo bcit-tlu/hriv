@@ -212,11 +212,17 @@ export default function SequenceCollectionViewer({
       }
       // The full-screen handoff enters full-page before this callback runs.
       setFullPage(viewer.isFullPage())
+      if (viewer.isFullPage()) {
+        // The previous image's chevrons were unmounted with its viewer, so a
+        // focused one never sent a blur — release its hold and let the nav fade.
+        navFocusedRef.current = false
+        scheduleNavHide()
+      }
       viewer.addHandler('full-page', (event) => setFullPage(event.fullPage))
       viewer.container.addEventListener('pointermove', showNav)
       viewer.container.addEventListener('pointerdown', showNav)
     },
-    [showNav],
+    [showNav, scheduleNavHide],
   )
   const regionRef = useRef<HTMLDivElement | null>(null)
   const focusedForCollection = useRef<number | null>(null)

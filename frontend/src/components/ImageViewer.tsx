@@ -61,6 +61,9 @@ import {
 } from './imageViewerUtils'
 
 let pendingFullScreenHandoff: string | number | null = null
+// True when the pending handoff is OSD's full-page fallback rather than
+// browser fullscreen (no element fullscreen, e.g. iPhone Safari) — #1841.
+let pendingHandoffIsFallback = false
 
 // Every mounted viewer's root element — the toolbar keyboard shortcuts use
 // it to decide which of several viewers (e.g. collection panes) owns a key.
@@ -843,9 +846,16 @@ export default function ImageViewer({
     const initialViewerHeight = viewer.element.style.height
     let pendingHomeResize: boolean | null = null
     const claimedHandoff = handoffKey != null && pendingFullScreenHandoff === handoffKey
-    if (claimedHandoff) pendingFullScreenHandoff = null
+    const claimedFallback = claimedHandoff && pendingHandoffIsFallback
+    if (claimedHandoff) {
+      pendingFullScreenHandoff = null
+      pendingHandoffIsFallback = false
+    }
     let handleFullscreenChange: (() => void) | null = null
-    if (claimedHandoff && document.fullscreenElement) {
+    if (claimedFallback) {
+      // Full-page fallback: there is no browser fullscreen to rejoin or watch.
+      viewer.setFullPage(true)
+    } else if (claimedHandoff && document.fullscreenElement) {
       viewer.setFullPage(true)
       viewer.element.style.width = '100%'
       viewer.element.style.height = '100%'
@@ -2029,6 +2039,7 @@ export default function ImageViewer({
             void document.exitFullscreen().catch(() => {})
           } else {
             pendingFullScreenHandoff = cleanupHandoffKey
+            pendingHandoffIsFallback = false
             window.setTimeout(() => {
               if (pendingFullScreenHandoff !== cleanupHandoffKey) return
               pendingFullScreenHandoff = null
@@ -2037,6 +2048,16 @@ export default function ImageViewer({
               }
             }, 0)
           }
+        } else if (cleanupHandoffKey != null) {
+          // OSD's full-page fallback (no browser fullscreen): hand it to the
+          // keyed replacement too, or stepping a sequence drops out of it (#1841).
+          pendingFullScreenHandoff = cleanupHandoffKey
+          pendingHandoffIsFallback = true
+          window.setTimeout(() => {
+            if (pendingFullScreenHandoff !== cleanupHandoffKey) return
+            pendingFullScreenHandoff = null
+            pendingHandoffIsFallback = false
+          }, 0)
         }
       }
       viewer.destroy()

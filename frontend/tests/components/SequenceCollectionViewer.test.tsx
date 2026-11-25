@@ -144,6 +144,33 @@ describe('SequenceCollectionViewer', () => {
       expect(within(viewerEl).getByTestId('sequence-nav-overlay')).toBeInTheDocument()
     })
 
+    it('releases a focused chevron hold when the full-page image changes', () => {
+      vi.useFakeTimers()
+      try {
+        renderViewer({ itemId: 101 })
+        const { setFullPage } = fakeViewer()
+        setFullPage(true)
+        const nav = screen.getByTestId('sequence-nav-overlay')
+        // Keyboard focus holds the nav open with no hide clock.
+        act(() => {
+          screen.getByRole('button', { name: 'Next image' }).focus()
+        })
+        act(() => {
+          vi.advanceTimersByTime(5000)
+        })
+        expect(nav).toHaveStyle({ opacity: '1' })
+        // Stepping mounts a new viewer (already full-page); the focused
+        // chevron went with the old one, so no blur ever fired.
+        fakeViewer(true)
+        act(() => {
+          vi.advanceTimersByTime(2000)
+        })
+        expect(screen.getByTestId('sequence-nav-overlay')).toHaveStyle({ opacity: '0' })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('reveals the nav on pointer activity over the viewer', () => {
       vi.useFakeTimers()
       try {

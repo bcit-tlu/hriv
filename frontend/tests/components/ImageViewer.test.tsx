@@ -1681,6 +1681,44 @@ describe('ImageViewer lifecycle telemetry', () => {
     expect(second.element.style.height).toBe('')
   })
 
+  it('hands OSD full-page fallback to the keyed replacement without browser fullscreen (#1841)', () => {
+    vi.useFakeTimers()
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    })
+    setFullscreenElement(null)
+    const { rerender } = render(
+      <ImageViewer key="first" fullScreenHandoffKey="sequence:1" tileSources="/first.dzi" />,
+    )
+    viewer().isFullPage.mockReturnValue(true)
+
+    rerender(
+      <ImageViewer key="second" fullScreenHandoffKey="sequence:1" tileSources="/second.dzi" />,
+    )
+    expect(viewer().setFullPage).toHaveBeenCalledWith(true)
+    act(() => vi.advanceTimersByTime(0))
+    expect(exitFullscreen).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  it('drops an unclaimed full-page fallback handoff after unmount (#1841)', () => {
+    vi.useFakeTimers()
+    setFullscreenElement(null)
+    const { unmount } = render(
+      <ImageViewer fullScreenHandoffKey="sequence:1" tileSources="/tiles.dzi" />,
+    )
+    viewer().isFullPage.mockReturnValue(true)
+    unmount()
+    act(() => vi.advanceTimersByTime(0))
+
+    render(<ImageViewer fullScreenHandoffKey="sequence:1" tileSources="/later.dzi" />)
+    act(() => vi.advanceTimersByTime(0))
+    expect(viewer().setFullPage).not.toHaveBeenCalledWith(true)
+    vi.useRealTimers()
+  })
+
   it('does not enter full-page mode without a pending handoff', () => {
     setFullscreenElement(document.body)
     render(<ImageViewer tileSources="/tiles.dzi" />)
