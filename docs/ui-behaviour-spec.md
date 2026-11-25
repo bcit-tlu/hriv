@@ -754,6 +754,9 @@ image name}` accessible name, including for multiple saved views of one image;
   lightbox-style **Previous** / **Next** chevrons fade in on the left/right
   edges; **Then** after ~2 s idle or on pointer leave they fade out again
   (keyboard focus also reveals them).
+- **Given** the sequence viewer is in full screen, **Then** the same
+  **Previous** / **Next** chevrons fade in on pointer activity over the
+  viewer and step the sequence without leaving full screen (#1841).
 - **Given** the user clicks **Next** / **Previous**, a strip thumbnail, or
   presses ← / → while the collection page is open, **Then** the current image
   changes, the position readout and `?item=` URL update, and the viewer

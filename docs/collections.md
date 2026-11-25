@@ -1473,7 +1473,12 @@ overlay the viewport's left and right edges (#1561); like the OSD toolbar's
 `autoHideControls`, they fade in on pointer activity over the viewer frame
 and fade back out after ~2 s idle or on pointer leave (keyboard focus also
 reveals them). The buttons stay mounted — only opacity and pointer-events
-toggle — so screen readers and tab focus still reach them. Strip
+toggle — so screen readers and tab focus still reach them. In OSD full-page
+mode the viewer is reparented out of the frame, so while full-page the same
+overlay is portaled into the viewer through `viewportOverlay` and pointer
+activity on `viewer.container` reveals it (#1841); `onViewerReady` and the
+`full-page` event track the mode, including a viewer that opens full-page via
+the full-screen handoff. Strip
 thumbnails (`Go to {name}`) and ←/→ arrow keys change the current item
 too. Arrows are handled by a document-level keydown-capture listener
 (#1567) — focus placement is irrelevant, so a dialog returning focus to a
