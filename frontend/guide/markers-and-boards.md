@@ -98,8 +98,8 @@ remains authoritative and unchanged.
 The discovery list is independent of the overview filters.
 
 Choose **Cards** or **Table** beside My Markers; the filter bar sits underneath.
-The outlined **Select** button sits at the right of the Filter by row in both views,
-and every selection action — including **Cancel Selection** — stays on the same row.
+In Table, tick the checkboxes beside Markers to select them; the selection
+actions (**Create Collection**, **Add to Collection**) appear above the table.
 Both overview views are alphabetical by title, ignoring case. Favouriting or moving
 a view does not move its position; renaming places it at the new alphabetical position.
 Favourite stars are filled white in Cards and Table, with a contrasting background
@@ -131,9 +131,10 @@ that Markers left without a Board will be permanently deleted. Conflicts require
 Reload latest before saving or deleting. **Create Collection** is an
 outlined button just left of Close (disabled for an empty Board). There is no Board
 **⋮** menu. Reorder cards by dragging them to arrange
-the study. **Select**, at the right of the collage toolbar, enables Collection
-actions and keeps every selection control, including **Cancel Selection**, on
-the same row. Click a saved view to open its image; Back returns to the Board dialog,
+the study. **Multi-select**, at the right of the collage toolbar, turns on
+selection; until you pick a Marker, a hint beside it reads _Select Markers to add
+to a Collection_. Click Markers to pick them, then use **Create Collection** or
+**Add to Collection**; click **Multi-select** again to stop. Click a saved view to open its image; Back returns to the Board dialog,
 and Back again returns to the overview. Board owners can edit their Boards;
 visibility and program/group restrictions determine who can view them.
 Sharing a Board does not grant access to a restricted source image.

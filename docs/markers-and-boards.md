@@ -550,10 +550,10 @@ Only the page heading changes; the Boards & Markers navigation label remains unc
 Below it, **My Markers** contains Collections-style Cards/Table controls and then
 the filter bar. There is no Graph view. Only personally owned Markers appear; both lists are
 fetched in pages of 200 without the former recent-60 cap.
-The overview's Multi-select button is right-aligned on the Filter by row in both views
-(contained while active; pressing it again ends selection), and the resulting
-selection actions render on the same row so engaging Multi-select never pushes
-controls downward.
+The overview has no Multi-select button: Table rows carry checkboxes (with a
+page-wide select-all in the header), and the resulting selection actions render
+above the table. Multi-select lives only in the Board dialog's collage toolbar
+(contained while active; pressing it again ends selection).
 Each card shows the
 image's parent category below its title (`category_name`, null if unfiled).
 The heading uses the same h5/h1 typography as Collections. Marker cards are 234px
@@ -593,10 +593,13 @@ Collections' filter components provide title/description search, Private /
 Restricted / Public scope, owner/Mine, and Favourite filters on both surfaces.
 A Marker matches any visible Board membership of the selected scopes. A Board
 matches Favourite if it holds a favourite Marker. Active filters have removable
-chips and a Clear filters action. Select sits at the right of the collage toolbar.
+chips and a Clear filters action. Multi-select sits at the right of the collage toolbar.
+While it is on and nothing is picked, a `role="status"` hint — _Select Markers to add to a
+Collection_ — fills the selection slot to its left; the "N selected" toolbar replaces it
+after the first pick (#1976).
 Opening a Board shows all authorized members, independent of overview filters,
 in a large dialog, full-screen on mobile. Its fixed heading keeps the title,
-editable-only pencil, count and Select visible while members scroll. The exact
+editable-only pencil, count and Multi-select visible while members scroll. The exact
 Collections scope pill sits beside the Managed by owner line; its transfer icon
 opens owner management for users with `can_transfer`. An outlined Create Sequence
 Collection button sits immediately left of Close, disabled for an empty Board.
@@ -709,7 +712,7 @@ snapshots because the old coordinates no longer describe the new source.
 
 ## Collections from saved views (#1774)
 
-Boards now offer a Select toolbar: any selected Markers can seed a Sequence,
+Boards now offer a Multi-select toolbar: any selected Markers can seed a Sequence,
 and 2–4 can seed a Synchronized Collection. Both reuse the existing collection
 form and Add to Collection destination dialog. Board headers create
 ordered Sequences directly through **Create Collection**, while the collection Manage dialog can stage a
