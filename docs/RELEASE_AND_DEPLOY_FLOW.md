@@ -215,10 +215,32 @@ missed deliveries — it is not the rollout path.
   job summary and as an annotation, not as a PR comment. On
   `pull_request` the workflow file comes from the PR branch, so changes to
   it are reviewed like any other code.
+- **rc versions and release PRs can disagree before 1.0.** `ci.yaml`'s
+  version step (from the shared `oci-build` workflow) always treats
+  `!:`/`BREAKING CHANGE:` as a major bump, while release-please applies
+  `bump-minor-pre-major: true` and makes it a minor bump for a `0.x`
+  component. A breaking change to a component still below 1.0 (today
+  `backup` and `restore-validation`) therefore stamps rc images with a
+  higher version than its release PR proposes. Example: the `refactor!:`
+  inuksuk → marker rename (#1941) deployed `1.0.0-rc.*` frontend and
+  backend images to `latest` while release-please proposed 0.70.0 and
+  0.71.0. Releasing those lower versions would leave the `1.0.0-rc.*`
+  builds as the highest semver, so `latest` would stop picking up new rc
+  charts. The upstream fix is tracked in
+  [bcit-tlu/.github#33](https://github.com/bcit-tlu/.github/issues/33);
+  until it lands, align the release with `release-as` (next bullet).
 - **`release-as` is a one-shot override, not a pinning mechanism.** If
   you use it to unstick release-please, remove it once the manifest
   catches up — the staleness guard in `release-please.yaml` will fail
-  the next main-push workflow until you do.
+  the next main-push workflow until you do. The full sequence, as used
+  for the 1.0.0 release:
+  1. Add `"release-as": "<rc version>"` to the component's entry in
+     `release-please-config.json` and merge it (#1947); release-please
+     retitles the open release PR to that version.
+  2. Merge the release PR (#1902 backend, #1907 frontend), so
+     `.release-please-manifest.json` reaches that version.
+  3. Remove the `release-as` entry in a follow-up PR (#1954) and check
+     that the next main-push `release-please` run passes.
 
 ## Where to look when something breaks
 
@@ -226,6 +248,7 @@ missed deliveries — it is not the rollout path.
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | No release PR opened after merging a `feat:`/`fix:`                     | release-please logs on the main-push workflow; check that the component path was touched                                                                                                                                                                                             |
 | `release-please` workflow failing with "Stale `release-as`"             | `release-please-config.json` — remove the `release-as` field for the named package                                                                                                                                                                                                   |
+| Release PR proposes a version below the rc already on `latest`          | pre-1.0 breaking change; see "rc versions and release PRs can disagree before 1.0" above and pin the release with `release-as`                                                                                                                                                       |
 | `latest` env not picking up a new main push                             | GitHub repo Settings → Webhooks → Recent Deliveries (`package`/`published` for `hriv/charts/hriv-<component>` should be HTTP 200); `kubectl -n hriv get ocirepository` revision vs GHCR; notification-controller logs; fallback `flux reconcile source oci hriv-<component> -n hriv` |
 | `stable` env running stale chart logic                                  | no release has been cut since the chart edit; cut one                                                                                                                                                                                                                                |
 | Image retag didn't happen after release                                 | `release-retag.yaml` run for the release; it waits up to 30 min for the rc image, then times out                                                                                                                                                                                     |
