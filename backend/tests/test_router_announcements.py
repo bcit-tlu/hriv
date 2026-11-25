@@ -620,6 +620,7 @@ async def test_load_stats_queries_counts_without_identities() -> None:
     assert stats[3] == rules.SeenStats(seen_count=1, audience_size=5)
     assert stats[4] == rules.SeenStats(seen_count=0, audience_size=2)
     assert len(calls) == 3  # one head-count query serves every role audience
+    assert "users.active IS true" in calls[1]  # deactivated accounts aren't reach
     union_sql = calls[2]
     for table in ("announcement_programs", "user_programs", "group_members", "group_instructors"):
         assert table in union_sql
@@ -639,6 +640,7 @@ async def test_load_stats_counts_everyone_without_role_audiences() -> None:
             result.all.return_value = [(1, {"1": NOW.isoformat()})]
         else:
             assert "GROUP BY users.role" in sql
+            assert "users.active IS true" in sql
             result.all.return_value = [("admin", 1), ("student", 30)]
         return result
 
