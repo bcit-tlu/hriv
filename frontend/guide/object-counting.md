@@ -40,7 +40,7 @@ same rule a person would use.
 ## Fixing a count
 
 The report opens ready to adjust. **Click an outline** to remove it — it
-stays visible, dashed and dimmed, and a second click brings it back.
+disappears, so you can click or drag in the same spot to draw a better one.
 **Click a missed object** to drop an outline on it, or **drag** around it
 to draw one; new outlines join the closest-sized group. **Reset** restores
 the original result, and **Done** locks the outlines for view-only

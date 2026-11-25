@@ -120,8 +120,9 @@ UI steps (frontend landed with #1667/#1668):
    position; the report dialog opens on completion with outlines, an
    unnamed **Group n** legend and a total.
 4. The report opens in adjust mode (#1746): click an outline to remove it
-   (click again to restore), click a missed object or drag to add an
-   outline, **Reset** restores, **Done** leaves view-only. Close the
+   (it disappears, #1977 — clicking the same spot adds a new outline), click
+   a missed object or drag to add an outline, **Reset** restores removed
+   outlines, **Done** leaves view-only. Close the
    report — outlines stay on the viewer. Reopen with **View results (N)**
    on the rectangle's button; **Cancel count** lives in its dropdown.
    Clear-all removes selections, outlines and results.

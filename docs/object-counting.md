@@ -41,9 +41,10 @@ The report opens in **adjust** mode so the user can correct an imperfect
 result client-side (**Done** leaves a view-only report; **Adjust count**
 re-enters):
 
-- **Click an outline** to remove it — it stays visible dashed and dimmed,
-  and a second click restores it. Removing the last object of a group
-  drops its legend row.
+- **Click an outline** to remove it — it disappears from the report
+  (#1977), so a click or drag on the same spot adds a new outline instead of
+  bringing the old one back. Only **Reset** restores removed outlines.
+  Removing the last object of a group drops its legend row.
 - **Click a missed object** to drop an outline there (sized to the median
   of the current objects), or **drag** to draw a circle of any size.
 - Added outlines join the **nearest-size group** (closest mean polygon
@@ -275,9 +276,11 @@ This fixture exercises the workflow, not blood-smear counting accuracy.
   counting gauges, Grafana "Object counting" panels, flux-fleet alerts.
 - **#1670** — lab-burst load test (done — see Capacity); **#1671** —
   docs/user validation.
-- **#1746** — manual report adjustment (landed): click-to-remove/restore
+- **#1746** — manual report adjustment (landed): click-to-remove
   outlines, click/drag to add, nearest-area group assignment,
-  `countAdjust.ts` + `removed`/`added` entry state.
+  `countAdjust.ts` + `removed`/`added` entry state. **#1977** made removal
+  permanent until **Reset**: removed outlines are no longer drawn, so their
+  spot is free for a redraw (the earlier click-again-to-restore is gone).
 - **#1855** — counting in collection detail viewers (landed): the shared
   `ImageViewer` mounts `SelectionCountLayer`, so sequence and synchronized
   collection panes count the same way.
