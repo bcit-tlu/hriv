@@ -8,8 +8,8 @@
  *
  * Manual adjustment (#1746): when the caller passes the adjust callbacks,
  * the report opens in "Adjust count" mode — the outlines are interactive
- * from the start: click an outline to remove it (dashed/dimmed, click
- * again to undo), click empty space to drop a median-sized outline on a
+ * from the start: click an outline to remove it (it disappears, so the
+ * spot is free to redraw — #1977), click empty space to drop a median-sized outline on a
  * missed object, or drag to draw a circle of any size. Counts and the
  * legend update live; Reset restores the original result and Done leaves
  * a view-only report (Adjust count re-enters). Adjustments are
@@ -85,7 +85,7 @@ export interface CountReportDialogProps {
   removed?: readonly number[]
   /** #1746: outlines the user drew, appended after `objects`. */
   added?: CountObject[]
-  /** #1746: toggle a combined index's removed state. */
+  /** #1746: mark a combined index removed (#1977: removed outlines aren't drawn, so this only removes). */
   onToggleObject?: (index: number) => void
   /** #1746: append a user-drawn outline (group is assigned by caller). */
   onAddObject?: (obj: CountObject) => void
@@ -96,32 +96,26 @@ export interface CountReportDialogProps {
 function OutlineGroup({
   obj,
   combinedIndex,
-  isRemoved,
   interactive,
   onToggle,
 }: {
   obj: CountObject
   /** Position in objects ++ added — the toggle callback's identity. */
   combinedIndex: number
-  isRemoved: boolean
   interactive: boolean
   onToggle: (index: number) => void
 }) {
   const removeCursor = useSvgCursor('M7 7l10 10M17 7L7 17', 'pointer')
   const pts = obj.polygon.map(([x, y]) => `${x},${y}`).join(' ')
   const groupName = countGroupLabel(obj.group)
-  const label = isRemoved
-    ? `${groupName} outline — removed; activate to restore`
-    : `${groupName} outline — activate to remove`
+  const label = `${groupName} outline — activate to remove`
   return (
     <g
       data-count-object={combinedIndex}
-      data-removed={isRemoved || undefined}
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
       aria-label={interactive ? label : undefined}
-      opacity={isRemoved ? 0.3 : 1}
-      style={{ cursor: interactive ? (isRemoved ? 'pointer' : removeCursor) : undefined }}
+      style={{ cursor: interactive ? removeCursor : undefined }}
       onClick={
         interactive
           ? (e) => {
@@ -154,7 +148,6 @@ function OutlineGroup({
         fill="none"
         stroke={countGroupColor(obj.group)}
         strokeWidth={2}
-        strokeDasharray={isRemoved ? '6 4' : undefined}
         vectorEffect="non-scaling-stroke"
       />
       {/* Hit area: paints nothing but catches clicks across the interior,
@@ -232,26 +225,30 @@ function SelectionOutlines({
         </clipPath>
       </defs>
       <g clipPath="url(#count-report-clip)">
-        {objects.map((obj, i) => (
-          <OutlineGroup
-            key={i}
-            obj={obj}
-            combinedIndex={i}
-            isRemoved={removedSet.has(i)}
-            interactive={adjusting}
-            onToggle={onToggle}
-          />
-        ))}
-        {added.map((obj, j) => (
-          <OutlineGroup
-            key={`a${j}`}
-            obj={obj}
-            combinedIndex={objects.length + j}
-            isRemoved={removedSet.has(objects.length + j)}
-            interactive={adjusting}
-            onToggle={onToggle}
-          />
-        ))}
+        {/* Removed outlines aren't drawn (#1977): the spot frees up for a new
+            click or drag instead of catching it. Reset brings them back. */}
+        {objects.map((obj, i) =>
+          removedSet.has(i) ? null : (
+            <OutlineGroup
+              key={i}
+              obj={obj}
+              combinedIndex={i}
+              interactive={adjusting}
+              onToggle={onToggle}
+            />
+          ),
+        )}
+        {added.map((obj, j) =>
+          removedSet.has(objects.length + j) ? null : (
+            <OutlineGroup
+              key={`a${j}`}
+              obj={obj}
+              combinedIndex={objects.length + j}
+              interactive={adjusting}
+              onToggle={onToggle}
+            />
+          ),
+        )}
         {draft ? (
           <circle
             cx={draft.cx}
@@ -464,8 +461,8 @@ export default function CountReportDialog({
 
         {adjusting ? (
           <Alert severity="info" icon={false} sx={{ mt: 2 }}>
-            Click an outline to remove it — click again to undo. Click a missed object or drag
-            around it to add an outline.
+            Click an outline to remove it — Reset brings removed outlines back. Click a missed
+            object or drag around it to add an outline.
           </Alert>
         ) : null}
 

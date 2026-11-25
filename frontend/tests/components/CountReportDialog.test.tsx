@@ -157,7 +157,7 @@ describe('CountReportDialog adjust mode (#1746)', () => {
     const user = userEvent.setup()
     renderDialog(adjustProps())
     expect(
-      screen.getByText(/Click an outline to remove it — click again to undo/),
+      screen.getByText(/Click an outline to remove it — Reset brings removed outlines back/),
     ).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /outline — activate to remove/ })).toHaveLength(5)
     await user.click(screen.getByRole('button', { name: 'Done' }))
@@ -182,14 +182,29 @@ describe('CountReportDialog adjust mode (#1746)', () => {
     expect(props.onToggleObject).toHaveBeenCalledWith(0)
   })
 
-  it('removed outlines render dimmed with a restore label', () => {
+  it('removed outlines are not drawn, so they cannot be clicked back (#1977)', () => {
     renderDialog(adjustProps({ removed: [1] }))
-    const removedG = document.querySelector('g[data-count-object="1"]')
-    expect(removedG).toHaveAttribute('data-removed')
-    expect(removedG).toHaveAttribute('opacity', '0.3')
-    expect(
-      screen.getByRole('button', { name: /outline — removed; activate to restore/ }),
-    ).toBeInTheDocument()
+    expect(document.querySelector('g[data-count-object="1"]')).toBeNull()
+    expect(document.querySelector('g[data-count-object="0"]')).not.toBeNull()
+    expect(screen.getAllByRole('button', { name: /outline — activate to remove/ })).toHaveLength(4)
+    expect(screen.queryByRole('button', { name: /restore/ })).not.toBeInTheDocument()
+  })
+
+  it('removed outlines added by the user are not drawn either', () => {
+    const added = [
+      {
+        group: 0,
+        centroid: [10, 10],
+        polygon: [
+          [0, 0],
+          [20, 0],
+          [20, 20],
+        ],
+      },
+    ]
+    // Combined index 5 = the first added outline after the 5 detected objects.
+    renderDialog(adjustProps({ added, removed: [5] }))
+    expect(document.querySelector('g[data-count-object="5"]')).toBeNull()
   })
 
   it('a click on empty space adds a median-sized outline there', () => {

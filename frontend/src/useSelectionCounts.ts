@@ -155,8 +155,9 @@ export function useSelectionCounts(imageId: number) {
   )
 
   // --- Manual adjustment (#1746) -----------------------------------------
-  // Toggle-remove restores on a second click; added outlines behave the
-  // same — a soft-removed addition just stops counting until re-clicked.
+  // The report stops drawing removed outlines (#1977), so in practice this
+  // only removes; Reset (resetAdjustments) is the way back. Added outlines
+  // behave the same.
 
   const toggleObject = useCallback((key: string, index: number) => {
     setEntries((prev) =>

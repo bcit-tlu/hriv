@@ -342,11 +342,14 @@ describe('SelectionCountLayer', () => {
       expect(screen.getByText('2 objects found')).toBeInTheDocument()
       // Group 1 drops to 1, Group 2 keeps 1, total row follows.
       expect(screen.getAllByText('1', { selector: 'p' }).length).toBeGreaterThanOrEqual(2)
-      // Re-click restores the outline and the count.
+      // The removed outline is gone (#1977) — nothing to click back;
+      // Reset restores the original result.
+      expect(screen.getAllByRole('button', { name: /outline — activate to remove/ })).toHaveLength(
+        2,
+      )
+      expect(screen.queryByRole('button', { name: /restore/ })).not.toBeInTheDocument()
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole('button', { name: /outline — removed; activate to restore/ }),
-        )
+        fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
       })
       expect(screen.getByText('3 objects found')).toBeInTheDocument()
     } finally {

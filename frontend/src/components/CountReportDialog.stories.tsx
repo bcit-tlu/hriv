@@ -96,8 +96,8 @@ export const NoObjects: Story = {
   },
 }
 
-// #1746: adjust mode — the report opens in it. Two outlines marked
-// removed (dashed/dimmed), one user-drawn circle appended; the legend and
+// #1746: adjust mode — the report opens in it. Two outlines removed
+// (not drawn, #1977), one user-drawn circle appended; the legend and
 // chip show the adjusted counts.
 export const AdjustMode: Story = {
   args: {
@@ -125,7 +125,7 @@ export const AdjustMode: Story = {
     const canvas = within(canvasElement.ownerDocument.body)
     // The dialog fades in from opacity 0; wait for it to finish.
     await waitFor(() =>
-      expect(canvas.getByText(/Click an outline to remove it — click again to undo/)).toBeVisible(),
+      expect(canvas.getByText(/Click an outline to remove it — Reset brings/)).toBeVisible(),
     )
   },
 }
