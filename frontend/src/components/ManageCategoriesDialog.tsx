@@ -641,11 +641,11 @@ export default function ManageCategoriesDialog({
             onDrop={handleDrop}
             sx={{ position: 'relative' }}
           >
-            {/* Root-level add button */}
+            {/* Top-level add button */}
             <ListItem
               sx={{ pl: 2 }}
               secondaryAction={
-                <Tooltip title="Add root category">
+                <Tooltip title="Add top-level category">
                   <IconButton edge="end" size="small" onClick={() => handleAddClick(null)}>
                     <AddIcon fontSize="small" />
                   </IconButton>
@@ -653,7 +653,7 @@ export default function ManageCategoriesDialog({
               }
             >
               <ListItemText
-                primary={<em>Root level</em>}
+                primary={<em>Top level</em>}
                 primaryTypographyProps={{ color: 'text.secondary' }}
               />
             </ListItem>

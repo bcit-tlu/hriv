@@ -47,10 +47,10 @@ describe('CategoryPickerSelect — LockIcon', () => {
     expect(lockElement).toHaveAttribute('role', 'img')
   })
 
-  it('displays "None (root level)" when root is selected (value=null)', () => {
+  it('displays "None (top level)" when root is selected (value=null)', () => {
     const categories = [makeCategory({ id: 1, label: 'Test' })]
     render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
-    expect(screen.getByText('None (root level)')).toBeInTheDocument()
+    expect(screen.getByText('None (top level)')).toBeInTheDocument()
   })
 
   it('displays placeholder text when provided and value is null', () => {
@@ -64,10 +64,10 @@ describe('CategoryPickerSelect — LockIcon', () => {
       />,
     )
     expect(screen.getByText('(no change)')).toBeInTheDocument()
-    expect(screen.queryByText('None (root level)')).not.toBeInTheDocument()
+    expect(screen.queryByText('None (top level)')).not.toBeInTheDocument()
   })
 
-  it('displays "None (root level)" after selecting root when placeholder was shown', async () => {
+  it('displays "None (top level)" after selecting root when placeholder was shown', async () => {
     const user = userEvent.setup()
     const categories = [makeCategory({ id: 1, label: 'Test' })]
     const onChange = vi.fn()
@@ -84,11 +84,11 @@ describe('CategoryPickerSelect — LockIcon', () => {
 
     // Open dropdown and select root option
     await user.click(screen.getByRole('combobox'))
-    await user.click(screen.getByText('None (root level)'))
+    await user.click(screen.getByText('None (top level)'))
 
     // Simulate parent state update: value stays null but placeholder removed
     rerender(<CategoryPickerSelect categories={categories} value={null} onChange={onChange} />)
-    expect(screen.getByText('None (root level)')).toBeInTheDocument()
+    expect(screen.getByText('None (top level)')).toBeInTheDocument()
     expect(screen.queryByText('(no change)')).not.toBeInTheDocument()
   })
 
@@ -325,7 +325,7 @@ describe('CategoryPickerSelect — onChange', () => {
       <CategoryPickerSelect categories={categories} value={5} onChange={onChange} includeRoot />,
     )
     await user.click(screen.getByRole('combobox'))
-    await user.click(screen.getByText('None (root level)'))
+    await user.click(screen.getByText('None (top level)'))
     expect(onChange).toHaveBeenCalledWith(null)
   })
 })
@@ -335,7 +335,7 @@ describe('CategoryPickerSelect — onChange', () => {
 // ---------------------------------------------------------------------------
 
 describe('CategoryPickerSelect — includeRoot=false', () => {
-  it('does not show "None (root level)" option when includeRoot is false', async () => {
+  it('does not show "None (top level)" option when includeRoot is false', async () => {
     const user = userEvent.setup()
     const categories = [makeCategory({ id: 1, label: 'Test' })]
     render(
@@ -347,7 +347,7 @@ describe('CategoryPickerSelect — includeRoot=false', () => {
       />,
     )
     await user.click(screen.getByRole('combobox'))
-    expect(screen.queryByText('None (root level)')).not.toBeInTheDocument()
+    expect(screen.queryByText('None (top level)')).not.toBeInTheDocument()
   })
 })
 

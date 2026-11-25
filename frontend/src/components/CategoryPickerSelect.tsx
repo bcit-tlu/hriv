@@ -98,7 +98,7 @@ export default function CategoryPickerSelect({
   label = 'Category',
   excludeCategoryId,
   includeRoot = true,
-  rootLabel = 'None (root level)',
+  rootLabel = 'None (top level)',
   placeholder,
   onAddCategory,
   onDeleteCategory,

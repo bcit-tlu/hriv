@@ -86,7 +86,7 @@ describe('CategoryPickerSelect — add category dialog', () => {
     )
 
     await user.click(screen.getByRole('combobox'))
-    const rootOption = screen.getByRole('option', { name: /None \(root level\)/ })
+    const rootOption = screen.getByRole('option', { name: /None \(top level\)/ })
     const rootAddBtn = within(rootOption)
       .getAllByRole('button')
       .find((btn) => btn.querySelector('svg[data-testid="AddIcon"]'))
