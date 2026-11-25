@@ -1465,6 +1465,13 @@ export default function BoardsPage({
       Multi-select
     </Button>
   )
+  // Fills the toolbar's empty slot until the first pick, so users know what Multi-select wants (#1976).
+  const selectionHint = collectionsEnabled && selecting && selectedIds.length === 0 && (
+    // text.secondary measured 3.45:1 on the dark dialog surface (#4D4D4D); primary text passes AA.
+    <Typography role="status" variant="body2" sx={{ whiteSpace: 'nowrap' }}>
+      Select Markers to add to a Collection
+    </Typography>
+  )
   const selectedItems = (board ? board.markers : filteredItems).filter((item) =>
     selectedIds.includes(item.id),
   )
@@ -1534,6 +1541,7 @@ export default function BoardsPage({
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
           {boardId != null && (
             <>
+              {selectionHint}
               {selectionButtons}
               {selectAction}
             </>
