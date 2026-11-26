@@ -360,14 +360,18 @@ vi.mock('openseadragon', () => {
   OSD.Button = OSDButton
   OSD.MouseTracker = OSDMouseTracker
   OSD.ControlAnchor = { TOP_RIGHT: 1, TOP_LEFT: 2, BOTTOM_LEFT: 3 }
-  // OSD's normalized fullscreen helpers, standard or WebKit-prefixed.
-  const doc = () => document as Document & { webkitFullscreenElement?: Element | null }
-  OSD.isFullScreen = () =>
-    (osdState.prefixedFullScreen ? doc().webkitFullscreenElement : document.fullscreenElement) !=
-    null
+  // OSD's normalized fullscreen helpers, standard or WebKit-prefixed. The
+  // prefixed members aren't in lib.dom, so read them as unknown and narrow.
+  OSD.isFullScreen = () => {
+    const element: unknown = osdState.prefixedFullScreen
+      ? Reflect.get(document, 'webkitFullscreenElement')
+      : document.fullscreenElement
+    return element instanceof Element
+  }
   OSD.exitFullScreen = () => {
     if (osdState.prefixedFullScreen) {
-      ;(document as Document & { webkitExitFullscreen?: () => void }).webkitExitFullscreen?.()
+      const webkitExit: unknown = Reflect.get(document, 'webkitExitFullscreen')
+      if (typeof webkitExit === 'function') webkitExit.call(document)
     } else {
       void document.exitFullscreen?.()
     }
