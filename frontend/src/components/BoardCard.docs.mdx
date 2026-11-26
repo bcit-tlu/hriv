@@ -1,0 +1,34 @@
+import { Controls, Meta, Primary, Stories, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as BoardCardStories from './BoardCard.stories'
+
+<Meta of={BoardCardStories} />
+
+<Title />
+
+<Subtitle>
+  Board card in the CategoryTile / CollectionCard style: full-width cover, Boards icon and title,
+  Marker count and scope chip.
+</Subtitle>
+
+## When to use
+
+Use `BoardCard` wherever Boards are browsed as a grid of cards (#1978). Clicking anywhere on the
+card calls `onOpen(board)`.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={BoardCardStories.Basic} />
+
+## Implementation guidance
+
+- The cover is `BoardCover` in `banner` mode: full width at the 140px cover height of category
+  and collection cards. It shows the pinned cover, else the first member Marker's thumbnail, else
+  the filled Boards icon on brand red — the same no-cover treatment as a category's folder.
+- The outlined Boards icon sits left of the brand-red title (clamped to two lines), like the
+  category folder icon. The scope chip is the shared `CollectionVisibilityChip`.
+- The whole face is a `CardActionArea`, so the card gets MUI's ripple on press and the
+  hover/focus highlight category cards use. There is no border and no persistent selected state.
+
+<Stories />

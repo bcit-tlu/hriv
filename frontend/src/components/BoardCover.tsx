@@ -1,20 +1,24 @@
 import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
+import SpaceDashboard from '@mui/icons-material/SpaceDashboard'
 import SpaceDashboardOutlined from '@mui/icons-material/SpaceDashboardOutlined'
 import { fetchBoard, fetchMarker, fetchMarkers } from '../api'
 import type { ApiBoardSummary, ApiMarker } from '../types'
 import RenewingThumbnail from './RenewingThumbnail'
 
 /** Board cover: the pinned cover, else the first member thumbnail, else the
- *  Boards icon. */
+ *  Boards icon. `banner` fills a card's full width at the 140px cover height
+ *  of CategoryTile/CollectionCard, with their brand-red no-cover fallback (#1978). */
 export default function BoardCover({
   board,
   size = 70,
   radius = 0,
+  banner = false,
 }: {
   board: ApiBoardSummary
   size?: number
   radius?: number
+  banner?: boolean
 }) {
   const [state, setState] = useState<{ id: number; items: ApiMarker[] } | null>(null)
   const key = `${board.id}:${board.version}`
@@ -45,11 +49,11 @@ export default function BoardCover({
   return (
     <Box
       sx={{
-        width: size,
-        height: size,
+        width: banner ? '100%' : size,
+        height: banner ? 140 : size,
         borderRadius: radius,
         flexShrink: 0,
-        bgcolor: 'action.hover',
+        bgcolor: banner ? 'primary.main' : 'action.hover',
         display: 'grid',
         placeItems: 'center',
         overflow: 'hidden',
@@ -72,6 +76,8 @@ export default function BoardCover({
           alt=""
           sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
+      ) : banner ? (
+        <SpaceDashboard sx={{ fontSize: 64, opacity: 0.85, color: 'common.white' }} />
       ) : (
         <SpaceDashboardOutlined
           sx={{ fontSize: Math.round(size * 0.46), color: 'text.secondary' }}
