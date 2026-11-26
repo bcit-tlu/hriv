@@ -157,7 +157,7 @@ describe('CountReportDialog adjust mode (#1746)', () => {
     const user = userEvent.setup()
     renderDialog(adjustProps())
     expect(
-      screen.getByText(/Click an outline to remove it — Reset brings removed outlines back/),
+      screen.getByText(/Click an outline to remove it — Reset returns to the original count/),
     ).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /outline — activate to remove/ })).toHaveLength(5)
     await user.click(screen.getByRole('button', { name: 'Done' }))
@@ -180,6 +180,29 @@ describe('CountReportDialog adjust mode (#1746)', () => {
     outline.focus()
     await user.keyboard('{Enter}')
     expect(props.onToggleObject).toHaveBeenCalledWith(0)
+  })
+
+  it('keyboard removal moves focus to the next outline, or the previous one at the end (#1977)', async () => {
+    const user = userEvent.setup()
+    const props = renderDialog(adjustProps())
+    const outlines = () => screen.getAllByRole('button', { name: /outline — activate to remove/ })
+    outlines()[0].focus()
+    await user.keyboard('{Enter}')
+    expect(props.onToggleObject).toHaveBeenLastCalledWith(0)
+    expect(document.activeElement).toHaveAttribute('data-count-object', '1')
+
+    outlines()[4].focus()
+    await user.keyboard('{Enter}')
+    expect(props.onToggleObject).toHaveBeenLastCalledWith(4)
+    expect(document.activeElement).toHaveAttribute('data-count-object', '3')
+  })
+
+  it('keyboard removal of the only outline focuses the drawing area (#1977)', async () => {
+    const user = userEvent.setup()
+    renderDialog(adjustProps({ objects: [OBJECTS[0]], total: 1, groups: [{ group: 0, count: 1 }] }))
+    screen.getByRole('button', { name: /outline — activate to remove/ }).focus()
+    await user.keyboard('{Enter}')
+    expect(document.activeElement).toBe(document.querySelector('svg[data-count-outlines]'))
   })
 
   it('removed outlines are not drawn, so they cannot be clicked back (#1977)', () => {

@@ -129,7 +129,16 @@ function OutlineGroup({
           ? (e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
+                // The removed outline unmounts (#1977), so hand keyboard focus
+                // to a neighbouring outline — or the drawing area if none is left.
+                const outline = e.currentTarget
+                const isOutline = (el: Element | null): el is SVGGElement =>
+                  el instanceof SVGGElement && el.hasAttribute('data-count-object')
+                const neighbour = [outline.nextElementSibling, outline.previousElementSibling].find(
+                  isOutline,
+                )
                 onToggle(combinedIndex)
+                ;(neighbour ?? outline.closest('svg'))?.focus()
               }
             }
           : undefined
@@ -199,6 +208,8 @@ function SelectionOutlines({
       preserveAspectRatio="none"
       aria-hidden={!adjusting}
       role={adjusting ? 'region' : undefined}
+      // Focus target after keyboard-removing the last outline; not a tab stop.
+      tabIndex={adjusting ? -1 : undefined}
       aria-label={
         adjusting
           ? 'Count preview: click an outline to remove it, click or drag to add one'
@@ -226,7 +237,7 @@ function SelectionOutlines({
       </defs>
       <g clipPath="url(#count-report-clip)">
         {/* Removed outlines aren't drawn (#1977): the spot frees up for a new
-            click or drag instead of catching it. Reset brings them back. */}
+            click or drag instead of catching it. Reset returns to the original result. */}
         {objects.map((obj, i) =>
           removedSet.has(i) ? null : (
             <OutlineGroup
@@ -461,7 +472,7 @@ export default function CountReportDialog({
 
         {adjusting ? (
           <Alert severity="info" icon={false} sx={{ mt: 2 }}>
-            Click an outline to remove it — Reset brings removed outlines back. Click a missed
+            Click an outline to remove it — Reset returns to the original count. Click a missed
             object or drag around it to add an outline.
           </Alert>
         ) : null}

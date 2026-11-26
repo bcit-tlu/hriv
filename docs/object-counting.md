@@ -43,7 +43,8 @@ re-enters):
 
 - **Click an outline** to remove it — it disappears from the report
   (#1977), so a click or drag on the same spot adds a new outline instead of
-  bringing the old one back. Only **Reset** restores removed outlines.
+  bringing the old one back. Only **Reset** brings them back — it returns to the
+  original result, so it also drops the outlines you drew.
   Removing the last object of a group drops its legend row.
 - **Click a missed object** to drop an outline there (sized to the median
   of the current objects), or **drag** to draw a circle of any size.
