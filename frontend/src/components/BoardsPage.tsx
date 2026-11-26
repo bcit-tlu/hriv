@@ -124,7 +124,7 @@ import BoardOwnersDialog from './BoardOwnersDialog'
 import MarkerFormDialog from './MarkerFormDialog'
 import RenewingThumbnail from './RenewingThumbnail'
 import AllBoardsDialog from './AllBoardsDialog'
-import BoardCover from './BoardCover'
+import BoardCard from './BoardCard'
 import BoardCoverPickerModal from './BoardCoverPickerModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
@@ -172,9 +172,6 @@ const MARKER_TABLE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<MarkerTableCo
 
 type SortableMarkerColumn = Exclude<MarkerTableColumn, 'thumbnail' | 'boards'>
 const MARKER_TABLE_ALL_COLUMNS = MARKER_TABLE_COLUMN_OPTIONS.map((option) => option.key)
-
-/** Marker accent — muted blue in light mode, brighter blue in dark — shared by
-    Marker titles/pins and the thick Board tile border. */
 
 type SortableFrameProps = {
   id: string
@@ -252,7 +249,8 @@ function ActiveSortableFrame({
         outline: isDragSource ? '3px solid' : undefined,
         outlineColor: 'primary.main',
         minWidth: 0,
-        ...(type === 'board-card' && { flex: '0 0 auto', width: 260 }),
+        // Category/Collection card width (#1978).
+        ...(type === 'board-card' && { flex: '0 0 auto', width: 300 }),
       }}
     >
       {!hideHandle && (
@@ -317,6 +315,8 @@ function DropArea({
         transform: active ? 'scale(1.03)' : 'scale(1)',
         transition: 'outline-color 0.2s, transform 0.15s',
         minHeight: 0,
+        // Lets the Board card fill the row height so cards line up (#1978).
+        height: '100%',
       }}
     >
       {children}
@@ -1795,10 +1795,7 @@ export default function BoardsPage({
               alignSelf: 'stretch',
               minWidth: 56,
               px: 1,
-              borderRadius: 2,
-              borderWidth: 2,
-              borderColor: markerAccentColor,
-              color: markerAccentColor,
+              borderRadius: 1,
               boxShadow: (theme) => theme.shadows[2],
             }}
           >
@@ -1825,88 +1822,42 @@ export default function BoardsPage({
                 }
                 blocked={!!activeItem?.board_ids.includes(row.id)}
               >
-                <Card
-                  elevation={2}
-                  sx={{
-                    position: 'relative',
-                    borderRadius: 2,
-                    borderWidth: 2,
-                    borderStyle: 'solid',
-                    borderColor: (theme) =>
-                      row.id === boardId ? theme.palette.primary.main : markerAccentColor(theme),
-                  }}
-                >
-                  {row.permissions.can_edit && (
-                    // Cover picker — pins the tile image like the
-                    // Collection tile's "Set cover image" action (#1554).
-                    <Tooltip title="Set cover image">
-                      <IconButton
-                        size="small"
-                        aria-label={`Set ${row.name} cover image`}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          event.preventDefault()
-                          if (busy) return
-                          openCoverPicker(row)
-                        }}
-                        sx={{
-                          position: 'absolute',
-                          top: 4,
-                          right: 8,
-                          zIndex: 1,
-                          color: 'common.white',
-                          bgcolor: (theme) => alpha(theme.palette.common.black, 0.25),
-                          '&:hover': {
-                            bgcolor: (theme) => alpha(theme.palette.common.black, 0.45),
-                          },
-                        }}
-                      >
-                        <ImageIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  )}
-                  <CardActionArea
-                    onClick={() => onSelectBoard(row.id)}
-                    aria-label={`Open Board: ${row.name}`}
-                    sx={{
-                      display: 'flex',
-                      justifyContent: 'flex-start',
-                      alignItems: 'stretch',
-                      gap: 1,
-                    }}
-                  >
-                    <BoardCover board={row} />
-                    <Stack
-                      // Right padding aligns the scope chip's right edge with
-                      // the cover-picker icon's (both 8px from the tile edge).
-                      sx={{ justifyContent: 'center', pl: 1.5, pr: 1, minWidth: 0, flex: 1 }}
-                      alignItems="stretch"
-                    >
-                      <Typography
-                        variant="h6"
-                        component="p"
-                        noWrap
-                        fontWeight={600}
-                        title={row.name}
-                      >
-                        {row.name}
-                      </Typography>
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 0.5,
-                        }}
-                      >
-                        <Typography variant="body2" color="text.secondary">
-                          {`${row.marker_count} ${row.marker_count === 1 ? 'Marker' : 'Markers'}`}
-                        </Typography>
-                        <CollectionVisibilityChip visibility={row.visibility} />
-                      </Box>
-                    </Stack>
-                  </CardActionArea>
-                </Card>
+                <BoardCard
+                  board={row}
+                  titleHeadingLevel="h2"
+                  onOpen={(board) => onSelectBoard(board.id)}
+                  coverAction={
+                    row.permissions.can_edit ? (
+                      // Cover picker — pins the tile image like the
+                      // Collection tile's "Set cover image" action (#1554).
+                      <Tooltip title="Set cover image">
+                        <IconButton
+                          size="small"
+                          aria-label={`Set ${row.name} cover image`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            event.preventDefault()
+                            if (busy) return
+                            openCoverPicker(row)
+                          }}
+                          sx={{
+                            position: 'absolute',
+                            top: 4,
+                            right: 8,
+                            zIndex: 1,
+                            color: 'common.white',
+                            bgcolor: (theme) => alpha(theme.palette.common.black, 0.25),
+                            '&:hover': {
+                              bgcolor: (theme) => alpha(theme.palette.common.black, 0.45),
+                            },
+                          }}
+                        >
+                          <ImageIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    ) : undefined
+                  }
+                />
               </DropArea>
             </SortableFrame>
           ))}

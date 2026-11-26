@@ -62,4 +62,26 @@ describe('BoardCard (#1978)', () => {
     expect(screen.getByTestId('collection-visibility-chip')).toHaveTextContent(label)
     await waitFor(() => expect(api.fetchMarkers).toHaveBeenCalled())
   })
+
+  it('renders a cover action outside the open-Board button, at the chosen heading level', async () => {
+    const onOpen = vi.fn()
+    const onCover = vi.fn()
+    render(
+      <BoardCard
+        board={BOARD_FIXTURE}
+        onOpen={onOpen}
+        titleHeadingLevel="h2"
+        coverAction={<button onClick={onCover}>Set cover</button>}
+      />,
+    )
+    const open = screen.getByRole('button', { name: `Open Board: ${BOARD_FIXTURE.name}` })
+    const cover = screen.getByRole('button', { name: 'Set cover' })
+    // Not nested inside the action area: no interactive-in-interactive.
+    expect(open).not.toContainElement(cover)
+    fireEvent.click(cover)
+    expect(onCover).toHaveBeenCalled()
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { level: 2, name: BOARD_FIXTURE.name })).toBeInTheDocument()
+    await waitFor(() => expect(api.fetchMarkers).toHaveBeenCalled())
+  })
 })

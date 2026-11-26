@@ -288,7 +288,7 @@ describe('BoardsPage', () => {
     const row = screen.getByRole('region', { name: 'Boards' })
     const chips = within(row).getAllByRole('group')
     expect(Array.from(row.children).slice(1)).toEqual(chips)
-    expect(chip).toHaveStyle({ flex: '0 0 auto', width: '260px' })
+    expect(chip).toHaveStyle({ flex: '0 0 auto', width: '300px' })
     expect(within(chip).queryByTestId('DragIndicatorIcon')).not.toBeInTheDocument()
     fireEvent.click(
       within(chip).getByRole('button', { name: 'Open Board: Architecture inspiration' }),

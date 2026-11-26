@@ -5,6 +5,7 @@ import CardContent from '@mui/material/CardContent'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import SpaceDashboardOutlined from '@mui/icons-material/SpaceDashboardOutlined'
+import type { ReactNode } from 'react'
 import type { ApiBoardSummary } from '../types'
 import BoardCover from './BoardCover'
 import { CollectionVisibilityChip } from './CollectionCard'
@@ -12,6 +13,11 @@ import { CollectionVisibilityChip } from './CollectionCard'
 export interface BoardCardProps {
   board: ApiBoardSummary
   onOpen: (board: ApiBoardSummary) => void
+  /** Overlay control on the cover (e.g. My Boards' "Set cover image"), kept outside the
+   *  action area so it isn't an interactive element nested in a button. */
+  coverAction?: ReactNode
+  /** Heading level that fits the surrounding page (h2 under the Boards page h1). */
+  titleHeadingLevel?: 'h2' | 'h3'
 }
 
 /**
@@ -20,10 +26,16 @@ export interface BoardCardProps {
  * face is a `CardActionArea`, so it gets the same ripple and hover/focus
  * highlight as category cards — there is no persistent selected state.
  */
-export default function BoardCard({ board, onOpen }: BoardCardProps) {
+export default function BoardCard({
+  board,
+  onOpen,
+  coverAction,
+  titleHeadingLevel = 'h3',
+}: BoardCardProps) {
   const markerCount = `${board.marker_count} ${board.marker_count === 1 ? 'Marker' : 'Markers'}`
   return (
     <Card data-testid="board-card" elevation={2} sx={{ height: '100%', position: 'relative' }}>
+      {coverAction}
       <CardActionArea
         onClick={() => onOpen(board)}
         aria-label={`Open Board: ${board.name}`}
@@ -53,7 +65,7 @@ export default function BoardCard({ board, onOpen }: BoardCardProps) {
             </Box>
             <Tooltip title={board.name}>
               <Typography
-                component="h3"
+                component={titleHeadingLevel}
                 variant="h6"
                 sx={{
                   color: 'primary.main',

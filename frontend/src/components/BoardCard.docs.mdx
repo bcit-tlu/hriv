@@ -12,7 +12,7 @@ import * as BoardCardStories from './BoardCard.stories'
 
 ## When to use
 
-Use `BoardCard` wherever Boards are browsed as a grid of cards (#1978). Clicking anywhere on the
+Use `BoardCard` for Board tiles — the My Boards row and the All Boards grid (#1978). Clicking anywhere on the
 card calls `onOpen(board)`.
 
 ## Interactive example
@@ -30,5 +30,9 @@ card calls `onOpen(board)`.
   category folder icon. The scope chip is the shared `CollectionVisibilityChip`.
 - The whole face is a `CardActionArea`, so the card gets MUI's ripple on press and the
   hover/focus highlight category cards use. There is no border and no persistent selected state.
+- `coverAction` places an overlay control on the cover — My Boards passes its **Set cover image**
+  button — outside the action area, so it isn't an interactive element nested in a button.
+- `titleHeadingLevel` (default `h3`) keeps the heading order valid: My Boards uses `h2` under the
+  page's `h1`; All Boards keeps `h3` under the dialog title.
 
 <Stories />
