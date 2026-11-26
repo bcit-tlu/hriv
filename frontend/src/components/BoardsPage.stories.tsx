@@ -499,3 +499,45 @@ export const SaveToBoard: Story = {
     await waitFor(() => expect(handle).toHaveStyle({ opacity: '1' }))
   },
 }
+// #1978: the page's Board cards sit behind an open Board. Their `save:` drop
+// areas must not catch a member drag meant as a reorder inside that Board.
+export const ReorderInsideOpenBoard: Story = {
+  args: { initialBoardId: 1 },
+  play: async ({ canvasElement }) => {
+    const user = userEvent.setup()
+    const body = within(canvasElement.ownerDocument.body)
+    const dialog = await body.findByRole('dialog', { name: 'Architecture inspiration Board' })
+    await waitFor(() => expect(dialog).toBeVisible())
+    const card = (title: string) =>
+      within(dialog)
+        .getByRole('button', { name: `Open Marker: ${title}` })
+        .closest('[data-testid="marker-card"]')!.parentElement!
+    await within(dialog).findByRole('button', { name: 'Open Marker: Light through glass' })
+    const handle = card('Light through glass')
+    const target = card('Stone columns')
+    const behind = body.getByRole('region', { name: 'Save to Next studio project', hidden: true })
+    const t = target.getBoundingClientRect()
+    const b = behind.getBoundingClientRect()
+    const end = { clientX: t.x + t.width / 2, clientY: t.y + t.height / 4 }
+    // The drop point really is over a page Board card behind the dialog.
+    await expect(end.clientY).toBeLessThan(b.bottom)
+    await expect(end.clientX).toBeGreaterThan(b.left)
+    await expect(end.clientX).toBeLessThan(b.right)
+    const s = handle.getBoundingClientRect()
+    const start = { clientX: s.x + s.width / 2, clientY: s.y + s.height / 2 }
+    await user.pointer({ keys: '[MouseLeft>]', target: handle, coords: start })
+    await user.pointer({ target: handle, coords: { ...start, clientX: start.clientX + 12 } })
+    await waitFor(() => expect(handle).toHaveStyle({ opacity: '0.5' }))
+    await user.pointer({ target, coords: { ...end, clientY: end.clientY + 20 } })
+    await user.pointer({ target, coords: end })
+    await user.pointer({ keys: '[/MouseLeft]', target, coords: end })
+    await waitFor(() =>
+      expect(writes.mock.calls.map((call) => call[0])).toContain('/api/boards/1/markers/order'),
+    )
+    await expect(
+      writes.mock.calls.some((call) => String(call[0]).startsWith('/api/markers/')),
+    ).toBe(false)
+    await waitFor(() => expect(body.getByText('Order saved')).toBeVisible())
+    await waitFor(() => expect(card('Light through glass')).toHaveStyle({ opacity: '1' }))
+  },
+}

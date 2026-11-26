@@ -314,6 +314,11 @@ their surfaces for dragging without a separate grip icon. Clicking still opens t
   Since #1978 each chip is a 300px `BoardCard` (CategoryTile/CollectionCard
   style) and its `save:` `DropArea` fills the row height, so drop targets are
   larger; the ids, types, collision priorities and sensors are unchanged.
+  Because the taller cards now sit behind the Board dialog's first row of
+  members, the `save:` drop areas are disabled (`useDroppable({ disabled })`)
+  while a Board is open, so a member drag inside the dialog always reorders
+  instead of saving to a hidden Board. The `ReorderInsideOpenBoard` story
+  drops over a covered `save:` area and checks the reorder write.
 - `board-member` / `item:{id}`: members sort in one flat Board group. The
   request contains every visible member exactly once, leaving hidden members to
   the backend.

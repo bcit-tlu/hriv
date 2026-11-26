@@ -282,12 +282,15 @@ function DropArea({
   label,
   enabled,
   blocked,
+  disabled = false,
   children,
 }: {
   id: string
   label: string
   enabled: boolean
   blocked?: boolean
+  /** Unregisters the drop receiver, e.g. while the Board dialog covers the row. */
+  disabled?: boolean
   children: ReactNode
 }) {
   const { ref, isDropTarget } = useDroppable({
@@ -295,6 +298,7 @@ function DropArea({
     type: 'board-member-bin',
     accept: 'board-member',
     collisionPriority: CollisionPriority.High,
+    disabled,
   })
   const active = enabled && isDropTarget
   const denied = blocked === true && isDropTarget
@@ -1821,6 +1825,9 @@ export default function BoardsPage({
                   !activeItem.board_ids.includes(row.id)
                 }
                 blocked={!!activeItem?.board_ids.includes(row.id)}
+                // Hidden behind an open Board, the (tall) Board cards would otherwise
+                // catch member drags meant as reorders inside that Board.
+                disabled={boardId != null}
               >
                 <BoardCard
                   board={row}
