@@ -273,7 +273,8 @@ export default function AllBoardsDialog({
                 startIcon={<ViewColumn fontSize="small" />}
                 aria-hidden={view !== 'table'}
                 tabIndex={view === 'table' ? undefined : -1}
-                sx={view === 'table' ? undefined : { visibility: 'hidden' }}
+                // nowrap: the wrapping filters would otherwise squeeze it onto two lines.
+                sx={{ whiteSpace: 'nowrap', ...(view !== 'table' && { visibility: 'hidden' }) }}
                 onClick={() => setColumnDialogOpen(true)}
               >
                 Choose columns
