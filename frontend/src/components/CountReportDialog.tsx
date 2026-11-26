@@ -129,6 +129,8 @@ function OutlineGroup({
           ? (e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
+                // A held key would remove each newly focused outline in turn.
+                if (e.repeat) return
                 // The removed outline unmounts (#1977), so hand keyboard focus
                 // to a neighbouring outline — or the drawing area if none is left.
                 const outline = e.currentTarget
