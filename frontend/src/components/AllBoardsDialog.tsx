@@ -23,8 +23,6 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Typography,
-  useMediaQuery,
-  useTheme,
 } from '@mui/material'
 import TableRows from '@mui/icons-material/TableRows'
 import ViewColumn from '@mui/icons-material/ViewColumn'
@@ -90,8 +88,6 @@ export default function AllBoardsDialog({
   currentUser,
   onOpenBoard,
 }: AllBoardsDialogProps) {
-  const theme = useTheme()
-  const mobile = useMediaQuery(theme.breakpoints.down('sm'))
   const [view, setView] = useState<'cards' | 'table'>('cards')
   const [query, setQuery] = useState('')
   const [scopes, setScopes] = useState<BoardVisibility[]>([])
@@ -268,6 +264,8 @@ export default function AllBoardsDialog({
         <Box sx={{ px: 3 }}>
           <FilterBar
             ariaLabel="Filter All Boards"
+            // The extra Show: filters don't fit one row in the dialog.
+            wrap
             actions={
               // Kept in every view so the bar's height doesn't jump (BoardsPage convention).
               <Button
@@ -281,11 +279,11 @@ export default function AllBoardsDialog({
                 Choose columns
               </Button>
             }
-            clearAction={!mobile && filtered ? clearButton : undefined}
-            summaryActions={mobile && filtered ? clearButton : undefined}
             summary={
               filtered ? (
-                <Stack direction="row" gap={1} flexWrap="wrap">
+                // Clear filters sits right after the chips it clears; the wrapped
+                // filter row is too wide to keep it beside the controls.
+                <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
                   {query && (
                     <Chip size="small" label={`Title: ${query}`} onDelete={() => setQuery('')} />
                   )}
@@ -319,6 +317,7 @@ export default function AllBoardsDialog({
                       onDelete={() => setShow(show.filter((s) => s !== value))}
                     />
                   ))}
+                  {clearButton}
                 </Stack>
               ) : undefined
             }
