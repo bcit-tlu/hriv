@@ -450,7 +450,15 @@ export default function AllBoardsDialog({
                         hover
                         tabIndex={0}
                         aria-label={`Open Board: ${row.name}`}
-                        sx={{ cursor: 'pointer' }}
+                        sx={{
+                          cursor: 'pointer',
+                          // MUI's TableRow sets outline: 0, so draw the keyboard focus ring.
+                          '&:focus-visible': {
+                            outline: '2px solid',
+                            outlineColor: 'primary.main',
+                            outlineOffset: '-2px',
+                          },
+                        }}
                         onClick={() => openBoard(row)}
                         onKeyDown={(event) => {
                           if (
