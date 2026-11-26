@@ -1443,14 +1443,16 @@ selection MouseTracker ignores their presses.
   header exactly, with the Cards/Table toggle in the title row immediately left
   of All Boards and the Filter by bar rendered under the title like Manage
   Images. The Boards & Markers navigation/tab label is unchanged.
-- One short horizontally scrolling owned-Board row begins with New Board (a
-  compact ~136px tile split evenly between its icon block and a regular-weight
-  name). Elevated tiles fixed at 260px (matching Images, Collections and
-  Categories) carry a thick 2px accent-blue border (#4A78A7 light / #2196F3
-  dark, the Marker blue), a flush-left square cover/placeholder, a larger
-  single-line h6 name in the Image-tile title colour that truncates with an
-  ellipsis, and a metadata row showing the Marker count left-aligned with
-  the shared scope pill right-aligned; the row hugs the marker grid closely
+- One horizontally scrolling owned-Board row begins with New Board (a compact
+  outlined primary button that stretches to the row height). Board tiles are
+  300px `BoardCard`s in the CategoryTile/CollectionCard style (#1978): a
+  full-width 140px cover (pinned cover, else member thumbnail, else the filled
+  Boards icon on brand red), the outlined Boards icon beside a brand-red h6
+  title clamped to two lines (an h2 under the page h1), the Marker count and
+  the shared scope pill. **Given** a Board card, **Then** it has no border and
+  no selected state — opening a Board does not outline its card; clicking plays
+  the category card's ripple, with the same hover/focus highlight. Editable
+  cards keep Set cover image on the cover; the row hugs the marker grid closely
   below.
   Editable chips reorder by surface drag without grip icons; clicking still opens a Board. Read-only
   owned/program Boards are discoverable through the All Boards dialog's Public & Shared
@@ -1459,17 +1461,19 @@ selection MouseTracker ignores their presses.
 - All Boards is an outlined, right-aligned button in the title row for admins,
   instructors and staff; students never see it. Its large dialog lists every
   API-returned Board, including others' private and already-chipped Boards.
-  A horizontal row of filter chips sits directly beneath the dialog title, above
-  the content: Public & Shared keeps API-returned public,
+  It uses the page's Filter by bar (Title, Scope, Owner/Mine, Favourites) plus
+  two Show chips: Public & Shared keeps API-returned public,
   program/group-restricted or co-owned/program-member Boards outside the chip
   row (other users' private Boards stay excluded for every role), and Instructor
   Boards keeps program-owned Boards or Boards owned by admin/instructor users.
-  Chips toggle independently and combine; no active chip restores the full
-  list, a filter that excludes everything reports “No matching Boards.”, and an
-  empty list reports “No Boards available.”.
-  Tiles carry title, shared scope pill and Collections-style Managed by
-  owner/program names (No owner for orphans). The list is independent of overview filters;
-  choosing a tile closes discovery and opens the existing Board dialog. UX filtering
+  Filters toggle independently, combine and reset on each open; none active
+  restores the full list, a filter that excludes everything reports “No matching
+  Boards.”, and an empty list reports “No Boards available.”. A Cards/Table toggle
+  sits in the dialog title row (#1978): Cards shows the same `BoardCard`s in a
+  300px grid; Table mirrors My Markers with sortable Name, Markers, Scope, Owners
+  (owner/program names, No owner for orphans), Created and Updated columns, Choose
+  columns and paging. The list is independent of overview filters; choosing a card
+  or table name closes discovery and opens the existing Board dialog. UX filtering
   does not change backend visibility or establish a security boundary.
 - There is no My Markers heading or overview Multi-select; Marker selection
   lives in the Board dialog's header toolbar (no Saved views heading or divider),

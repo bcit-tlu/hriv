@@ -539,10 +539,14 @@ Boards uses `Tabs value={false}`. Selecting a Board writes
 The same flag gates direct links and all page requests.
 Frontend telemetry preserves `boards` in both page and from-page dimensions.
 
-The overview has one short, horizontally scrolling row of outlined, rounded Board chips,
-starting with **New Board**. Owned Boards share that row, with a flush-left square
-Board cover (or a renewing member thumbnail, then the themed placeholder), a
-single-line name and the shared scope pill below it, on a taller tile. The
+The overview has one horizontally scrolling row of Board cards, starting with
+**New Board**. Owned Boards share that row as 300px `BoardCard`s in the
+CategoryTile/CollectionCard style (#1978): a full-width 140px cover (the pinned
+cover, else a renewing member thumbnail, else the filled Boards icon on brand red),
+the outlined Boards icon beside a brand-red title clamped to two lines, the Marker
+count and the shared scope pill. Cards have no border and no selected state; like
+category cards, the whole face is a `CardActionArea` with MUI's click ripple and
+hover/focus highlight. Editable Boards keep **Set cover image** on the cover. The
 **My Boards** heading shares Collections' unpadded flex header.
 Admins, instructors and staff have an outlined **All Boards** button at its
 right, above the Board row; students never see All Boards.
@@ -571,18 +575,24 @@ Boards (navigable), Favourite and Actions columns. View choice
 is local to the page mount and starts on Cards.
 **All Boards** opens a large dialog listing every Board
 returned by the backend for admins, instructors and staff, including others' private Boards
-and editable owned Boards already in the chip row. A horizontal row of filter
-chips sits directly beneath the dialog title: **Public & Shared** narrows to
+and editable owned Boards already in the chip row (`AllBoardsDialog`, #1978). It
+uses the page's filter bar — Title, Scope, Owner/Mine and Favourites — plus two
+**Show:** chips: **Public & Shared** narrows to
 server-authorized Boards outside the chip row that are public, restricted by
 program/group, or shared with the current user through co-ownership or program
 ownership/membership (other users' private Boards stay excluded for every role),
 and **Instructor Boards** narrows to program-owned Boards or Boards owned by
-admin/instructor users. Chips toggle independently and combine; with none
-active the complete list shows, and a filter that excludes everything reports
-“No matching Boards.” while an empty list reports “No Boards available.”. The dialog renders clickable
-tiles with title, the shared scope pill and the Collections-style **Managed by** owner
-line (program names, co-owner names, or No owner), using the existing API owner data.
-Selecting a tile closes the list and opens the existing
+admin/instructor users. Filters toggle independently and combine, show as removable
+chips with Clear filters, and reset each time the dialog opens; with none active
+the complete list shows, and a filter that excludes everything reports
+“No matching Boards.” while an empty list reports “No Boards available.”. A
+Cards/Table toggle sits in the title row. **Cards** renders the same `BoardCard`s
+as the row, in a 300px wrapping grid. **Table** mirrors the My Markers table:
+sortable Name (opens the Board), Markers, Scope, Owners (program names, co-owner
+names, or No owner — `boardOwnersText`), Created and Updated columns, with
+Created hidden by default, a per-user **Choose columns** chooser and rows-per-page
+preference, and paging.
+Selecting a card or name closes the list and opens the existing
 Board dialog; overview filters do not narrow this discovery list. Program-owned
 Boards retain the existing program-membership ownership rules. Backend visibility
 remains authoritative; this overview separation is not an authorization boundary.
