@@ -250,8 +250,9 @@ export const PublicSharedBoards: Story = {
         within(dialog).getByRole('button', { name: 'Open Board: Shared discoveries' }),
       ).toBeVisible(),
     )
-    await expect(within(dialog).getByText('Managed by Morgan')).toBeVisible()
-    await expect(within(dialog).getByText('Managed by program Engineering')).toBeVisible()
+    // Category/Collection-style Board cards (#1978): count + scope chip, no owner line.
+    await expect(within(dialog).getByTestId('all-boards-grid')).toBeVisible()
+    await expect(within(dialog).queryByText(/^Managed by/)).not.toBeInTheDocument()
     await expect(
       within(dialog).queryByRole('button', { name: 'Open Board: Morgan’s private studies' }),
     ).not.toBeInTheDocument()
@@ -292,7 +293,9 @@ export const AllBoards: Story = {
     await expect(within(dialog).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(
       BOARD_DISCOVERY_FIXTURES.length,
     )
-    await expect(within(dialog).getByText('Managed by program Engineering')).toBeVisible()
+    await expect(within(dialog).getAllByTestId('board-card')).toHaveLength(
+      BOARD_DISCOVERY_FIXTURES.length,
+    )
   },
 }
 export const Empty: Story = { args: { state: 'empty' } }

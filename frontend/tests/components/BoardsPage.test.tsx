@@ -1188,7 +1188,7 @@ describe('BoardsPage', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
   it.each(['admin', 'instructor', 'staff', 'student'] as const)(
-    'scopes discovery for %s while rendering scope and manager metadata',
+    'scopes discovery for %s while rendering Board cards with scope metadata',
     async (role) => {
       const privateBoard = {
         ...BOARDS_FIXTURES[2],
@@ -1242,7 +1242,9 @@ describe('BoardsPage', () => {
         name: 'Open Board: Shared discoveries',
       })
       expect(within(publicTile).getByRole('heading', { name: 'Shared discoveries' })).toBeVisible()
-      expect(within(publicTile).getByText('Managed by Morgan')).toBeVisible()
+      // Category/Collection-style card (#1978): count + scope chip, no owner line.
+      expect(within(publicTile).getByText(/^\d+ Markers?$/)).toBeVisible()
+      expect(within(publicTile).queryByText(/^Managed by/)).not.toBeInTheDocument()
       expect(within(publicTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
         'Public',
       )
@@ -1252,9 +1254,6 @@ describe('BoardsPage', () => {
       expect(within(restrictedTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
         'Restricted',
       )
-      expect(within(all).getByText('Managed by program Design')).toBeVisible()
-      expect(within(all).getByText('No owner')).toBeVisible()
-      expect(within(all).getByText('Managed by Morgan, Alex')).toBeVisible()
       // Chip filters sit under the title and narrow the grid in place.
       fireEvent.click(within(all).getByRole('button', { name: 'Public & Shared' }))
       expect(tiles()).toHaveLength(5)
@@ -1288,7 +1287,6 @@ describe('BoardsPage', () => {
       expect(within(privateTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
         'Private',
       )
-      expect(within(privateTile).getByText('Managed by Morgan')).toBeVisible()
       fireEvent.click(privateTile)
       expect(view.onSelectBoard).toHaveBeenCalledWith(privateBoard.id)
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())

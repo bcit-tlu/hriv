@@ -123,6 +123,7 @@ import BoardEditDialog from './BoardEditDialog'
 import BoardOwnersDialog from './BoardOwnersDialog'
 import MarkerFormDialog from './MarkerFormDialog'
 import RenewingThumbnail from './RenewingThumbnail'
+import BoardCard from './BoardCard'
 import BoardCover from './BoardCover'
 import BoardCoverPickerModal from './BoardCoverPickerModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
@@ -1957,47 +1958,19 @@ export default function BoardsPage({
             ) : data.error ? (
               <Alert severity="error">{data.error}</Alert>
             ) : discoveryBoards.length ? (
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
-                  gap: 2,
-                }}
-              >
-                {discoveryBoards.map((row) => {
-                  return (
-                    <Card key={row.id} variant="outlined">
-                      <CardActionArea
-                        onClick={() => {
-                          setDiscovery(null)
-                          onSelectBoard(row.id)
-                        }}
-                        aria-label={`Open Board: ${row.name}`}
-                        sx={{ height: '100%' }}
-                      >
-                        <CardContent>
-                          <Typography
-                            component="h3"
-                            variant="body2"
-                            fontWeight={600}
-                            sx={{ overflowWrap: 'anywhere' }}
-                          >
-                            {row.name}
-                          </Typography>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            component="p"
-                            sx={{ mb: 1, overflowWrap: 'anywhere' }}
-                          >
-                            {boardManagerText(row)}
-                          </Typography>
-                          <CollectionVisibilityChip visibility={row.visibility} />
-                        </CardContent>
-                      </CardActionArea>
-                    </Card>
-                  )
-                })}
+              // Category/Collection-style cards at the Collections grid's 300px (#1978).
+              <Box data-testid="all-boards-grid" sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                {discoveryBoards.map((row) => (
+                  <Box key={row.id} sx={{ width: 300, maxWidth: '100%' }}>
+                    <BoardCard
+                      board={row}
+                      onOpen={(board) => {
+                        setDiscovery(null)
+                        onSelectBoard(board.id)
+                      }}
+                    />
+                  </Box>
+                ))}
               </Box>
             ) : (
               <Typography color="text.secondary">
