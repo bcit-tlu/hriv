@@ -441,10 +441,8 @@ waiting. The pending wait ceiling stays below the
 coordinator's `job_timeout` as an evidence-gated last resort, so it can record a
 child whose status has remained unknown without failing healthy queued work.
 The processing backstop is above the child's `job_timeout` because its clock
-starts when processing is first observed. Worker-hosted coordinators normally
-rely on the 900-second no-progress stale check because arq's coordinator
-timeout is reached first; new API-hosted coordination retains the processing
-backstop. Both paths use the latch before failing the row. This guarantee
+starts when processing is first observed. The API-hosted coordinator keeps the
+processing backstop and writes the latch before failing the row. This guarantee
 relies on the pinned arq version's past-dated abort-marker behavior and is
 covered by
 `test_abort_latch_survives_pruning_and_is_consumed_before_job_start` in
@@ -479,7 +477,10 @@ empty. A non-empty or unhealthy queue leaves pending rows untouched so a valid
 queued job can still self-heal. This handles genuinely lost jobs without
 failing healthy queued work.
 
-`reconcile_stale_bulk_import_jobs()` also runs as part of that same sweep. It marks a
+`reconcile_stale_bulk_import_jobs()` also runs as part of that same sweep. It
+only handles legacy rows created before durable imports (#1173), which have no
+`job_id` link to a supervisor `Job`; durable imports are skipped here because
+the API coordinator sweep resumes them (see below). It marks such a
 `pending` or `processing` bulk-import row as terminal only when its
 `updated_at` is older than the configured stale threshold and it has no live
 coordinator registration: incomplete rows become `failed`, while rows whose
@@ -490,10 +491,8 @@ bound alone rather than leaving abandoned rows permanently in `processing`;
 the default bound is the coordinator job timeout. API-hosted local fallbacks
 register in the general coordinator liveness set and therefore use the same
 conservative abandoned-row path. Existing per-file `errors` and
-`failed_count` accounting is preserved. This finalises coordinator rows left
-behind by a cancelled or killed arq job; the coordinator uses
-`max_tries=1` because retrying its non-idempotent batch would duplicate
-`SourceImage` rows.
+`failed_count` accounting is preserved. This finalises legacy rows whose
+coordinator stopped before it could record a terminal state.
 
 The same sweep reconciles default-off durable tile rebuild jobs independently.
 It reclaims expired `JobItem` leases, clears their execution reservation, and
@@ -502,18 +501,19 @@ logged without preventing the existing source-image, bulk-import, and
 `AdminTask` recovery steps. A separate worker cron cadence supplies a more
 frequent backstop for missed rebuild pump triggers.
 
-Because the coordinator now lives entirely in the API process
-(`BackgroundTasks`, not arq), its in-memory `file_entries` manifest does not
-survive an API restart — an interrupted import is not resumed, only
-finalized to a terminal state as described above. To avoid leaking staged
-files, `bulk_import_images` persists the same manifest as
-`BulkImportJob.file_manifest` before scheduling the coordinator. When
-`reconcile_stale_bulk_import_jobs()` finalizes a stale job, it also removes
-any manifest-listed staged file that never became a `SourceImage` row (via
-`_cleanup_orphaned_bulk_import_files`), so an interrupted import doesn't hold
-disk space indefinitely. This does not resume in-flight processing; that
-would require the durable job/queue model tracked for a future iteration
-(see the `Job`/`JobItem` foundation work).
+The coordinator lives entirely in the API process (`BackgroundTasks`, not
+arq). A durable import (#1173) survives an API restart: its `JobItem` snapshot
+and supervisor lease are in PostgreSQL, and every API replica runs
+`bulk_import_coordinator_sweep_loop()` (every
+`BULK_IMPORT_COORDINATOR_SWEEP_SECONDS`), whose
+`sweep_bulk_import_coordinators()` pass re-claims an expired lease and resumes
+the import from its remaining items. `bulk_import_images` also persists the
+staged-file list as `BulkImportJob.file_manifest` before scheduling the
+coordinator. When `reconcile_stale_bulk_import_jobs()` finalizes a stale
+legacy row, it removes any manifest-listed staged file that never became a
+`SourceImage` row (via `_cleanup_orphaned_bulk_import_files`), so an
+interrupted import doesn't hold disk space indefinitely. See
+[jobs.md](jobs.md) for the `Job`/`JobItem` model.
 
 ## Surfacing failures after a reload
 
