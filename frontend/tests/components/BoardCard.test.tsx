@@ -36,12 +36,12 @@ describe('BoardCard (#1978)', () => {
     await waitFor(() => expect(api.fetchMarkers).toHaveBeenCalled())
   })
 
-  it('shows the pinned cover full width at the card cover height', async () => {
+  it('shows the summary cover full width without fetching members', () => {
     const { container } = render(
       <BoardCard board={{ ...BOARD_FIXTURE, cover_thumb: '/thumb/cover.jpg' }} onOpen={vi.fn()} />,
     )
     expect(container.querySelector('img')).toHaveAttribute('src', '/thumb/cover.jpg')
-    await waitFor(() => expect(api.fetchMarkers).toHaveBeenCalled())
+    expect(api.fetchMarkers).not.toHaveBeenCalled()
   })
 
   it('falls back to the filled Boards icon on a brand cover when there is no cover', () => {

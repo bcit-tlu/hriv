@@ -22,10 +22,11 @@ export default function BoardCover({
 }) {
   const [state, setState] = useState<{ id: number; items: ApiMarker[] } | null>(null)
   const key = `${board.id}:${board.version}`
+  // The summary already carries the pinned/first-member thumbnail; only look
+  // further when it has none and there are members to look through.
+  const needsLookup = !board.cover_blank && !board.cover_thumb && board.marker_count > 0
   useEffect(() => {
-    // An explicit "no cover" pick renders the placeholder — no member
-    // fetch needed.
-    if (board.cover_blank) return
+    if (!needsLookup) return
     let active = true
     void fetchMarkers({ board_id: board.id, limit: 4 }).then(
       (items) => {
@@ -41,9 +42,9 @@ export default function BoardCover({
     return () => {
       active = false
     }
-  }, [board.id, board.cover_blank, key])
+  }, [board.id, needsLookup, key])
   const item =
-    !board.cover_blank && state?.id === board.id
+    needsLookup && state?.id === board.id
       ? state.items.find((item) => item.thumb != null)
       : undefined
   return (

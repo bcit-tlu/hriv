@@ -19,12 +19,36 @@ describe('BoardCover', () => {
     vi.mocked(api.fetchMarkers).mockReset().mockResolvedValue([])
   })
 
-  it('shows the pinned cover', async () => {
+  it('shows the summary cover without fetching members', () => {
     const { container } = render(
       <BoardCover board={{ ...BOARD_FIXTURE, cover_thumb: '/thumb/cover.jpg' }} />,
     )
     expect(container.querySelector('img')).toHaveAttribute('src', '/thumb/cover.jpg')
-    await waitFor(() => expect(api.fetchMarkers).toHaveBeenCalled())
+    // The summary already carries the pinned/first-member thumbnail (#1978 review).
+    expect(api.fetchMarkers).not.toHaveBeenCalled()
+  })
+
+  it('renders the placeholder without fetching for a Board with no Markers', () => {
+    const { container } = render(<BoardCover board={{ ...BOARD_FIXTURE, marker_count: 0 }} />)
+    expect(placeholder(container)).not.toBeNull()
+    expect(api.fetchMarkers).not.toHaveBeenCalled()
+  })
+
+  it('drops a looked-up thumbnail once the Board has no Markers', async () => {
+    vi.mocked(api.fetchMarkers).mockResolvedValue([
+      { ...MARKER_FIXTURE, id: 9, thumb: '/thumb/member.jpg' },
+    ])
+    const { container, rerender } = render(<BoardCover board={BOARD_FIXTURE} />)
+    await waitFor(() =>
+      expect(container.querySelector('img')).toHaveAttribute('src', '/thumb/member.jpg'),
+    )
+    rerender(
+      <BoardCover
+        board={{ ...BOARD_FIXTURE, marker_count: 0, version: BOARD_FIXTURE.version + 1 }}
+      />,
+    )
+    expect(container.querySelector('img')).toBeNull()
+    expect(placeholder(container)).not.toBeNull()
   })
 
   it('falls back to the first member Marker with a thumbnail', async () => {

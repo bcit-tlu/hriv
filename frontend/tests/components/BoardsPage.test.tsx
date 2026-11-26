@@ -627,7 +627,9 @@ describe('BoardsPage', () => {
     expect(loading).toBe(false)
     expect(screen.getByRole('button', { name: 'Open Marker: Rose window' })).toBe(card)
     expect(api.fetchBoards).toHaveBeenCalledTimes(2)
-    expect(api.fetchMarkers).toHaveBeenCalledTimes(4)
+    // One fewer than before #1978's review: the empty Board's cover no longer
+    // fetches members.
+    expect(api.fetchMarkers).toHaveBeenCalledTimes(3)
   })
   it('does not reload or remount the collage for Marker editing, Board creation or Board navigation', async () => {
     const view = await setup()
@@ -638,8 +640,9 @@ describe('BoardsPage', () => {
     expect(card.isConnected).toBe(true)
     expect(cover.isConnected).toBe(true)
     expect(api.fetchBoards).toHaveBeenCalledTimes(2) // overview and the form's Board picker
-    // Overview, two owned Board covers and the form's Saved to cover.
-    expect(api.fetchMarkers).toHaveBeenCalledTimes(4)
+    // Overview, the owned Board cover with Markers and the form's Saved to cover;
+    // the empty Board's cover skips the member lookup (#1978 review).
+    expect(api.fetchMarkers).toHaveBeenCalledTimes(3)
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     fireEvent.click(screen.getByRole('button', { name: 'New Board' }))
     expect(card.isConnected).toBe(true)
@@ -665,7 +668,7 @@ describe('BoardsPage', () => {
     expect(cover.isConnected).toBe(true)
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
     expect(api.fetchBoards).toHaveBeenCalledTimes(2)
-    expect(api.fetchMarkers).toHaveBeenCalledTimes(4)
+    expect(api.fetchMarkers).toHaveBeenCalledTimes(3)
   })
   it('filters both surfaces by title and restores them with Clear filters', async () => {
     vi.mocked(api.fetchBoards).mockResolvedValue([
