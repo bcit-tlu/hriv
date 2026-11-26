@@ -298,6 +298,24 @@ export const AllBoards: Story = {
     )
   },
 }
+// #1978: All Boards' Table view — sortable columns like My Markers.
+export const AllBoardsTable: Story = {
+  args: { role: 'admin', discoveryFixtures: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'All Boards' }))
+    const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
+      name: 'All Boards',
+    })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Table view' }))
+    const table = await within(dialog).findByRole('table', { name: 'All Boards' })
+    await waitFor(() => expect(table).toBeVisible())
+    await expect(within(table).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(
+      BOARD_DISCOVERY_FIXTURES.length,
+    )
+    await expect(within(dialog).getByRole('button', { name: 'Choose columns' })).toBeVisible()
+  },
+}
 export const Empty: Story = { args: { state: 'empty' } }
 export const ErrorState: Story = { args: { state: 'error' } }
 

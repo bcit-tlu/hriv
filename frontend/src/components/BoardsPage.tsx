@@ -123,7 +123,7 @@ import BoardEditDialog from './BoardEditDialog'
 import BoardOwnersDialog from './BoardOwnersDialog'
 import MarkerFormDialog from './MarkerFormDialog'
 import RenewingThumbnail from './RenewingThumbnail'
-import BoardCard from './BoardCard'
+import AllBoardsDialog from './AllBoardsDialog'
 import BoardCover from './BoardCover'
 import BoardCoverPickerModal from './BoardCoverPickerModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
@@ -661,7 +661,8 @@ export default function BoardsPage({
   const [scopes, setScopes] = useState<string[]>([])
   const [owner, setOwner] = useState('any')
   const [discovery, setDiscovery] = useState<'all' | null>(null)
-  const [discoveryFilters, setDiscoveryFilters] = useState<('shared' | 'instructor')[]>([])
+  // Bumped on each open so All Boards starts with fresh filters, as before.
+  const [discoveryKey, setDiscoveryKey] = useState(0)
   const [notice, setNotice] = useState<{
     message: string
     severity: 'success' | 'info' | 'warning'
@@ -711,21 +712,8 @@ export default function BoardsPage({
     setConflict(false)
   }
   const own = data.boards.filter((row) => ownsBoard(row, currentUser))
-  const isSharedBoard = (row: ApiBoardSummary) =>
-    (!ownsBoard(row, currentUser) || !row.permissions.can_edit) &&
-    (row.visibility !== 'private' || ownsBoard(row, currentUser))
-  const isInstructorBoard = (row: ApiBoardSummary) =>
-    row.owner_program_id != null ||
-    row.owners.some((owner) => owner.role === 'admin' || owner.role === 'instructor')
   const canBrowseAllBoards =
     currentUser != null && ['admin', 'instructor', 'staff'].includes(currentUser.role)
-  const discoveryBoards = data.boards.filter(
-    (row) =>
-      discoveryFilters.length === 0 ||
-      discoveryFilters.some((filter) =>
-        filter === 'shared' ? isSharedBoard(row) : isInstructorBoard(row),
-      ),
-  )
   const reorderableBoards = own.filter((row) => row.permissions.can_edit)
   const needle = query.trim().toLocaleLowerCase()
   const ownerMatches = (item: ApiBoardSummary | ApiMarker) =>
@@ -1578,7 +1566,7 @@ export default function BoardsPage({
               variant="contained"
               size="small"
               onClick={() => {
-                setDiscoveryFilters([])
+                setDiscoveryKey((key) => key + 1)
                 setDiscovery('all')
               }}
             >
@@ -1924,66 +1912,17 @@ export default function BoardsPage({
           ))}
         </Box>
 
-        <Dialog
+        <AllBoardsDialog
+          key={discoveryKey}
           open={discovery === 'all' && canBrowseAllBoards}
           onClose={() => setDiscovery(null)}
-          fullWidth
-          maxWidth="lg"
-          aria-labelledby="all-boards-title"
-        >
-          <DialogTitle id="all-boards-title">All Boards</DialogTitle>
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', px: 3, pb: 1 }}>
-            {(['shared', 'instructor'] as const).map((filter) => {
-              const active = discoveryFilters.includes(filter)
-              const toggle = () =>
-                setDiscoveryFilters((current) =>
-                  active ? current.filter((value) => value !== filter) : [...current, filter],
-                )
-              return (
-                <Chip
-                  key={filter}
-                  size="small"
-                  label={filter === 'shared' ? 'Public & Shared' : 'Instructor Boards'}
-                  variant={active ? 'filled' : 'outlined'}
-                  color={active ? 'primary' : 'default'}
-                  aria-pressed={active}
-                  onClick={toggle}
-                />
-              )
-            })}
-          </Box>
-          <DialogContent>
-            {data.loading ? (
-              <CircularProgress aria-label="Loading all Boards" size={24} />
-            ) : data.error ? (
-              <Alert severity="error">{data.error}</Alert>
-            ) : discoveryBoards.length ? (
-              // Category/Collection-style cards at the Collections grid's 300px (#1978).
-              <Box data-testid="all-boards-grid" sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-                {discoveryBoards.map((row) => (
-                  <Box key={row.id} sx={{ width: 300, maxWidth: '100%' }}>
-                    <BoardCard
-                      board={row}
-                      onOpen={(board) => {
-                        setDiscovery(null)
-                        onSelectBoard(board.id)
-                      }}
-                    />
-                  </Box>
-                ))}
-              </Box>
-            ) : (
-              <Typography color="text.secondary">
-                {discoveryFilters.length ? 'No matching Boards.' : 'No Boards available.'}
-              </Typography>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button size="small" onClick={() => setDiscovery(null)}>
-              Close
-            </Button>
-          </DialogActions>
-        </Dialog>
+          boards={data.boards}
+          recent={data.recent}
+          loading={data.loading}
+          error={data.error}
+          currentUser={currentUser}
+          onOpenBoard={onSelectBoard}
+        />
         {data.loading && <CircularProgress aria-label="Loading Boards" size={24} />}
         {!data.loading && (!data.error || data.boards.length > 0 || data.recent.length > 0) && (
           <>

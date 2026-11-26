@@ -9,17 +9,23 @@ export function ownsBoard(board: ApiBoardSummary, user: User | null): boolean {
   )
 }
 
-export function boardManagerText(board: ApiBoardSummary) {
+/** Owner names without the "Managed by" prefix — the All Boards Owners column (#1978). */
+export function boardOwnersText(board: ApiBoardSummary) {
   const owners = board.owners.flatMap((owner) => {
     const mapped = apiCollectionOwnerToOwner(owner)
     return mapped ? [mapped] : []
   })
   const programOwner = owners.find((owner) => owner.kind === 'program')
   return programOwner
-    ? `Managed by program ${programOwner.name}`
+    ? `program ${programOwner.name}`
     : owners.length
-      ? `Managed by ${describeCollectionOwners(owners)}`
-      : 'No owner'
+      ? describeCollectionOwners(owners)
+      : null
+}
+
+export function boardManagerText(board: ApiBoardSummary) {
+  const owners = boardOwnersText(board)
+  return owners ? `Managed by ${owners}` : 'No owner'
 }
 
 export function moveBoardMember(board: ApiBoard, id: number, index: number) {

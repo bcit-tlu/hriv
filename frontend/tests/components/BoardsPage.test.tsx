@@ -1237,6 +1237,11 @@ describe('BoardsPage', () => {
       fireEvent.click(allButton)
       const all = screen.getByRole('dialog', { name: 'All Boards' })
       const tiles = () => within(all).getAllByRole('button', { name: /^Open Board:/ })
+      // The toggle chip, not its removable twin in the active-filter summary.
+      const showChip = (name: string) =>
+        within(all)
+          .getAllByRole('button', { name })
+          .find((el) => el.hasAttribute('aria-pressed')) as HTMLElement
       expect(tiles()).toHaveLength(boards.length)
       const publicTile = within(all).getByRole('button', {
         name: 'Open Board: Shared discoveries',
@@ -1255,7 +1260,7 @@ describe('BoardsPage', () => {
         'Restricted',
       )
       // Chip filters sit under the title and narrow the grid in place.
-      fireEvent.click(within(all).getByRole('button', { name: 'Public & Shared' }))
+      fireEvent.click(showChip('Public & Shared'))
       expect(tiles()).toHaveLength(5)
       expect(
         within(all).queryByRole('button', { name: `Open Board: ${privateBoard.name}` }),
@@ -1263,9 +1268,9 @@ describe('BoardsPage', () => {
       expect(
         within(all).queryByRole('button', { name: `Open Board: ${BOARDS_FIXTURES[0].name}` }),
       ).not.toBeInTheDocument()
-      fireEvent.click(within(all).getByRole('button', { name: 'Public & Shared' }))
+      fireEvent.click(showChip('Public & Shared'))
       expect(tiles()).toHaveLength(boards.length)
-      fireEvent.click(within(all).getByRole('button', { name: 'Instructor Boards' }))
+      fireEvent.click(showChip('Instructor Boards'))
       expect(tiles()).toHaveLength(5)
       expect(
         within(all).queryByRole('button', { name: `Open Board: ${orphanBoard.name}` }),
@@ -1276,10 +1281,10 @@ describe('BoardsPage', () => {
       expect(
         within(all).queryByRole('button', { name: `Open Board: ${privateBoard.name}` }),
       ).toBeInTheDocument()
-      fireEvent.click(within(all).getByRole('button', { name: 'Public & Shared' }))
+      fireEvent.click(showChip('Public & Shared'))
       expect(tiles()).toHaveLength(6)
-      fireEvent.click(within(all).getByRole('button', { name: 'Instructor Boards' }))
-      fireEvent.click(within(all).getByRole('button', { name: 'Public & Shared' }))
+      fireEvent.click(showChip('Instructor Boards'))
+      fireEvent.click(showChip('Public & Shared'))
       expect(tiles()).toHaveLength(boards.length)
       const privateTile = within(all).getByRole('button', {
         name: `Open Board: ${privateBoard.name}`,
