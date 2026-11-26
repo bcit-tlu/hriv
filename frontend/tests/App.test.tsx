@@ -400,6 +400,7 @@ vi.mock('../src/components/AppShell', () => ({
     logout,
     frontendVersion,
     backendVersion,
+    backupVersion,
     onReportIssue,
     collectionsEnabled,
     markersEnabled,
@@ -417,13 +418,14 @@ vi.mock('../src/components/AppShell', () => ({
     logout: () => void
     frontendVersion: string | null
     backendVersion: string | null
+    backupVersion: string | null
     onReportIssue: () => void
     collectionsEnabled: boolean
     markersEnabled?: boolean
   }) => (
     <div data-fill-viewport={fillViewport ? 'true' : undefined}>
       <div>
-        versions: {String(frontendVersion)}/{String(backendVersion)}
+        versions: {String(frontendVersion)}/{String(backendVersion)}/{String(backupVersion)}
       </div>
       <div data-testid="shell-collections-enabled">{String(collectionsEnabled)}</div>
       {markersEnabled && <button onClick={() => onTabChange('boards')}>Shell Boards</button>}
@@ -1962,9 +1964,12 @@ describe('App breadcrumbs', () => {
         canEditContent: role === 'admin' || role === 'instructor',
       }
 
+      // Distinct values, so a missing or swapped version fails the match.
+      vi.mocked(fetchVersions).mockResolvedValue({ backend: '2.0.0', backup: '3.0.0' })
+
       render(<App />)
 
-      expect(await screen.findByText('versions: 1.0.0/1.0.0')).toBeInTheDocument()
+      expect(await screen.findByText('versions: 1.0.0/2.0.0/3.0.0')).toBeInTheDocument()
       expect(vi.mocked(fetchVersions)).toHaveBeenCalledOnce()
       expect(vi.mocked(fetchFrontendVersion)).toHaveBeenCalledOnce()
     },
@@ -1989,7 +1994,7 @@ describe('App breadcrumbs', () => {
   it('passes the same fetched frontend version to the footer/About surfaces and the feedback modal', async () => {
     render(<App />)
 
-    expect(await screen.findByText('versions: 1.0.0/1.0.0')).toBeInTheDocument()
+    expect(await screen.findByText('versions: 1.0.0/1.0.0/1.0.0')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Shell report issue' }))
     expect(await screen.findByText('report issue frontend version: 1.0.0')).toBeInTheDocument()
@@ -2232,14 +2237,14 @@ describe('App shell interactions', () => {
     authState = { ...authState, canEditContent: false }
     render(<App />)
 
-    expect(await screen.findByText('versions: 1.0.0/1.0.0')).toBeInTheDocument()
+    expect(await screen.findByText('versions: 1.0.0/1.0.0/1.0.0')).toBeInTheDocument()
   })
 
   it('clears backend/backup versions when the version fetch fails, but keeps the frontend version', async () => {
     // Seed successful versions first so the null state is attributable to
     // the catch handler rather than the initial render state.
     const { rerender } = render(<App />)
-    expect(await screen.findByText('versions: 1.0.0/1.0.0')).toBeInTheDocument()
+    expect(await screen.findByText('versions: 1.0.0/1.0.0/1.0.0')).toBeInTheDocument()
 
     // A different signed-in user refetches; the failed fetch clears only
     // backend/backup.
@@ -2247,7 +2252,7 @@ describe('App shell interactions', () => {
     authState = { ...authState, currentUser: { ...mockCurrentUser, id: 2 } }
     rerender(<App />)
     await waitFor(() => expect(fetchVersions).toHaveBeenCalledTimes(2))
-    expect(await screen.findByText('versions: 1.0.0/null')).toBeInTheDocument()
+    expect(await screen.findByText('versions: 1.0.0/null/null')).toBeInTheDocument()
   })
 
   it('clears the frontend version when the /version fetch fails, without blocking submission', async () => {
@@ -2255,7 +2260,7 @@ describe('App shell interactions', () => {
     render(<App />)
 
     await waitFor(() => expect(fetchFrontendVersion).toHaveBeenCalledOnce())
-    expect(screen.getByText('versions: null/1.0.0')).toBeInTheDocument()
+    expect(screen.getByText('versions: null/1.0.0/1.0.0')).toBeInTheDocument()
   })
 
   it('renders PeoplePage read-only for staff', () => {

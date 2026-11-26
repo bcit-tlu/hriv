@@ -59,7 +59,7 @@ API for the [password-management validation flow](docs/password-management.md).
 | Manage announcement                                           | Yes   | Yes        | No    | No      |
 | Read announcements (bell, Inbox, reactions)                   | Yes   | Yes        | Yes   | Yes     |
 | Author announcements (Mine, composer)                         | Yes   | Yes        | No    | No      |
-| View component versions (About)                               | Yes   | Yes        | No    | No      |
+| View component versions (About)                               | Yes   | Yes        | Yes   | Yes     |
 | Post release notes / warning announcements                    | Yes   | No         | No    | No      |
 | Post announcements (targeted to own programs/groups)          | Yes   | Yes        | No    | No      |
 | Post `everyone`/`staff`/release/warning announcements         | Yes   | No         | No    | No      |
