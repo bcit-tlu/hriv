@@ -221,8 +221,6 @@ Task types registered on the worker:
 
 - `process_source_image_task` — new upload
 - `replace_image_task` — image replacement
-- `bulk_import_task` — legacy compatibility wrapper for already-queued
-  bulk-import coordinators; new bulk imports use API-hosted coordination
 - `rebuild_tile_pump_task` — fills a durable tile-rebuild job's persisted,
   PostgreSQL-derived execution window
 - `rebuild_tile_item` — reserves and processes one durable source-image item
