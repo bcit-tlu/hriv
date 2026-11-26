@@ -588,10 +588,13 @@ the complete list shows, and a filter that excludes everything reports
 “No matching Boards.” while an empty list reports “No Boards available.”. A
 Cards/Table toggle sits in the title row. **Cards** renders the same `BoardCard`s
 as the row, in a 300px wrapping grid. **Table** mirrors the My Markers table:
-sortable Name (opens the Board), Markers, Scope, Owners (program names, co-owner
+sortable Name, Markers, Scope, Owners (program names, co-owner
 names, or No owner — `boardOwnersText`), Created and Updated columns, with
 Created hidden by default, a per-user **Choose columns** chooser and rows-per-page
-preference, and paging.
+preference, and paging. The name cell is plain text and the whole row opens the
+Board (click, Enter or Space), so it still works with Name hidden. Any filter
+change returns the table to its first page. Covers come from the Board summary;
+`BoardCover` only fetches members when the summary has no thumbnail.
 Selecting a card or name closes the list and opens the existing
 Board dialog; overview filters do not narrow this discovery list. Program-owned
 Boards retain the existing program-membership ownership rules. Backend visibility

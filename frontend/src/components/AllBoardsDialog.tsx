@@ -9,7 +9,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Link,
   Paper,
   Stack,
   Table,
@@ -64,7 +63,8 @@ export interface AllBoardsDialogProps {
   open: boolean
   onClose: () => void
   boards: ApiBoardSummary[]
-  /** The user's own recent Markers — a Board matches Favourites if it holds a favourite one. */
+  /** All visible Markers. A Board matches Favourites if it holds a favourite one, as in the
+   *  page's Board row (docs/markers-and-boards.md). */
   recent: ApiMarker[]
   loading: boolean
   error: string | null
@@ -96,7 +96,8 @@ export default function AllBoardsDialog({
   const [show, setShow] = useState<Show[]>([])
   const [sortColumn, setSortColumn] = useState<BoardColumn>('name')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
-  const [page, setPage] = useState(0)
+  // The page belongs to one set of filters; any filter change starts at page 1.
+  const [paging, setPaging] = useState({ filters: '', page: 0 })
   const [rowsPerPage, setRowsPerPage] = useRowsPerPagePreference('all-boards')
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
   const { visibleColumns, toggleColumn, columnOrder, orderedVisibleColumns, setColumnOrder } =
@@ -126,6 +127,9 @@ export default function AllBoardsDialog({
 
   const needle = query.trim().toLocaleLowerCase()
   const filtered = !!needle || scopes.length > 0 || owner !== 'any' || favourites || show.length > 0
+  const filterKey = JSON.stringify([needle, scopes, owner, favourites, show])
+  const page = paging.filters === filterKey ? paging.page : 0
+  const setPage = (next: number) => setPaging({ filters: filterKey, page: next })
   const matches = boards.filter(
     (row) =>
       (!show.length ||
@@ -200,11 +204,18 @@ export default function AllBoardsDialog({
       Clear filters
     </Button>
   )
+  // Scope:/Show: chip groups wrap too, so they stay inside the dialog on phones.
+  const groupSx = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 0.5,
+  } as const
   const filterChip = (label: string, active: boolean, onClick: () => void) => (
     <Chip
       key={label}
       size="small"
-      sx={{ px: 0.5 }}
+      sx={{ px: 0.5, flexShrink: 0 }}
       label={label}
       variant={active ? 'filled' : 'outlined'}
       color={active ? 'primary' : 'default'}
@@ -335,7 +346,7 @@ export default function AllBoardsDialog({
                 ariaLabel="Filter All Boards by title"
               />
             </FilterPopoverButton>
-            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+            <Box component="span" sx={groupSx}>
               <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
                 Scope:
               </Typography>
@@ -362,7 +373,7 @@ export default function AllBoardsDialog({
               />
             </FilterPopoverButton>
             {filterChip('Favourites', favourites, () => setFavourites(!favourites))}
-            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+            <Box component="span" sx={groupSx}>
               <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
                 Show:
               </Typography>
@@ -420,20 +431,7 @@ export default function AllBoardsDialog({
                 <TableBody>
                   {pageRows.map((row) => {
                     const cells: Record<BoardColumn, ReactNode> = {
-                      name: (
-                        <TableCell>
-                          <Link
-                            component="button"
-                            type="button"
-                            underline="hover"
-                            aria-label={`Open Board: ${row.name}`}
-                            onClick={() => openBoard(row)}
-                            sx={{ textAlign: 'left', overflowWrap: 'anywhere' }}
-                          >
-                            {row.name}
-                          </Link>
-                        </TableCell>
-                      ),
+                      name: <TableCell sx={{ overflowWrap: 'anywhere' }}>{row.name}</TableCell>,
                       markers: <TableCell>{row.marker_count}</TableCell>,
                       scope: (
                         <TableCell>
@@ -445,7 +443,25 @@ export default function AllBoardsDialog({
                       updated: dateCell(row.updated_at),
                     }
                     return (
-                      <TableRow key={row.id} hover>
+                      // Plain-text name cell with row click (product-decisions), so the row
+                      // still opens the Board when the Name column is hidden.
+                      <TableRow
+                        key={row.id}
+                        hover
+                        tabIndex={0}
+                        aria-label={`Open Board: ${row.name}`}
+                        sx={{ cursor: 'pointer' }}
+                        onClick={() => openBoard(row)}
+                        onKeyDown={(event) => {
+                          if (
+                            event.target === event.currentTarget &&
+                            (event.key === 'Enter' || event.key === ' ')
+                          ) {
+                            event.preventDefault()
+                            openBoard(row)
+                          }
+                        }}
+                      >
                         {orderedVisibleColumns.map((column) => (
                           <Fragment key={column}>{cells[column]}</Fragment>
                         ))}

@@ -1472,8 +1472,10 @@ selection MouseTracker ignores their presses.
   sits in the dialog title row (#1978): Cards shows the same `BoardCard`s in a
   300px grid; Table mirrors My Markers with sortable Name, Markers, Scope, Owners
   (owner/program names, No owner for orphans), Created and Updated columns, Choose
-  columns and paging. The list is independent of overview filters; choosing a card
-  or table name closes discovery and opens the existing Board dialog. UX filtering
+  columns and paging; a filter change returns to the first page. The list is
+  independent of overview filters; choosing a card or a table row (click, Enter or
+  Space; the name cell is plain text) closes discovery and opens the existing Board
+  dialog. UX filtering
   does not change backend visibility or establish a security boundary.
 - There is no My Markers heading or overview Multi-select; Marker selection
   lives in the Board dialog's header toolbar (no Saved views heading or divider),

@@ -48,7 +48,7 @@ export const TableView: Story = {
     const dialog = await dialogOf(canvasElement)
     await userEvent.click(within(dialog).getByRole('button', { name: 'Table view' }))
     const table = within(dialog).getByRole('table', { name: 'All Boards' })
-    await expect(within(table).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(
+    await expect(within(table).getAllByRole('row', { name: /^Open Board:/ })).toHaveLength(
       BOARD_DISCOVERY_FIXTURES.length,
     )
   },

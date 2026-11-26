@@ -22,8 +22,9 @@ to the user; filtering is UX scoping only, not a permission boundary.
   removable chips with **Clear filters**.
 - **Cards** renders `BoardCard`s at the Collections grid's 300px width. **Table** mirrors the My
   Markers table: sortable columns (Name, Markers, Scope, Owners, Created, Updated), a persisted
-  column chooser and rows-per-page preference, and paging. Clicking a card or a Board name closes
-  the dialog and opens that Board.
+  column chooser and rows-per-page preference, and paging; any filter change returns to page 1.
+  Clicking a card or a table row (or Enter/Space on a focused row) closes the dialog and opens that
+  Board — the name cell is plain text, so this works with Name hidden.
 - `BoardsPage` remounts the dialog on each open, so filters start fresh every time.
 
 <Primary />

@@ -95,7 +95,7 @@ every role), and **Instructor Boards** keeps program-owned or
 admin/instructor-owned Boards. Filters combine, and **Clear filters** restores the
 complete list. Choose **Cards** to browse Board cards, or **Table** for a sortable
 list with Markers, Scope, Owners and Updated columns (**Choose columns** adds or
-hides columns). Choose a card, or a name in the table, to open its usual
+hides columns). Choose a card, or a row in the table, to open its usual
 dialog and see its authorized saved views. These are UX lists; backend visibility
 remains authoritative and unchanged.
 The discovery list is independent of the overview filters.

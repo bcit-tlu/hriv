@@ -54,7 +54,9 @@ export default function FilterBar({
           // Baseline keeps the label on the first line once the controls wrap.
           alignItems: wrap ? 'baseline' : 'center',
           gap: 1.25,
-          flexWrap: 'nowrap',
+          // When even 240px won't fit beside the label and actions (phones), the
+          // controls move to their own full-width line instead of collapsing to 0.
+          flexWrap: wrap ? 'wrap' : 'nowrap',
           overflowX: 'auto',
           overflowY: 'hidden',
           // Reserve room for a size="small" action button even when a
@@ -85,7 +87,8 @@ export default function FilterBar({
             flexWrap: wrap ? 'wrap' : 'nowrap',
             gap: 1,
             alignItems: 'center',
-            flex: '0 1 auto',
+            // Wrap mode: take (nearly) all free space so chips wrap as late as possible.
+            flex: wrap ? '999 1 240px' : '0 1 auto',
           }}
         >
           {children}

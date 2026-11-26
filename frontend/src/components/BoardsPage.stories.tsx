@@ -310,7 +310,7 @@ export const AllBoardsTable: Story = {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Table view' }))
     const table = await within(dialog).findByRole('table', { name: 'All Boards' })
     await waitFor(() => expect(table).toBeVisible())
-    await expect(within(table).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(
+    await expect(within(table).getAllByRole('row', { name: /^Open Board:/ })).toHaveLength(
       BOARD_DISCOVERY_FIXTURES.length,
     )
     await expect(within(dialog).getByRole('button', { name: 'Choose columns' })).toBeVisible()

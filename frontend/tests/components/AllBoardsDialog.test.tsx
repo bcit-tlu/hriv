@@ -100,7 +100,7 @@ describe('AllBoardsDialog (#1978)', () => {
     expect(props.onOpenBoard).toHaveBeenCalledWith(2)
   })
 
-  it('switches to a sortable table with owners and opens a Board from its name', () => {
+  it('switches to a sortable table with owners and opens a Board from its row', () => {
     const { dialog, props } = renderDialog()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Table view' }))
     const table = within(dialog).getByRole('table', { name: 'All Boards' })
@@ -112,8 +112,8 @@ describe('AllBoardsDialog (#1978)', () => {
     ).toEqual(['Name', 'Markers', 'Scope', 'Owners', 'Updated'])
     const names = () =>
       within(table)
-        .getAllByRole('button', { name: /^Open Board:/ })
-        .map((el) => el.textContent)
+        .getAllByRole('row', { name: /^Open Board:/ })
+        .map((el) => el.getAttribute('aria-label')!.replace('Open Board: ', ''))
     // Default sort: name ascending.
     expect(names()).toEqual(['Blood smear study', 'Histology week 3', 'My own notes'])
     fireEvent.click(within(table).getByRole('button', { name: 'Markers' }))
@@ -122,8 +122,40 @@ describe('AllBoardsDialog (#1978)', () => {
     expect(names()).toEqual(['Histology week 3', 'My own notes', 'Blood smear study'])
     expect(within(table).getAllByText('Morgan')).toHaveLength(2)
 
-    fireEvent.click(within(table).getByRole('button', { name: 'Open Board: My own notes' }))
+    // Plain-text name cell; the row opens the Board (product-decisions table convention).
+    fireEvent.click(within(table).getByText('My own notes'))
     expect(props.onOpenBoard).toHaveBeenCalledWith(3)
+  })
+
+  it('still opens a Board from the keyboard with the Name column hidden', async () => {
+    const { dialog, props } = renderDialog()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Table view' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Choose columns' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Name' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    // The column dialog fades out before the table is reachable again.
+    const table = await within(dialog).findByRole('table', { name: 'All Boards' })
+    expect(within(table).queryByRole('columnheader', { name: 'Name' })).not.toBeInTheDocument()
+    const row = within(table).getByRole('row', { name: 'Open Board: Blood smear study' })
+    fireEvent.keyDown(row, { key: 'Enter' })
+    expect(props.onOpenBoard).toHaveBeenCalledWith(2)
+  })
+
+  it('returns to the first page when a filter changes', () => {
+    const many = Array.from({ length: 60 }, (_, i) =>
+      board({
+        id: 100 + i,
+        name: `Board ${String(i).padStart(2, '0')}`,
+        visibility: i % 2 ? 'private' : 'public',
+      }),
+    )
+    const { dialog } = renderDialog({ boards: many })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Table view' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Go to next page' }))
+    expect(within(dialog).getByText('26–50 of 60')).toBeVisible()
+    // 30 public Boards still span two pages; the filtered list starts at its first.
+    fireEvent.click(chip(dialog, 'Public'))
+    expect(within(dialog).getByText('1–25 of 30')).toBeVisible()
   })
 
   it('offers Choose columns only in Table view', () => {
