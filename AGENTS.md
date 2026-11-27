@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Tooling: every CLI this repo needs comes from `shell.nix`; run commands via `nix-shell --run` (or `direnv allow`) before concluding a tool is missing.
+Tooling: run this repo's CLIs via `nix-shell --run` (or `direnv exec .` after `direnv allow`) before concluding a tool is missing. Use the repo's `shell.nix` first and provision any tools it does not provide separately.
 
 HRIV is a monorepo: React/Vite frontend, FastAPI backend, backup service,
 restore-validation orchestrator, Helm charts. Component detail lives in
@@ -84,7 +84,7 @@ lives, and the [domain model](docs/domain-model.md) for schema details.
 
 ## Development Workflow
 
-- Default PR loop (no need to be asked): after every push, wait until all checks — including Devin Review and github-code-quality — have finished, fix and resolve every thread (≤3 rounds), and only then report or admin-merge. An instruction to "admin-merge" never skips this wait.
+- Default PR loop (no need to be asked): after every push, wait for all applicable checks — including Devin Review and github-code-quality when configured — to finish. Fix valid findings (≤3 rounds), explain false positives, and resolve every thread. Report success or admin-merge only once all applicable checks pass and all threads are resolved. If checks still fail or threads stay open after three rounds, stop and summarize the blocker for Kyle instead of merging. An instruction to "admin-merge" never skips this wait.
 - Create feature branches from `main`; open PRs for review; squash-merge.
 - Update documentation for new features in the same PR — see the **Documentation & Skill Files** checklist above.
 - Do issue/PR work in a git worktree, not the main checkout: `git fetch origin && git worktree add .worktrees/<name> -b <type>/<issue>-<slug> origin/main` (`.worktrees/` is gitignored).
