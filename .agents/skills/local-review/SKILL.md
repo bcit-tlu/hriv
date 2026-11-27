@@ -1,23 +1,23 @@
 ---
 name: local-review
-description: Hand off an HRIV branch to Kyle for local review. Use when sharing a branch or worktree he will review in Docker Compose, Vite, or Storybook, or when identifying what a worktree is for.
+description: Hand off an HRIV branch for local review. Use when sharing a branch or worktree for review in Docker Compose, Vite, or Storybook, or when identifying what a worktree is for.
 ---
 
 # Local Review
 
 ## Before Saying “Ready to Review”
 
-1. Commit the changes Kyle is meant to review and push the branch. Use
+1. Commit the changes intended for review and push the branch. Use
    `git push -u origin HEAD` when publishing the branch for the first time.
 2. Run `git status -sb`. Confirm it shows the review branch tracking
    `origin/<branch>` with nothing ahead, and that no intended review changes are
    uncommitted.
-3. Run `git log -1 --oneline`. Give Kyle the branch name and the short commit
+3. Run `git log -1 --oneline`. Give the reviewer the branch name and the short commit
    SHA, and say which surface to open and what to check.
 
-## Commands to Share with Kyle
+## Commands to Share with the Reviewer
 
-From the root of his main checkout, create a worktree on a local tracking branch:
+From the root of the main checkout, create a worktree on a local tracking branch:
 
 ```bash
 git fetch origin && git worktree add --track -b <local-review-branch> .worktrees/<name> origin/<branch>
