@@ -1,5 +1,7 @@
 # AGENTS.md
 
+Tooling: every CLI this repo needs comes from `shell.nix`; run commands via `nix-shell --run` (or `direnv allow`) before concluding a tool is missing.
+
 HRIV is a monorepo: React/Vite frontend, FastAPI backend, backup service,
 restore-validation orchestrator, Helm charts. Component detail lives in
 per-directory `AGENTS.md` files that load when you work under them:
@@ -8,7 +10,7 @@ per-directory `AGENTS.md` files that load when you work under them:
 
 ## Setup Commands
 
-- **If a required executable is not on `PATH`, use `nix-shell -p <executable>`** to run it in the project environment instead of assuming the tool is unavailable.
+- For an executable not listed in `shell.nix`, use `nix-shell -p <executable>`.
 - Frontend (from `frontend/`): `npm ci`, `npm run dev`, `npm test`, `npm run build`, `npm run format:check` / `npm run format:staged`.
 - Backend (from `backend/`): `poetry install --with dev`, `poetry run uvicorn app.main:app --reload`, `poetry run pytest` (80% coverage gate via `addopts` in `pyproject.toml`).
 - Backup (from `backup/`): `poetry install --no-root`, `poetry run pytest`.
@@ -82,6 +84,7 @@ lives, and the [domain model](docs/domain-model.md) for schema details.
 
 ## Development Workflow
 
+- Default PR loop (no need to be asked): after every push, wait until all checks — including Devin Review and github-code-quality — have finished, fix and resolve every thread (≤3 rounds), and only then report or admin-merge. An instruction to "admin-merge" never skips this wait.
 - Create feature branches from `main`; open PRs for review; squash-merge.
 - Update documentation for new features in the same PR — see the **Documentation & Skill Files** checklist above.
 - Do issue/PR work in a git worktree, not the main checkout: `git fetch origin && git worktree add .worktrees/<name> -b <type>/<issue>-<slug> origin/main` (`.worktrees/` is gitignored).
