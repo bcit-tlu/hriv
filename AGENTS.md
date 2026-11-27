@@ -84,12 +84,12 @@ lives, and the [domain model](docs/domain-model.md) for schema details.
 
 ## Development Workflow
 
-- Default PR loop (no need to be asked): after every push, wait for all applicable checks — including Devin Review and github-code-quality when configured — to finish. Fix valid findings (≤3 rounds), explain false positives, and resolve every thread. Report success or admin-merge only once all applicable checks pass and all threads are resolved. If checks still fail or threads stay open after three rounds, stop and summarize the blocker for Kyle instead of merging. An instruction to "admin-merge" never skips this wait.
+- Default PR loop (no need to be asked): after every push, wait for all applicable checks — including Devin Review and github-code-quality when configured — to finish. Fix valid findings (≤3 rounds), explain false positives, and resolve every thread. Report success or admin-merge only once all applicable checks pass and all threads are resolved. If checks still fail or threads stay open after three rounds, stop and summarize the blocker for the user instead of merging. An instruction to "admin-merge" never skips this wait.
 - Create feature branches from `main`; open PRs for review; squash-merge.
 - Update documentation for new features in the same PR — see the **Documentation & Skill Files** checklist above.
 - Do issue/PR work in a git worktree, not the main checkout: `git fetch origin && git worktree add .worktrees/<name> -b <type>/<issue>-<slug> origin/main` (`.worktrees/` is gitignored).
 - Keep the main checkout on a clean, up-to-date `main`; after the PR merges, `git worktree remove .worktrees/<name>` (`git worktree prune` clears stale registrations).
-- If the session's configured workspace directory is missing or empty, locate the real checkout before running commands (on Kyle's machine this repo lives at `~/projects/github/apps/hriv`).
+- If the session's configured workspace directory is missing or empty, locate the real checkout before running commands.
 - Worktree tooling: the pre-commit hook runs the frontend `format:staged` script and fails without `frontend/node_modules` in the worktree — `npm ci` there, or `cp -al` the main checkout's `node_modules` (a symlink is enough for docs-only commits but breaks the Storybook vitest config). `poetry`/`npm` come from the nix shell (`direnv allow` once per worktree, or `nix-shell -p poetry --run "..."`). The hook also prints a non-blocking warning when staged in-app images (`frontend/public/`, `frontend/guide/images/`; 512 KiB budget) are oversized — compress rather than bypass it.
 - Frontend unit tests: `npx vitest run --config vite.config.ts <files>` (the default vitest config is Storybook-only); `npm run build` is the type check.
 - Backend formatting: the backend is not `ruff format`-ed — never run `ruff format` (it reflows unrelated lines even on single files); follow the surrounding style by hand.
