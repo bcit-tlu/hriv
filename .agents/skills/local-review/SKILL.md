@@ -51,5 +51,7 @@ the restarted server is running from the review worktree.
 ## Record the Worktree’s Purpose
 
 When creating a worktree, write one line about its purpose to
-`.worktrees/<name>/.purpose`. Keep it local; do not commit it. When asked what a
-worktree is for, read `.purpose` first, then consult the branch’s PR and commit log.
+`.worktrees/<name>.purpose` in the main checkout, beside the worktree. When asked
+what the worktree is for, read that file first, then consult the branch’s PR and
+commit log. Remove the purpose file after `git worktree remove .worktrees/<name>`
+succeeds.
