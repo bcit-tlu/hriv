@@ -32,11 +32,13 @@ git -C .worktrees/<name> pull --ff-only
 From the review worktree, run `git log -1 --oneline` and check that the SHA matches
 the handoff before opening the review surface.
 
-**Docker Compose:** From the review worktree root, run `docker compose up --build`.
-If the stack is already running in that worktree, restart its Vite server with
-`docker compose restart frontend` after a source-only pull. The ARQ worker does
-not hot-reload backend changes; restart it with `docker compose restart worker`.
-Rerun `docker compose up --build` if dependencies or Dockerfiles changed.
+**Docker Compose:** From the review worktree root, run `docker compose up -d --build`.
+Rerun that command after pulling changes to Alembic migrations, the in-app guide
+(`frontend/guide/`), dependencies, or Dockerfiles. It reruns the `migrate`
+service and rebuilds the frontend image, which contains the guide.
+For changes limited to mounted source, restart Vite with
+`docker compose restart frontend`. The ARQ worker does not hot-reload backend
+changes; restart it with `docker compose restart worker`.
 
 **Storybook:** From the review worktree root:
 
