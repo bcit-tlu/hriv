@@ -32,7 +32,9 @@ git -C .worktrees/<name> pull --ff-only
 From the review worktree, run `git log -1 --oneline` and check that the SHA matches
 the handoff before opening the review surface.
 
-**Docker Compose:** From the review worktree root, run `docker compose up -d --build`.
+**Docker Compose:** The stack uses fixed host ports. If another HRIV stack is
+running, run `docker compose down` in that checkout first. Then run
+`docker compose up -d --build` from the review worktree root.
 Rerun that command after pulling changes to Alembic migrations, the in-app guide
 (`frontend/guide/`), dependencies, or Dockerfiles. It reruns the `migrate`
 service and rebuilds the frontend image, which contains the guide.
