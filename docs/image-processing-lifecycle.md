@@ -483,8 +483,9 @@ only handles legacy rows created before durable imports (#1173), which have no
 the API coordinator sweep resumes them (see below). It marks such a
 `pending` or `processing` bulk-import row as terminal only when its
 `updated_at` is older than the configured stale threshold and it has no live
-coordinator registration: incomplete rows become `failed`, while rows whose
-completed count equals their total become `completed`. A live registration
+coordinator registration. As in the coordinator's own finalizer, a row with at
+least one imported image becomes `completed` (partial success, with the rest
+counted in `failed_count`); a row with none becomes `failed`. A live registration
 keeps a long-running import untouched.
 When Redis is unavailable, the sweep uses the conservative stale timestamp
 bound alone rather than leaving abandoned rows permanently in `processing`;
