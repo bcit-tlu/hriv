@@ -7,8 +7,10 @@ import * as CoverStories from './BoardCover.stories'
 The square Board cover shared by Boards page cards, the Save to picker and the
 Marker form's Saved to rows. It shows the pinned cover (`cover_thumb`), else the
 first member Marker with a thumbnail (`GET /api/markers?board_id=…&limit=4`),
-else the Boards icon. An explicit "no cover" pick (`cover_blank`) skips the member
-fetch. `size` sets the edge in pixels and `radius` the MUI border radius.
+else the Boards icon. The member fetch runs only when the summary has no
+`cover_thumb` (the backend already resolves the pinned or first visible member's
+thumbnail) and the Board has Markers, so grids of Boards don't issue one Marker
+request per card. An explicit "no cover" pick (`cover_blank`) also skips it. `size` sets the edge in pixels and `radius` the MUI border radius.
 
 <Primary />
 <Stories />

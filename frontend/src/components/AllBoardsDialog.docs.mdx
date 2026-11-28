@@ -1,0 +1,32 @@
+import { Meta, Primary, Stories, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as AllBoardsDialogStories from './AllBoardsDialog.stories'
+
+<Meta of={AllBoardsDialogStories} />
+
+<Title />
+
+<Subtitle>
+  Board discovery for admins, instructors and staff: the page's filter bar, Board cards and a
+  Cards/Table toggle.
+</Subtitle>
+
+## When to use
+
+`BoardsPage` opens it from the **All Boards** button (#1978). It lists every Board the API returns
+to the user; filtering is UX scoping only, not a permission boundary.
+
+## Implementation guidance
+
+- Filters reuse the page's `FilterBar` pieces: Title, Scope, Owner and Favourites, plus the
+  discovery-only **Show:** chips (Public & Shared, Instructor Boards). Active filters appear as
+  removable chips with **Clear filters**.
+- **Cards** renders `BoardCard`s at the Collections grid's 300px width. **Table** mirrors the My
+  Markers table: sortable columns (Name, Markers, Scope, Owners, Created, Updated), a persisted
+  column chooser and rows-per-page preference, and paging; any filter change returns to page 1.
+  Clicking a card or a table row (or Enter/Space on a focused row) closes the dialog and opens that
+  Board — the name cell is plain text, so this works with Name hidden.
+- `BoardsPage` remounts the dialog on each open, so filters start fresh every time.
+
+<Primary />
+
+<Stories />

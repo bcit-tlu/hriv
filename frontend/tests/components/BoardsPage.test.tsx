@@ -288,7 +288,7 @@ describe('BoardsPage', () => {
     const row = screen.getByRole('region', { name: 'Boards' })
     const chips = within(row).getAllByRole('group')
     expect(Array.from(row.children).slice(1)).toEqual(chips)
-    expect(chip).toHaveStyle({ flex: '0 0 auto', width: '260px' })
+    expect(chip).toHaveStyle({ flex: '0 0 auto', width: '300px' })
     expect(within(chip).queryByTestId('DragIndicatorIcon')).not.toBeInTheDocument()
     fireEvent.click(
       within(chip).getByRole('button', { name: 'Open Board: Architecture inspiration' }),
@@ -627,7 +627,9 @@ describe('BoardsPage', () => {
     expect(loading).toBe(false)
     expect(screen.getByRole('button', { name: 'Open Marker: Rose window' })).toBe(card)
     expect(api.fetchBoards).toHaveBeenCalledTimes(2)
-    expect(api.fetchMarkers).toHaveBeenCalledTimes(4)
+    // One fewer than before #1978's review: the empty Board's cover no longer
+    // fetches members.
+    expect(api.fetchMarkers).toHaveBeenCalledTimes(3)
   })
   it('does not reload or remount the collage for Marker editing, Board creation or Board navigation', async () => {
     const view = await setup()
@@ -638,8 +640,9 @@ describe('BoardsPage', () => {
     expect(card.isConnected).toBe(true)
     expect(cover.isConnected).toBe(true)
     expect(api.fetchBoards).toHaveBeenCalledTimes(2) // overview and the form's Board picker
-    // Overview, two owned Board covers and the form's Saved to cover.
-    expect(api.fetchMarkers).toHaveBeenCalledTimes(4)
+    // Overview, the owned Board cover with Markers and the form's Saved to cover;
+    // the empty Board's cover skips the member lookup (#1978 review).
+    expect(api.fetchMarkers).toHaveBeenCalledTimes(3)
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     fireEvent.click(screen.getByRole('button', { name: 'New Board' }))
     expect(card.isConnected).toBe(true)
@@ -665,7 +668,7 @@ describe('BoardsPage', () => {
     expect(cover.isConnected).toBe(true)
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
     expect(api.fetchBoards).toHaveBeenCalledTimes(2)
-    expect(api.fetchMarkers).toHaveBeenCalledTimes(4)
+    expect(api.fetchMarkers).toHaveBeenCalledTimes(3)
   })
   it('filters both surfaces by title and restores them with Clear filters', async () => {
     vi.mocked(api.fetchBoards).mockResolvedValue([
@@ -1188,7 +1191,7 @@ describe('BoardsPage', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
   it.each(['admin', 'instructor', 'staff', 'student'] as const)(
-    'scopes discovery for %s while rendering scope and manager metadata',
+    'scopes discovery for %s while rendering Board cards with scope metadata',
     async (role) => {
       const privateBoard = {
         ...BOARDS_FIXTURES[2],
@@ -1237,12 +1240,19 @@ describe('BoardsPage', () => {
       fireEvent.click(allButton)
       const all = screen.getByRole('dialog', { name: 'All Boards' })
       const tiles = () => within(all).getAllByRole('button', { name: /^Open Board:/ })
+      // The toggle chip, not its removable twin in the active-filter summary.
+      const showChip = (name: string) =>
+        within(all)
+          .getAllByRole('button', { name })
+          .find((el) => el.hasAttribute('aria-pressed')) as HTMLElement
       expect(tiles()).toHaveLength(boards.length)
       const publicTile = within(all).getByRole('button', {
         name: 'Open Board: Shared discoveries',
       })
       expect(within(publicTile).getByRole('heading', { name: 'Shared discoveries' })).toBeVisible()
-      expect(within(publicTile).getByText('Managed by Morgan')).toBeVisible()
+      // Category/Collection-style card (#1978): count + scope chip, no owner line.
+      expect(within(publicTile).getByText(/^\d+ Markers?$/)).toBeVisible()
+      expect(within(publicTile).queryByText(/^Managed by/)).not.toBeInTheDocument()
       expect(within(publicTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
         'Public',
       )
@@ -1252,11 +1262,8 @@ describe('BoardsPage', () => {
       expect(within(restrictedTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
         'Restricted',
       )
-      expect(within(all).getByText('Managed by program Design')).toBeVisible()
-      expect(within(all).getByText('No owner')).toBeVisible()
-      expect(within(all).getByText('Managed by Morgan, Alex')).toBeVisible()
       // Chip filters sit under the title and narrow the grid in place.
-      fireEvent.click(within(all).getByRole('button', { name: 'Public & Shared' }))
+      fireEvent.click(showChip('Public & Shared'))
       expect(tiles()).toHaveLength(5)
       expect(
         within(all).queryByRole('button', { name: `Open Board: ${privateBoard.name}` }),
@@ -1264,9 +1271,9 @@ describe('BoardsPage', () => {
       expect(
         within(all).queryByRole('button', { name: `Open Board: ${BOARDS_FIXTURES[0].name}` }),
       ).not.toBeInTheDocument()
-      fireEvent.click(within(all).getByRole('button', { name: 'Public & Shared' }))
+      fireEvent.click(showChip('Public & Shared'))
       expect(tiles()).toHaveLength(boards.length)
-      fireEvent.click(within(all).getByRole('button', { name: 'Instructor Boards' }))
+      fireEvent.click(showChip('Instructor Boards'))
       expect(tiles()).toHaveLength(5)
       expect(
         within(all).queryByRole('button', { name: `Open Board: ${orphanBoard.name}` }),
@@ -1277,10 +1284,10 @@ describe('BoardsPage', () => {
       expect(
         within(all).queryByRole('button', { name: `Open Board: ${privateBoard.name}` }),
       ).toBeInTheDocument()
-      fireEvent.click(within(all).getByRole('button', { name: 'Public & Shared' }))
+      fireEvent.click(showChip('Public & Shared'))
       expect(tiles()).toHaveLength(6)
-      fireEvent.click(within(all).getByRole('button', { name: 'Instructor Boards' }))
-      fireEvent.click(within(all).getByRole('button', { name: 'Public & Shared' }))
+      fireEvent.click(showChip('Instructor Boards'))
+      fireEvent.click(showChip('Public & Shared'))
       expect(tiles()).toHaveLength(boards.length)
       const privateTile = within(all).getByRole('button', {
         name: `Open Board: ${privateBoard.name}`,
@@ -1288,7 +1295,6 @@ describe('BoardsPage', () => {
       expect(within(privateTile).getByTestId('collection-visibility-chip')).toHaveTextContent(
         'Private',
       )
-      expect(within(privateTile).getByText('Managed by Morgan')).toBeVisible()
       fireEvent.click(privateTile)
       expect(view.onSelectBoard).toHaveBeenCalledWith(privateBoard.id)
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())

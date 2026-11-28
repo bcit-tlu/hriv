@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { markerViewParams, moveBoardMember, ownsBoard, parseBoardLocation } from '../src/boardUtils'
+import {
+  boardManagerText,
+  boardOwnersText,
+  markerViewParams,
+  moveBoardMember,
+  ownsBoard,
+  parseBoardLocation,
+} from '../src/boardUtils'
 import { BOARDS_FIXTURES, BOARD_ITEMS, BOARD_USER } from '../src/components/boardsFixtures'
 
 describe('Board navigation and membership order', () => {
@@ -40,4 +47,29 @@ describe('Board navigation and membership order', () => {
       zoom: '2.5',
       rotation: '90',
     }))
+})
+
+describe('Board owner text (#1978)', () => {
+  const board = BOARDS_FIXTURES[0]
+  const morgan = { user_id: 77, program_id: null, name: 'Morgan', role: 'instructor' as const }
+  const alex = { user_id: 9, program_id: null, name: 'Alex', role: 'instructor' as const }
+  const design = { user_id: null, program_id: 1, name: 'Design', role: null }
+
+  it('names user owners, with and without the Managed by prefix', () => {
+    const row = { ...board, owners: [morgan, alex] }
+    expect(boardOwnersText(row)).toBe('Morgan, Alex')
+    expect(boardManagerText(row)).toBe('Managed by Morgan, Alex')
+  })
+
+  it('prefers the owning program', () => {
+    const row = { ...board, owners: [design, morgan] }
+    expect(boardOwnersText(row)).toBe('program Design')
+    expect(boardManagerText(row)).toBe('Managed by program Design')
+  })
+
+  it('has no owner text for an orphaned Board', () => {
+    const row = { ...board, owners: [] }
+    expect(boardOwnersText(row)).toBeNull()
+    expect(boardManagerText(row)).toBe('No owner')
+  })
 })

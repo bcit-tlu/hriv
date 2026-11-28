@@ -78,21 +78,24 @@ saved views under **My Markers** below. **New Board** is the first chip. Use Tit
 remove filter chips or use Clear filters to reset. Each saved view shows its
 image's parent category under the title.
 The page heading is **My Boards**, aligned like Collections without extra page padding.
-Boards are rounded chips with a square cover, a one-line name and a scope pill
-below it. Your row includes only owned Boards you can edit, including program-owned Boards when permitted.
+Boards are cards like the category and collection cards on Home: a cover picture
+across the top, the Board's name in red, its Marker count and a scope pill. Your row
+includes only owned Boards you can edit, including program-owned Boards when permitted.
 Read-only Boards are discoverable through All Boards → **Public & Shared** instead, for instructors and admins.
 Drag an editable Board chip by its surface to reorder it; there is no grip icon.
 Clicking still opens the Board. Active filters disable Board reordering.
 Use the outlined **All Boards** button at the right of the title row — available
 to admins, instructors and staff — for a large dialog listing every Board returned
 by the API, including others' private Boards and Boards already in your chip row.
-Students never see it. Filter chips sit in a row beneath the dialog title:
-**Public & Shared** keeps public, program/group-restricted or co-owned/program-member
+Students never see it. It has the same filter bar as the page (Title, Scope,
+Owner/Mine and Favourites) plus two **Show:** chips: **Public & Shared** keeps
+public, program/group-restricted or co-owned/program-member
 Boards outside your chip row (other people's private Boards stay excluded for
 every role), and **Instructor Boards** keeps program-owned or
-admin/instructor-owned Boards. Chips toggle independently and combine; clearing
-them all restores the complete list. Tiles show title, scope pill and
-**Managed by {name}** (or program name / No owner). Choose a tile to open its usual
+admin/instructor-owned Boards. Filters combine, and **Clear filters** restores the
+complete list. Choose **Cards** to browse Board cards, or **Table** for a sortable
+list with Markers, Scope, Owners and Updated columns (**Choose columns** adds or
+hides columns). Choose a card, or a row in the table, to open its usual
 dialog and see its authorized saved views. These are UX lists; backend visibility
 remains authoritative and unchanged.
 The discovery list is independent of the overview filters.

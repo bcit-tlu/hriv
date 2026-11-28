@@ -123,7 +123,8 @@ import BoardEditDialog from './BoardEditDialog'
 import BoardOwnersDialog from './BoardOwnersDialog'
 import MarkerFormDialog from './MarkerFormDialog'
 import RenewingThumbnail from './RenewingThumbnail'
-import BoardCover from './BoardCover'
+import AllBoardsDialog from './AllBoardsDialog'
+import BoardCard from './BoardCard'
 import BoardCoverPickerModal from './BoardCoverPickerModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
@@ -171,9 +172,6 @@ const MARKER_TABLE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<MarkerTableCo
 
 type SortableMarkerColumn = Exclude<MarkerTableColumn, 'thumbnail' | 'boards'>
 const MARKER_TABLE_ALL_COLUMNS = MARKER_TABLE_COLUMN_OPTIONS.map((option) => option.key)
-
-/** Marker accent — muted blue in light mode, brighter blue in dark — shared by
-    Marker titles/pins and the thick Board tile border. */
 
 type SortableFrameProps = {
   id: string
@@ -251,7 +249,8 @@ function ActiveSortableFrame({
         outline: isDragSource ? '3px solid' : undefined,
         outlineColor: 'primary.main',
         minWidth: 0,
-        ...(type === 'board-card' && { flex: '0 0 auto', width: 260 }),
+        // Category/Collection card width (#1978).
+        ...(type === 'board-card' && { flex: '0 0 auto', width: 300 }),
       }}
     >
       {!hideHandle && (
@@ -283,12 +282,15 @@ function DropArea({
   label,
   enabled,
   blocked,
+  disabled = false,
   children,
 }: {
   id: string
   label: string
   enabled: boolean
   blocked?: boolean
+  /** Unregisters the drop receiver, e.g. while the Board dialog covers the row. */
+  disabled?: boolean
   children: ReactNode
 }) {
   const { ref, isDropTarget } = useDroppable({
@@ -296,6 +298,7 @@ function DropArea({
     type: 'board-member-bin',
     accept: 'board-member',
     collisionPriority: CollisionPriority.High,
+    disabled,
   })
   const active = enabled && isDropTarget
   const denied = blocked === true && isDropTarget
@@ -316,6 +319,8 @@ function DropArea({
         transform: active ? 'scale(1.03)' : 'scale(1)',
         transition: 'outline-color 0.2s, transform 0.15s',
         minHeight: 0,
+        // Lets the Board card fill the row height so cards line up (#1978).
+        height: '100%',
       }}
     >
       {children}
@@ -660,7 +665,8 @@ export default function BoardsPage({
   const [scopes, setScopes] = useState<string[]>([])
   const [owner, setOwner] = useState('any')
   const [discovery, setDiscovery] = useState<'all' | null>(null)
-  const [discoveryFilters, setDiscoveryFilters] = useState<('shared' | 'instructor')[]>([])
+  // Bumped on each open so All Boards starts with fresh filters, as before.
+  const [discoveryKey, setDiscoveryKey] = useState(0)
   const [notice, setNotice] = useState<{
     message: string
     severity: 'success' | 'info' | 'warning'
@@ -710,21 +716,8 @@ export default function BoardsPage({
     setConflict(false)
   }
   const own = data.boards.filter((row) => ownsBoard(row, currentUser))
-  const isSharedBoard = (row: ApiBoardSummary) =>
-    (!ownsBoard(row, currentUser) || !row.permissions.can_edit) &&
-    (row.visibility !== 'private' || ownsBoard(row, currentUser))
-  const isInstructorBoard = (row: ApiBoardSummary) =>
-    row.owner_program_id != null ||
-    row.owners.some((owner) => owner.role === 'admin' || owner.role === 'instructor')
   const canBrowseAllBoards =
     currentUser != null && ['admin', 'instructor', 'staff'].includes(currentUser.role)
-  const discoveryBoards = data.boards.filter(
-    (row) =>
-      discoveryFilters.length === 0 ||
-      discoveryFilters.some((filter) =>
-        filter === 'shared' ? isSharedBoard(row) : isInstructorBoard(row),
-      ),
-  )
   const reorderableBoards = own.filter((row) => row.permissions.can_edit)
   const needle = query.trim().toLocaleLowerCase()
   const ownerMatches = (item: ApiBoardSummary | ApiMarker) =>
@@ -1577,7 +1570,7 @@ export default function BoardsPage({
               variant="contained"
               size="small"
               onClick={() => {
-                setDiscoveryFilters([])
+                setDiscoveryKey((key) => key + 1)
                 setDiscovery('all')
               }}
             >
@@ -1806,10 +1799,7 @@ export default function BoardsPage({
               alignSelf: 'stretch',
               minWidth: 56,
               px: 1,
-              borderRadius: 2,
-              borderWidth: 2,
-              borderColor: markerAccentColor,
-              color: markerAccentColor,
+              borderRadius: 1,
               boxShadow: (theme) => theme.shadows[2],
             }}
           >
@@ -1835,182 +1825,62 @@ export default function BoardsPage({
                   !activeItem.board_ids.includes(row.id)
                 }
                 blocked={!!activeItem?.board_ids.includes(row.id)}
+                // Hidden behind an open Board, the (tall) Board cards would otherwise
+                // catch member drags meant as reorders inside that Board.
+                disabled={boardId != null}
               >
-                <Card
-                  elevation={2}
-                  sx={{
-                    position: 'relative',
-                    borderRadius: 2,
-                    borderWidth: 2,
-                    borderStyle: 'solid',
-                    borderColor: (theme) =>
-                      row.id === boardId ? theme.palette.primary.main : markerAccentColor(theme),
-                  }}
-                >
-                  {row.permissions.can_edit && (
-                    // Cover picker — pins the tile image like the
-                    // Collection tile's "Set cover image" action (#1554).
-                    <Tooltip title="Set cover image">
-                      <IconButton
-                        size="small"
-                        aria-label={`Set ${row.name} cover image`}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          event.preventDefault()
-                          if (busy) return
-                          openCoverPicker(row)
-                        }}
-                        sx={{
-                          position: 'absolute',
-                          top: 4,
-                          right: 8,
-                          zIndex: 1,
-                          color: 'common.white',
-                          bgcolor: (theme) => alpha(theme.palette.common.black, 0.25),
-                          '&:hover': {
-                            bgcolor: (theme) => alpha(theme.palette.common.black, 0.45),
-                          },
-                        }}
-                      >
-                        <ImageIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  )}
-                  <CardActionArea
-                    onClick={() => onSelectBoard(row.id)}
-                    aria-label={`Open Board: ${row.name}`}
-                    sx={{
-                      display: 'flex',
-                      justifyContent: 'flex-start',
-                      alignItems: 'stretch',
-                      gap: 1,
-                    }}
-                  >
-                    <BoardCover board={row} />
-                    <Stack
-                      // Right padding aligns the scope chip's right edge with
-                      // the cover-picker icon's (both 8px from the tile edge).
-                      sx={{ justifyContent: 'center', pl: 1.5, pr: 1, minWidth: 0, flex: 1 }}
-                      alignItems="stretch"
-                    >
-                      <Typography
-                        variant="h6"
-                        component="p"
-                        noWrap
-                        fontWeight={600}
-                        title={row.name}
-                      >
-                        {row.name}
-                      </Typography>
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 0.5,
-                        }}
-                      >
-                        <Typography variant="body2" color="text.secondary">
-                          {`${row.marker_count} ${row.marker_count === 1 ? 'Marker' : 'Markers'}`}
-                        </Typography>
-                        <CollectionVisibilityChip visibility={row.visibility} />
-                      </Box>
-                    </Stack>
-                  </CardActionArea>
-                </Card>
+                <BoardCard
+                  board={row}
+                  titleHeadingLevel="h2"
+                  onOpen={(board) => onSelectBoard(board.id)}
+                  coverAction={
+                    row.permissions.can_edit ? (
+                      // Cover picker — pins the tile image like the
+                      // Collection tile's "Set cover image" action (#1554).
+                      <Tooltip title="Set cover image">
+                        <IconButton
+                          size="small"
+                          aria-label={`Set ${row.name} cover image`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            event.preventDefault()
+                            if (busy) return
+                            openCoverPicker(row)
+                          }}
+                          sx={{
+                            position: 'absolute',
+                            top: 4,
+                            right: 8,
+                            zIndex: 1,
+                            color: 'common.white',
+                            bgcolor: (theme) => alpha(theme.palette.common.black, 0.25),
+                            '&:hover': {
+                              bgcolor: (theme) => alpha(theme.palette.common.black, 0.45),
+                            },
+                          }}
+                        >
+                          <ImageIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    ) : undefined
+                  }
+                />
               </DropArea>
             </SortableFrame>
           ))}
         </Box>
 
-        <Dialog
+        <AllBoardsDialog
+          key={discoveryKey}
           open={discovery === 'all' && canBrowseAllBoards}
           onClose={() => setDiscovery(null)}
-          fullWidth
-          maxWidth="lg"
-          aria-labelledby="all-boards-title"
-        >
-          <DialogTitle id="all-boards-title">All Boards</DialogTitle>
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', px: 3, pb: 1 }}>
-            {(['shared', 'instructor'] as const).map((filter) => {
-              const active = discoveryFilters.includes(filter)
-              const toggle = () =>
-                setDiscoveryFilters((current) =>
-                  active ? current.filter((value) => value !== filter) : [...current, filter],
-                )
-              return (
-                <Chip
-                  key={filter}
-                  size="small"
-                  label={filter === 'shared' ? 'Public & Shared' : 'Instructor Boards'}
-                  variant={active ? 'filled' : 'outlined'}
-                  color={active ? 'primary' : 'default'}
-                  aria-pressed={active}
-                  onClick={toggle}
-                />
-              )
-            })}
-          </Box>
-          <DialogContent>
-            {data.loading ? (
-              <CircularProgress aria-label="Loading all Boards" size={24} />
-            ) : data.error ? (
-              <Alert severity="error">{data.error}</Alert>
-            ) : discoveryBoards.length ? (
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
-                  gap: 2,
-                }}
-              >
-                {discoveryBoards.map((row) => {
-                  return (
-                    <Card key={row.id} variant="outlined">
-                      <CardActionArea
-                        onClick={() => {
-                          setDiscovery(null)
-                          onSelectBoard(row.id)
-                        }}
-                        aria-label={`Open Board: ${row.name}`}
-                        sx={{ height: '100%' }}
-                      >
-                        <CardContent>
-                          <Typography
-                            component="h3"
-                            variant="body2"
-                            fontWeight={600}
-                            sx={{ overflowWrap: 'anywhere' }}
-                          >
-                            {row.name}
-                          </Typography>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            component="p"
-                            sx={{ mb: 1, overflowWrap: 'anywhere' }}
-                          >
-                            {boardManagerText(row)}
-                          </Typography>
-                          <CollectionVisibilityChip visibility={row.visibility} />
-                        </CardContent>
-                      </CardActionArea>
-                    </Card>
-                  )
-                })}
-              </Box>
-            ) : (
-              <Typography color="text.secondary">
-                {discoveryFilters.length ? 'No matching Boards.' : 'No Boards available.'}
-              </Typography>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button size="small" onClick={() => setDiscovery(null)}>
-              Close
-            </Button>
-          </DialogActions>
-        </Dialog>
+          boards={data.boards}
+          recent={data.recent}
+          loading={data.loading}
+          error={data.error}
+          currentUser={currentUser}
+          onOpenBoard={onSelectBoard}
+        />
         {data.loading && <CircularProgress aria-label="Loading Boards" size={24} />}
         {!data.loading && (!data.error || data.boards.length > 0 || data.recent.length > 0) && (
           <>

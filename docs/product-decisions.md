@@ -107,6 +107,11 @@ specified in detail.
 - Announcement kind is a controlled icon set and the icon _is_ the kind
   (Release and Warning are admin-only); emoji are reactions only. "Seen by N
   of M" shows counts to admin/instructor/staff only, never names.
+- Board tiles follow the CategoryTile/CollectionCard card style everywhere —
+  the My Boards row and the All Boards dialog — with no Board-blue border and no
+  selected state; like category cards they only react with the click ripple and
+  hover/focus highlight (#1978). Owner names live in All Boards' Table view and
+  Owner filter, not on the cards. See [`markers-and-boards.md`](markers-and-boards.md).
 - Mouse click-to-zoom is disabled in the image viewer — user testing found it
   useless, and it would fire on every laser-pointer/ink click. Scroll, pinch
   and touch double-tap zoom remain. The zoom +/- toolbar buttons stay in

@@ -11,6 +11,9 @@ interface FilterBarProps {
   clearAction?: ReactNode
   summary?: ReactNode
   summaryActions?: ReactNode
+  /** Wrap the filter controls onto more lines instead of letting them spill
+   *  over the clear/actions buttons when the row is too narrow. */
+  wrap?: boolean
   sx?: SxProps<Theme>
   children: ReactNode
 }
@@ -22,6 +25,7 @@ export default function FilterBar({
   clearAction,
   summary,
   summaryActions,
+  wrap = false,
   sx,
   children,
 }: FilterBarProps) {
@@ -47,9 +51,12 @@ export default function FilterBar({
       <Box
         sx={{
           display: 'flex',
-          alignItems: 'center',
+          // Baseline keeps the label on the first line once the controls wrap.
+          alignItems: wrap ? 'baseline' : 'center',
           gap: 1.25,
-          flexWrap: 'nowrap',
+          // When even 240px won't fit beside the label and actions (phones), the
+          // controls move to their own full-width line instead of collapsing to 0.
+          flexWrap: wrap ? 'wrap' : 'nowrap',
           overflowX: 'auto',
           overflowY: 'hidden',
           // Reserve room for a size="small" action button even when a
@@ -77,10 +84,11 @@ export default function FilterBar({
           sx={{
             display: 'flex',
             minWidth: 0,
-            flexWrap: 'nowrap',
+            flexWrap: wrap ? 'wrap' : 'nowrap',
             gap: 1,
             alignItems: 'center',
-            flex: '0 1 auto',
+            // Wrap mode: take (nearly) all free space so chips wrap as late as possible.
+            flex: wrap ? '999 1 240px' : '0 1 auto',
           }}
         >
           {children}
