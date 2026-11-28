@@ -278,6 +278,8 @@ ImageViewer` (from `frontend/`).
 
 - Preferences, groups, independent eyes/switches, remount/storage events:
   `npm test -- useMarkerVisibilityPrefs ImageMarkersDrawer`.
+- In-place Board dialog and `?marker=` focus links (#1942):
+  `npm test -- BoardDialog useShareableImageState ImageViewer App.test`.
 - OSD control portal, gating, navigation, single-fetch integration and embeds:
   `npm test -- ImageViewer SequenceCollectionViewer SynchronizedCollectionViewer`.
 - Browser stories: `npm run test:storybook -- --run src/components/ImageMarkersDrawer.stories.tsx`.
