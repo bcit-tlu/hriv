@@ -40,7 +40,7 @@ from ..admin_ops import (
     run_files_import,
     run_rebuild_tiles,
 )
-from ..auth import auth_settings, require_role, require_password_changed
+from ..auth import auth_settings, get_current_user, require_role, require_password_changed
 from ..backup_access import (
     BackupRestoreNotConfiguredError,
     BackupSnapshotManifestError,
@@ -1168,7 +1168,7 @@ async def upload_task_file(
 
 @router.get("/version")
 async def get_version(
-    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    _user: Annotated[User, Depends(get_current_user)],
 ) -> dict[str, str]:
     """Return deployed component versions.
 
@@ -1190,9 +1190,8 @@ async def get_version(
     admin panel in sync with independently deployed components without
     requiring a backend pod restart.
 
-    Admin and instructor only: instructors need version numbers to
-    include in issue reports (the About dialog), while students have
-    no operational need for deployed-image details.
+    Any signed-in user: the About dialog shows these to every role
+    (#1963), so anyone filing an issue can quote the versions.
     """
     synthetic_state = await load_stored_synthetic_result_state()
     latest_synthetic_version = None

@@ -239,10 +239,18 @@ def test_get_version_endpoint_allows_instructor() -> None:
     assert response.json()["backend"] == "0.6.0"
 
 
-def test_get_version_endpoint_rejects_student() -> None:
-    with _version_test_client("student") as client:
+@pytest.mark.parametrize("user_role", ["student", "staff"])
+def test_get_version_endpoint_allows_every_role(user_role: str) -> None:
+    # The About dialog shows versions to every role (#1963).
+    with patch.dict(
+        os.environ, _version_env(APP_VERSION="0.6.0", BACKUP_VERSION="0.3.0"), clear=True
+    ), patch(
+        "app.routers.admin.load_stored_synthetic_result_state", return_value=None
+    ), _version_test_client(user_role) as client:
         response = client.get("/api/admin/version")
-    assert response.status_code == 403
+    assert response.status_code == 200
+    assert response.json()["backend"] == "0.6.0"
+    assert response.json()["backup"] == "0.3.0"
 
 
 async def test_get_version_falls_back_to_env_when_mount_empty(tmp_path) -> None:

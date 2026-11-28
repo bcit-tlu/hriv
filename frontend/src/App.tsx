@@ -560,7 +560,7 @@ export default function App() {
   // Report issue modal state
   const [reportIssueOpen, setReportIssueOpen] = useState(false)
 
-  // Component versions (admin-only, fetched lazily on mount).  Backend +
+  // Component versions (every signed-in role, fetched on sign-in).  Backend +
   // backup are returned by ``/api/admin/version``; frontend is served by
   // its own nginx at ``/version`` (envsubst-rendered from the Helm
   // chart's ``APP_VERSION`` env at container start — see
@@ -1353,10 +1353,9 @@ export default function App() {
     }
   }, [searchOpen, canEditContent])
 
-  // Load the frontend version for every authenticated user (not just
-  // admin/instructor) — students may submit feedback and the deployed
-  // frontend version travels with the report even though it is not
-  // displayed to them. ``/version`` is served by its own nginx and is
+  // Load the frontend version for every authenticated user — it is shown
+  // in the footer and About dialog and travels with feedback reports.
+  // ``/version`` is served by its own nginx and is
   // not role-guarded at the transport layer; the string carries the
   // same info as the image-tag filenames already visible in the public
   // JS bundle, so there is no new information leak.
@@ -1382,12 +1381,11 @@ export default function App() {
       })
   }, [currentUser])
 
-  // Load deployed backend/backup component versions for the footer and
-  // About dialog (admin and instructor only). These come from
-  // ``/api/admin/version`` which is guarded to admin/instructor on the
-  // backend; students never see those strings.
+  // Load deployed backend/backup component versions for the About dialog
+  // (every role, #1963) and the admin-only footer. ``/api/admin/version``
+  // answers every signed-in role.
   useEffect(() => {
-    if (!canEditContent) {
+    if (!currentUser) {
       /* eslint-disable-next-line react-hooks/set-state-in-effect -- early-return cleanup in conditional fetch effect */
       setBackendVersion(null)
       setBackupVersion(null)
@@ -1402,7 +1400,7 @@ export default function App() {
         setBackendVersion(null)
         setBackupVersion(null)
       })
-  }, [canEditContent])
+  }, [currentUser])
 
   // Program management handlers (for Manage menu)
   const handleAddProgram = useCallback(

@@ -59,8 +59,8 @@ Sources and fallback behaviour (see issue
 - **Frontend version** — The browser fetches its own deployed version via
   `GET /version` (`fetchFrontendVersion()` in `frontend/src/api.ts`), the same
   source used by the footer and About dialog. `App.tsx` fetches this for every
-  authenticated user (including students, who never see the version strings
-  displayed) and passes it to `ReportIssueModal`, which includes it as
+  authenticated user (every role sees the version strings, #1963) and passes
+  it to `ReportIssueModal`, which includes it as
   `frontend_version` in the submission only when a non-empty value is
   available. If the browser's `/version` request fails, submission proceeds
   without the field. If the client omits `frontend_version` (old clients, or a
