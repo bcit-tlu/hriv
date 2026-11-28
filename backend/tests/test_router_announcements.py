@@ -614,17 +614,43 @@ async def test_load_stats_queries_counts_without_identities() -> None:
 
     stats = await _load_stats(db, [everyone, staff, targeted, admins])
 
-    assert stats[1] == rules.SeenStats(seen_count=1, audience_size=None)
+    # Everyone = active users of every role (2 + 4 + 6 + 90), #1935.
+    assert stats[1] == rules.SeenStats(seen_count=1, audience_size=102)
     assert stats[2] == rules.SeenStats(seen_count=1, audience_size=12)
     assert stats[3] == rules.SeenStats(seen_count=1, audience_size=5)
     assert stats[4] == rules.SeenStats(seen_count=0, audience_size=2)
     assert len(calls) == 3  # one head-count query serves every role audience
+    assert "users.active IS true" in calls[1]  # deactivated accounts aren't reach
     union_sql = calls[2]
     for table in ("announcement_programs", "user_programs", "group_members", "group_instructors"):
         assert table in union_sql
     assert "announcements.author_id" in union_sql  # the author is part of the reach
     assert "count(DISTINCT" in union_sql
     assert await _load_stats(db, []) == {}
+
+
+async def test_load_stats_counts_everyone_without_role_audiences() -> None:
+    # An Everyone post alone still runs the head-count query (#1935).
+    everyone = _ann(id=1, audience="everyone", notified_at=NOW)
+
+    async def _exec(stmt, *_a, **_k):
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        result = MagicMock()
+        if "announcement_seen" in sql:
+            result.all.return_value = [(1, {"1": NOW.isoformat()})]
+        else:
+            assert "GROUP BY users.role" in sql
+            assert "users.active IS true" in sql
+            result.all.return_value = [("admin", 1), ("student", 30)]
+        return result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=_exec)
+
+    stats = await _load_stats(db, [everyone])
+
+    assert stats[1] == rules.SeenStats(seen_count=1, audience_size=31)
+    assert db.execute.await_count == 2
 
 
 # ── reactions ─────────────────────────────────────────────────
