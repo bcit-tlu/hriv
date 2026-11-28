@@ -320,25 +320,6 @@ async def enqueue_replace_image(
     )
 
 
-async def enqueue_bulk_import(
-    job_id: int,
-    file_entries: list[tuple[str, str]],
-    copyright: str | None = None,
-    note: str | None = None,
-    active: bool = True,
-) -> EnqueueResult:
-    """Legacy bulk-import coordinator enqueue helper.
-
-    New bulk-import requests run the lightweight coordinator from the API
-    BackgroundTasks path so arq worker slots remain available for child image
-    processing. Keep this helper while older queued jobs may still exist.
-    """
-    return await _enqueue(
-        "bulk_import_task", job_id, file_entries, copyright, note, active,
-        job_type="bulk_import",
-    )
-
-
 async def enqueue_measurement_scan(
     image_ids: list[int], rescan: bool = False
 ) -> EnqueueResult:
@@ -512,54 +493,6 @@ async def replace_image_task(
             )
             try:
                 await process_replace_image(source_image_id, target_image_id)
-            except Exception as exc:
-                span.set_status(Status(StatusCode.ERROR, str(exc)))
-                span.record_exception(exc)
-                raise
-    finally:
-        if token is not None:
-            detach(token)
-
-
-async def bulk_import_task(
-    ctx: dict[str, Any],
-    job_id: int,
-    file_entries: list[tuple[str, str]],
-    copyright: str | None,
-    note: str | None,
-    active: bool,
-    trace_headers: dict[str, str] | None = None,
-) -> None:
-    """Legacy arq wrapper for bulk import processing.
-
-    New bulk-import requests no longer enqueue this task because a coordinator
-    that waits on child image jobs must not consume an arq worker slot.
-    """
-    from .routers.bulk_import import _process_bulk_import
-
-    parent_ctx = extract(trace_headers) if trace_headers else None
-    token = attach(parent_ctx) if parent_ctx else None
-    try:
-        with tracer.start_as_current_span(
-            "bulk_import_task",
-            attributes={"bulk_import.job_id": job_id},
-        ) as span:
-            logger.info(
-                "arq worker processing bulk import",
-                extra={
-                    "event": "worker.bulk_import_started",
-                    "job_id": job_id,
-                    "file_count": len(file_entries),
-                },
-            )
-            try:
-                await _process_bulk_import(
-                    job_id,
-                    file_entries,
-                    copyright=copyright,
-                    note=note,
-                    active=active,
-                )
             except Exception as exc:
                 span.set_status(Status(StatusCode.ERROR, str(exc)))
                 span.record_exception(exc)
@@ -768,7 +701,6 @@ class WorkerSettings:
     functions = [
         process_source_image_task,
         replace_image_task,
-        func(bulk_import_task, max_tries=1),
         func(admin_task_runner, timeout=86400),
         func(rebuild_tile_pump_task, max_tries=1),
         func(

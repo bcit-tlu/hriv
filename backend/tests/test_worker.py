@@ -20,7 +20,6 @@ from app.worker import (
     WorkerSettings,
     _parse_redis_settings,
     admin_task_runner,
-    bulk_import_task,
     enqueue_admin_task,
     enqueue_process_source_image,
     enqueue_tile_rebuild_pump,
@@ -271,22 +270,20 @@ def test_worker_settings_apply_task_specific_timeouts() -> None:
         process_source_image_task,
         replace_image_task,
     ]
-    bulk_import_fn = WorkerSettings.functions[2]
-    assert bulk_import_fn.coroutine == bulk_import_task
-    assert bulk_import_fn.max_tries == 1
-    admin_fn = WorkerSettings.functions[3]
+    admin_fn = WorkerSettings.functions[2]
     assert admin_fn.name == "admin_task_runner"
     assert admin_fn.timeout_s == 86400
-    rebuild_pump_fn = WorkerSettings.functions[4]
+    rebuild_pump_fn = WorkerSettings.functions[3]
     assert rebuild_pump_fn.name == "rebuild_tile_pump_task"
     assert rebuild_pump_fn.max_tries == 1
-    rebuild_child_fn = WorkerSettings.functions[5]
+    rebuild_child_fn = WorkerSettings.functions[4]
     assert rebuild_child_fn.name == "rebuild_tile_item"
     assert rebuild_child_fn.timeout_s == 90000
     assert rebuild_child_fn.max_tries == 1
-    measurement_fn = WorkerSettings.functions[6]
+    measurement_fn = WorkerSettings.functions[5]
     assert measurement_fn.name == "measurement_scan_task"
     assert measurement_fn.max_tries == 1
+    assert len(WorkerSettings.functions) == 6
 
 
 async def test_enqueue_tile_rebuild_pump_uses_deterministic_id() -> None:
