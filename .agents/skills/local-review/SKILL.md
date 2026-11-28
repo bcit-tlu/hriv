@@ -1,0 +1,61 @@
+---
+name: local-review
+description: Hand off an HRIV branch for local review. Use when sharing a branch or worktree for review in Docker Compose, Vite, or Storybook, or when identifying what a worktree is for.
+---
+
+# Local Review
+
+## Before Saying “Ready to Review”
+
+1. Commit the changes intended for review and push the branch. Use
+   `git push -u origin HEAD` when publishing the branch for the first time.
+2. Run `git status -sb`. Confirm it shows the review branch tracking
+   `origin/<branch>` with nothing ahead, and that no intended review changes are
+   uncommitted.
+3. Run `git log -1 --oneline`. Give the reviewer the branch name and the short commit
+   SHA, and say which surface to open and what to check.
+
+## Commands to Share with the Reviewer
+
+From the root of the main checkout, create a worktree on a local tracking branch:
+
+```bash
+git fetch origin && git worktree add --track -b <local-review-branch> .worktrees/<name> origin/<branch>
+```
+
+For an existing worktree on that tracking branch:
+
+```bash
+git -C .worktrees/<name> pull --ff-only
+```
+
+From the review worktree, run `git log -1 --oneline` and check that the SHA matches
+the handoff before opening the review surface.
+
+**Docker Compose:** The stack uses fixed host ports. If another HRIV stack is
+running, run `docker compose down` in that checkout first. Then run
+`docker compose up -d --build` from the review worktree root.
+Rerun that command after pulling changes to Alembic migrations, the in-app guide
+(`frontend/guide/`), dependencies, or Dockerfiles. It reruns the `migrate`
+service and rebuilds the frontend image, which contains the guide.
+For changes limited to mounted source, restart Vite with
+`docker compose restart frontend`. The ARQ worker does not hot-reload backend
+changes; restart it with `docker compose restart worker`.
+
+**Storybook:** From the review worktree root:
+
+```bash
+cd frontend && npm install && npm run storybook
+```
+
+Use `npm install` for this interactive review setup; CI uses `npm ci`. Stop and
+restart any running Vite or Storybook dev server after pulling, and make sure
+the restarted server is running from the review worktree.
+
+## Record the Worktree’s Purpose
+
+When creating a worktree, write one line about its purpose to
+`.worktrees/<name>.purpose` in the main checkout, beside the worktree. When asked
+what the worktree is for, read that file first, then consult the branch’s PR and
+commit log. Remove the purpose file after `git worktree remove .worktrees/<name>`
+succeeds.
