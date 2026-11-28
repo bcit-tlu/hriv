@@ -322,6 +322,8 @@ jobs:
 
   helm-lint:
     runs-on: ubuntu-latest
+    env:
+      KUBECONFORM_VERSION: v0.8.0
     steps:
       - uses: actions/checkout@v7
 
@@ -331,15 +333,19 @@ jobs:
 
       # The release-asset download is anonymous and has flaked during GitHub
       # incidents (error pages reaching tar as "not in gzip format"). Download
-      # to a file, fail on HTTP errors, validate the archive, and retry.
+      # to a file, fail on HTTP errors, verify it against the release's
+      # CHECKSUMS, and retry.
       - name: Install kubeconform
         run: |
-          url='https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz'
+          base="https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}"
+          asset='kubeconform-linux-amd64.tar.gz'
+          mkdir -p /tmp/kubeconform-dl && cd /tmp/kubeconform-dl
           for attempt in 1 2 3 4 5; do
-            if curl -fsSL --connect-timeout 10 --max-time 120 \
-                -o /tmp/kubeconform.tar.gz "$url" \
-              && tar -tzf /tmp/kubeconform.tar.gz kubeconform >/dev/null 2>&1; then
-              sudo tar -xzf /tmp/kubeconform.tar.gz -C /usr/local/bin kubeconform
+            if curl -fsSL --connect-timeout 10 --max-time 120 -o "$asset" "$base/$asset" \
+              && curl -fsSL --connect-timeout 10 --max-time 20 -o CHECKSUMS "$base/CHECKSUMS" \
+              && grep " ${asset}\$" CHECKSUMS | sha256sum -c --strict --quiet - \
+              && tar -tzf "$asset" kubeconform >/dev/null 2>&1; then
+              sudo tar -xzf "$asset" -C /usr/local/bin kubeconform
               kubeconform -v
               exit 0
             fi
@@ -355,9 +361,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /tmp/kubeconform-cache
-          key: kubeconform-schemas-v0.6.7-${{ hashFiles('charts/**/Chart.yaml') }}
+          key: kubeconform-schemas-${{ env.KUBECONFORM_VERSION }}-${{ hashFiles('charts/**/Chart.yaml') }}
           restore-keys: |
-            kubeconform-schemas-v0.6.7-
+            kubeconform-schemas-${{ env.KUBECONFORM_VERSION }}-
 
       - name: Lint all charts
         run: |
