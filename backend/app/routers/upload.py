@@ -52,7 +52,8 @@ async def upload_source_image(
     name: Annotated[str | None, Form()] = None,
     category_id: Annotated[int | None, Form()] = None,
     copyright: Annotated[str | None, Form()] = None,
-    note: Annotated[str | None, Form()] = None,
+    description: Annotated[str | None, Form()] = None,
+    instructor_note: Annotated[str | None, Form()] = None,
     active: Annotated[bool, Form()] = True,
     db: AsyncSession = Depends(get_db),
 ) -> SourceImage:
@@ -70,13 +71,20 @@ async def upload_source_image(
             # Ensure the source images directory exists
             os.makedirs(settings.source_images_dir, exist_ok=True)
 
-            # Validate and normalize note early (before writing large files to disk).
+            # Validate and normalize notes early (before writing large files to disk).
             try:
-                note = normalize_note_value(note)
+                description = normalize_note_value(description)
             except ValueError:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Note must be {MAX_NOTE_LENGTH} characters or fewer",
+                    detail=f"Description must be {MAX_NOTE_LENGTH} characters or fewer",
+                )
+            try:
+                instructor_note = normalize_note_value(instructor_note)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Instructor note must be {MAX_NOTE_LENGTH} characters or fewer",
                 )
 
             # Generate a unique filename to avoid collisions
@@ -125,7 +133,8 @@ async def upload_source_image(
                 name=name,
                 category_id=category_id,
                 copyright=copyright,
-                note=note,
+                description=description,
+                instructor_note=instructor_note,
                 active=active,
                 file_size=file_size,
                 uploaded_by=user.id,

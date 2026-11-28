@@ -1059,7 +1059,8 @@ async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> No
             tile_sources="/api/tiles/9300000/image.dzi",
             category_id=None,
             copyright=None,
-            note=None,
+            description=None,
+            instructor_note=None,
             active=True,
             sort_order=0,
             metadata_={"rebuild_fixture": True},
@@ -1073,7 +1074,8 @@ async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> No
             tile_sources="/api/tiles/812/image.dzi",
             category_id=None,
             copyright=None,
-            note=None,
+            description=None,
+            instructor_note=None,
             active=True,
             sort_order=1,
             metadata_={},
@@ -1097,7 +1099,8 @@ async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> No
             name="src",
             category_id=None,
             copyright=None,
-            note=None,
+            description=None,
+            instructor_note=None,
             active=True,
             image_id=None,
             uploaded_by=1,
@@ -1118,7 +1121,8 @@ async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> No
             name="TRF-Image-00000",
             category_id=None,
             copyright=None,
-            note=None,
+            description=None,
+            instructor_note=None,
             active=True,
             image_id=9_400_000,
             uploaded_by=None,
@@ -1139,7 +1143,8 @@ async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> No
             name="TRF-study",
             category_id=None,
             copyright=None,
-            note=None,
+            description=None,
+            instructor_note=None,
             active=True,
             image_id=9_400_005,
             uploaded_by=1,
@@ -1151,6 +1156,10 @@ async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> No
             updated_at=now,
         ),
     ]
+    next(i for i in images if i.id == 9_400_005).instructor_note = "staff only"
+    next(s for s in source_images if s.id == 812).instructor_note = "src staff only"
+    next(i for i in images if i.id == 9_400_005).description = "public text"
+    next(s for s in source_images if s.id == 812).description = "src public text"
     announcements = [
         SimpleNamespace(
             id=1,
@@ -1312,6 +1321,11 @@ async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> No
     assert "parent_program_id" not in by_id[1]
     assert [image["id"] for image in dump["images"]] == [9_400_005]
     assert [source["id"] for source in dump["source_images"]] == [1, 812]
+    assert dump["images"][0]["instructor_note"] == "staff only"
+    assert [s["instructor_note"] for s in dump["source_images"]] == [None, "src staff only"]
+    assert dump["images"][0]["description"] == "public text"
+    assert [s["description"] for s in dump["source_images"]] == [None, "src public text"]
+    assert all("note" not in row for row in dump["images"] + dump["source_images"])
     assert dump["source_images"][0]["uploaded_by"] == 1
     assert dump["collections"] == [
         {
@@ -1803,6 +1817,75 @@ async def test_run_db_import_without_optional_sections(tmp_path) -> None:
     # No announcement keys at all → nothing is inserted (no singleton anymore).
     add_calls = [c.args[0] for c in mock_session.add.call_args_list]
     assert not any(type(obj).__name__ == "Announcement" for obj in add_calls)
+
+
+async def test_run_db_import_restores_instructor_note(tmp_path) -> None:
+    """instructor_note round-trips; dumps without it import as NULL."""
+    dump = {
+        "users": [{"id": 1, "name": "U", "email": "u@e.com"}],
+        "categories": [{"id": 1, "label": "root", "parent_id": None}],
+        "images": [
+            {"id": 1, "name": "a", "thumb": "/t", "tile_sources": "/ts",
+             "note": "public", "instructor_note": "staff only"},
+            {"id": 2, "name": "b", "thumb": "/t2", "tile_sources": "/ts2",
+             "note": "legacy"},
+        ],
+        "source_images": [
+            {"id": 1, "original_filename": "o.tiff", "stored_path": "/s",
+             "image_id": 1, "instructor_note": "src staff only"},
+        ],
+    }
+    input_file = tmp_path / "dump.json"
+    input_file.write_text(json.dumps(dump))
+    task = _make_import_task(str(input_file))
+    mock_session, factory = _make_import_session(task)
+
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_db_import(1)
+
+    assert task.status == "completed"
+    added = [c.args[0] for c in mock_session.add.call_args_list]
+    images = {o.id: o for o in added if type(o).__name__ == "Image"}
+    sources = [o for o in added if type(o).__name__ == "SourceImage"]
+    assert (images[1].description, images[1].instructor_note) == ("public", "staff only")
+    assert (images[2].description, images[2].instructor_note) == ("legacy", None)
+    assert [s.instructor_note for s in sources] == ["src staff only"]
+
+
+async def test_run_db_import_reads_description_then_legacy_keys(tmp_path) -> None:
+    """``description`` wins; older dumps fall back to ``note`` then ``origin``."""
+    dump = {
+        "users": [{"id": 1, "name": "U", "email": "u@e.com"}],
+        "categories": [{"id": 1, "label": "root", "parent_id": None}],
+        "images": [
+            {"id": 1, "name": "a", "thumb": "/t1", "tile_sources": "/ts1",
+             "description": "current", "note": "ignored"},
+            {"id": 2, "name": "b", "thumb": "/t2", "tile_sources": "/ts2",
+             "note": "from note", "origin": "ignored"},
+            {"id": 3, "name": "c", "thumb": "/t3", "tile_sources": "/ts3",
+             "origin": "from origin"},
+        ],
+        "source_images": [
+            {"id": 1, "original_filename": "a.tiff", "stored_path": "/s1",
+             "image_id": 1, "description": "src current", "note": "ignored"},
+            {"id": 2, "original_filename": "b.tiff", "stored_path": "/s2",
+             "image_id": 2, "note": "src from note"},
+        ],
+    }
+    input_file = tmp_path / "dump.json"
+    input_file.write_text(json.dumps(dump))
+    task = _make_import_task(str(input_file))
+    mock_session, factory = _make_import_session(task)
+
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_db_import(1)
+
+    assert task.status == "completed"
+    added = [c.args[0] for c in mock_session.add.call_args_list]
+    images = {o.id: o.description for o in added if type(o).__name__ == "Image"}
+    sources = {o.id: o.description for o in added if type(o).__name__ == "SourceImage"}
+    assert images == {1: "current", 2: "from note", 3: "from origin"}
+    assert sources == {1: "src current", 2: "src from note"}
 
 
 async def test_run_db_import_circular_categories(tmp_path) -> None:

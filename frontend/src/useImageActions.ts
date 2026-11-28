@@ -117,7 +117,8 @@ export function useImageActions(deps: UseImageActionsDeps) {
             tile_sources: selectedImage.tileSources,
             category_id: selectedImage.categoryId ?? null,
             copyright: selectedImage.copyright ?? null,
-            note: selectedImage.note ?? null,
+            description: selectedImage.description ?? null,
+            instructor_note: selectedImage.instructorNote ?? null,
             active: selectedImage.active,
             sort_order: selectedImage.sortOrder,
             version: selectedImage.version,
@@ -142,7 +143,8 @@ export function useImageActions(deps: UseImageActionsDeps) {
             tile_sources: browseEditImage.tileSources,
             category_id: browseEditImage.categoryId ?? null,
             copyright: browseEditImage.copyright ?? null,
-            note: browseEditImage.note ?? null,
+            description: browseEditImage.description ?? null,
+            instructor_note: browseEditImage.instructorNote ?? null,
             active: browseEditImage.active,
             sort_order: browseEditImage.sortOrder,
             version: browseEditImage.version,
@@ -189,7 +191,8 @@ export function useImageActions(deps: UseImageActionsDeps) {
           tileSources: updated.tile_sources,
           categoryId: updated.category_id,
           copyright: updated.copyright,
-          note: updated.note,
+          description: updated.description,
+          instructorNote: updated.instructor_note,
           active: updated.active,
           sortOrder: updated.sort_order,
           version: updated.version,
@@ -238,7 +241,12 @@ export function useImageActions(deps: UseImageActionsDeps) {
               categoryId:
                 formData.category_id !== undefined ? formData.category_id : prev.categoryId,
               copyright: formData.copyright !== undefined ? formData.copyright : prev.copyright,
-              note: formData.note !== undefined ? formData.note : prev.note,
+              description:
+                formData.description !== undefined ? formData.description : prev.description,
+              instructorNote:
+                formData.instructor_note !== undefined
+                  ? formData.instructor_note
+                  : prev.instructorNote,
               active: formData.active !== undefined ? formData.active : prev.active,
             }
           : prev,

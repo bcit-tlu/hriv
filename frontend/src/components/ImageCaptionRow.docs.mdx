@@ -14,16 +14,21 @@ import * as ImageCaptionRowStories from './ImageCaptionRow.stories'
 <Title />
 
 <Subtitle>
-  The caption row shared by the image view and the collection viewers: title, note, and actions.
+  The caption row shared by the image view and the collection viewers: title, description, and
+  actions.
 </Subtitle>
 
 ## When to use
 
-`ImageCaptionRow` renders `[h2 image title] [Notes: note …more] {end}` — the note clamps to one
-line with an "…more" affordance (`onShowNote` opens the caller's `ViewportDialog`), and `end`
-carries the right-hand actions (position readout, **Open image**, or the fitted collections cell).
-When a note is present the title is capped at min(468px, 40%) so the note gets the room; without one the title
-takes the full width.
+`ImageCaptionRow` renders `[h2 image title] [Description: … …more] {end}`. The description clamps
+to one line with an "…more" affordance that opens the caller's **Description**
+`ViewportDialog` (`onShowNote`). `end` carries the right-hand actions (position readout,
+**Open image**, or the fitted collections cell). When a description is present the title is
+capped at min(468px, 40%) so the text gets the room; without one the title takes the full width.
+On narrow screens the row wraps.
+
+The row never shows the staff-only instructor note: it sits under the viewer, which instructors
+share on a projector. The note lives in the image details (`ImageDetailsDrawer`) instead.
 
 Used by `ImageViewerInfoBar`, `SequenceCollectionViewer`, and `SynchronizedCollectionViewer`.
 

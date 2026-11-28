@@ -409,7 +409,8 @@ async def test_process_source_image_success(
         name="Test Image",
         category_id=5,
         copyright="CC",
-        note="a note",
+        description="a note",
+        instructor_note="a staff note",
         active=True,
         image_id=None,
         uploaded_by=7,
@@ -449,6 +450,8 @@ async def test_process_source_image_success(
 
     assert src.status == "completed"
     assert captured_image["image"].file_size == 5242880
+    assert captured_image["image"].description == "a note"
+    assert captured_image["image"].instructor_note == "a staff note"
     # Tile-cache provenance is recorded on success.
     from app.tile_provenance import current_tile_settings_hash
 
@@ -485,7 +488,8 @@ async def test_process_source_image_uploader_deleted(caplog: pytest.LogCaptureFi
         name="Test Image",
         category_id=5,
         copyright="CC",
-        note="a note",
+        description="a note",
+        instructor_note=None,
         active=True,
         image_id=None,
         uploaded_by=7,
@@ -543,7 +547,8 @@ async def test_process_source_image_uploader_reflected_at_event_time(caplog: pyt
         name="Test Image",
         category_id=5,
         copyright="CC",
-        note="a note",
+        description="a note",
+        instructor_note=None,
         active=True,
         image_id=None,
         uploaded_by=7,
@@ -602,7 +607,8 @@ async def test_process_source_image_uploader_lookup_exception(caplog: pytest.Log
         name="Test Image",
         category_id=5,
         copyright="CC",
-        note="a note",
+        description="a note",
+        instructor_note=None,
         active=True,
         image_id=None,
         uploaded_by=7,
@@ -665,7 +671,8 @@ async def test_process_source_image_failure(_patch_measurement_scan: AsyncMock) 
         name=None,
         category_id=None,
         copyright=None,
-        note=None,
+        description=None,
+        instructor_note=None,
         active=True,
         image_id=None,
         uploaded_by=None,
@@ -707,7 +714,8 @@ async def test_process_source_image_enospc_failure() -> None:
         name=None,
         category_id=None,
         copyright=None,
-        note=None,
+        description=None,
+        instructor_note=None,
         active=True,
         image_id=None,
         uploaded_by=None,
@@ -1225,7 +1233,8 @@ async def test_process_source_image_with_pyramid_metadata() -> None:
         name="Slide",
         category_id=2,
         copyright=None,
-        note=None,
+        description=None,
+        instructor_note=None,
         active=True,
         image_id=None,
         uploaded_by=None,

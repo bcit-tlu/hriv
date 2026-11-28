@@ -25,7 +25,7 @@ function apiImage(overrides: Partial<ApiImage> = {}): ApiImage {
     tile_sources: '/tiles.dzi',
     category_id: null,
     copyright: null,
-    note: null,
+    description: null,
     active: true,
     sort_order: 0,
     metadata_extra: null,

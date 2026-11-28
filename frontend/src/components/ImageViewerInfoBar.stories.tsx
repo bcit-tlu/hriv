@@ -29,9 +29,13 @@ function InfoBarExample(args: ImageViewerInfoBarProps) {
           overflow: 'hidden',
         }}
       >
-        <ViewportDialog open={dialog === 'note'} title="Notes" onClose={() => setDialog(null)}>
+        <ViewportDialog
+          open={dialog === 'note'}
+          title="Description"
+          onClose={() => setDialog(null)}
+        >
           <Box sx={{ typography: 'body2', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-            {args.note}
+            {args.description}
           </Box>
         </ViewportDialog>
         <ViewportDialog
@@ -103,26 +107,27 @@ type Story = StoryObj<typeof meta>
 
 export const Basic: Story = {
   args: {
-    note: 'The cathedral’s construction began in 1386.',
+    description: 'The cathedral’s construction began in 1386.',
   },
 }
 
 export const LongNote: Story = {
   args: {
-    note: 'The cathedral’s construction began in 1386 and continued for centuries.\nThe main façade was completed in the 19th century after many redesigns.\nRestoration work continues today on the marble exterior, the spires, and the stained-glass windows.',
+    description:
+      'The cathedral’s construction began in 1386 and continued for centuries.\nThe main façade was completed in the 19th century after many redesigns.\nRestoration work continues today on the marble exterior, the spires, and the stained-glass windows.',
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const showMore = canvas.getByRole('button', { name: 'Show full note' })
+    const showMore = canvas.getByRole('button', { name: 'Show full description' })
     await userEvent.click(showMore)
-    const dialog = await canvas.findByRole('dialog', { name: 'Notes' })
+    const dialog = await canvas.findByRole('dialog', { name: 'Description' })
     await expect(within(dialog).getByText(/stained-glass windows/)).toBeInTheDocument()
   },
 }
 
 export const ManyCollections: Story = {
   args: {
-    note: 'The cathedral’s construction began in 1386.',
+    description: 'The cathedral’s construction began in 1386.',
     // Long names at full row width so "… + N more" engages naturally.
     collections: [
       { id: 1621, name: 'Duomo of Milan digital archive' },
@@ -152,7 +157,7 @@ export const ManyCollections: Story = {
 
 export const NarrowCollections: Story = {
   args: {
-    note: 'The cathedral’s construction began in 1386.',
+    description: 'The cathedral’s construction began in 1386.',
     collections: [
       { id: 1621, name: 'Duomo of Milan digital archive' },
       { id: 1622, name: 'Italian Renaissance architecture' },
@@ -193,7 +198,7 @@ export const NarrowCollections: Story = {
 
 export const NarrowSingleCollection: Story = {
   args: {
-    note: 'The cathedral’s construction began in 1386.',
+    description: 'The cathedral’s construction began in 1386.',
     // Long enough to overflow 420px even with the label and gaps, so it
     // ellipsizes at any viewport.
     collections: [
@@ -231,7 +236,7 @@ export const NarrowSingleCollection: Story = {
 
 export const TitleOnly: Story = {
   args: {
-    note: null,
+    description: null,
     collections: [],
   },
 }

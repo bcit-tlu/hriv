@@ -52,7 +52,7 @@ it('renews crops by slot id rather than picking the first matching source image'
         tile_sources: '/image.dzi',
         category_id: 1,
         copyright: null,
-        note: null,
+        description: null,
         sort_order: 0,
         version: 1,
         created_at: null,

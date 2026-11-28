@@ -168,7 +168,7 @@ def _make_image(
         tile_sources="/tiles/img",
         category_id=category_id,
         copyright=None,
-        note=None,
+        description=None,
         active=active,
         sort_order=sort_order,
         metadata_=None,
@@ -1846,3 +1846,18 @@ async def test_create_category_null_pin_allowed() -> None:
     assert result._card_image_id is None
     assert result._card_thumb is None
     db.add.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("role", "expected"),
+    [("student", None), ("staff", "staff only"), ("instructor", "staff only"), ("admin", "staff only")],
+)
+async def test_load_tree_scrubs_instructor_note_for_students(role, expected) -> None:
+    img = _make_image(10, "img", category_id=1)
+    img.description = "public"
+    img.instructor_note = "staff only"
+    db = _mock_db([_make_category(1, "Cat")], [img])
+
+    tree = await _load_tree(db, None, user_role=role)
+
+    assert (tree[0].images[0].description, tree[0].images[0].instructor_note) == ("public", expected)

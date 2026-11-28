@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import type { RefObject } from 'react'
 import Box from '@mui/material/Box'
+import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Slide from '@mui/material/Slide'
@@ -8,10 +9,12 @@ import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import CloseIcon from '@mui/icons-material/Close'
+import LockIcon from '@mui/icons-material/Lock'
 import type { ImageItem, ImageSourceInfo } from '../types'
 import { formatFileSize } from '../formatUtils'
 import type { MeasurementConfig } from './imageViewerUtils'
 import { objectiveFromMetadata, objectiveLabel } from '../measurementUnits'
+import { INSTRUCTOR_NOTE_VISIBILITY } from './InstructorNoteField'
 
 export interface ImageDetailsTriggerProps {
   open: boolean
@@ -89,7 +92,14 @@ export function ImageDetailsTrigger({
 export interface ImageDetailsDrawerProps {
   image: Pick<
     ImageItem,
-    'copyright' | 'createdAt' | 'updatedAt' | 'width' | 'height' | 'fileSize' | 'metadataExtra'
+    | 'instructorNote'
+    | 'copyright'
+    | 'createdAt'
+    | 'updatedAt'
+    | 'width'
+    | 'height'
+    | 'fileSize'
+    | 'metadataExtra'
   >
   programNames: string[]
   groupNames: string[]
@@ -161,8 +171,10 @@ function DetailField({
  * relative). Both top-level children carry `data-hriv-canvas-ui` so
  * ImageViewer's selection tracker skips presses inside them.
  *
- * Holds only the metadata field list; notes, collections, and the viewer
- * instructions live in `ImageViewerInfoBar` below the viewer.
+ * Holds the metadata field list, topped by the staff-only instructor note
+ * when the API sends one (never for students). The description and
+ * collections live in `ImageViewerInfoBar` below the viewer; the viewer
+ * instructions sit in this drawer's footer.
  */
 export default function ImageDetailsDrawer({
   image,
@@ -295,6 +307,7 @@ export function ImageDetailsContent({
   /** List every field, marking absent values "—" instead of omitting them. */
   showAll?: boolean
 }) {
+  const instructorNote = image.instructorNote?.trim() ?? ''
   const fields: { label: string; value: string; title?: string; tooltip?: string }[] = []
   const add = (
     label: string,
@@ -351,7 +364,7 @@ export function ImageDetailsContent({
 
   return (
     <Stack spacing={dense ? 0.5 : 0.75}>
-      {fields.length === 0 ? (
+      {fields.length === 0 && instructorNote === '' ? (
         <Typography variant={dense ? 'caption' : 'body2'} component="p" color="text.secondary">
           No details available.
         </Typography>
@@ -366,6 +379,27 @@ export function ImageDetailsContent({
             dense={dense}
           />
         ))
+      )}
+      {instructorNote !== '' && (
+        // Its own section below the metadata, so it isn't read as one of the fields.
+        <>
+          {fields.length > 0 && <Divider />}
+          {/* Wraps (unlike the single-line fields): it can run to 500 characters. */}
+          <Typography
+            variant={dense ? 'caption' : 'body2'}
+            component="p"
+            color="text.secondary"
+            data-testid="image-details-instructor-note"
+            sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+          >
+            <LockIcon
+              fontSize="inherit"
+              titleAccess={INSTRUCTOR_NOTE_VISIBILITY}
+              sx={{ verticalAlign: 'text-bottom', mr: 0.5 }}
+            />
+            <strong>Instructor note:</strong> {instructorNote}
+          </Typography>
+        </>
       )}
     </Stack>
   )

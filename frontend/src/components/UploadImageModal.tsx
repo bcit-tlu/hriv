@@ -140,7 +140,8 @@ export default function UploadImageModal({
   const [categoryId, setCategoryId] = useState<number | null>(initialCategoryId ?? null)
   const [metadata, setMetadata] = useState<ImageMetadataValues>({
     copyright: '',
-    note: '',
+    description: '',
+    instructorNote: '',
     active: true,
   })
   const [dragOver, setDragOver] = useState(false)
@@ -173,7 +174,7 @@ export default function UploadImageModal({
     setFiles([])
     setName('')
     setCategoryId(initialCategoryId ?? null)
-    setMetadata({ copyright: '', note: '', active: true })
+    setMetadata({ copyright: '', description: '', instructorNote: '', active: true })
     setDragOver(false)
     setUploading(false)
     setUploadProgress(null)
@@ -271,7 +272,8 @@ export default function UploadImageModal({
           files,
           categoryId,
           metadata.copyright || undefined,
-          metadata.note || undefined,
+          metadata.description || undefined,
+          metadata.instructorNote || undefined,
           metadata.active,
           (fraction: number) => {
             setUploadProgress(fraction)
@@ -322,7 +324,8 @@ export default function UploadImageModal({
           name || undefined,
           categoryId ?? undefined,
           metadata.copyright || undefined,
-          metadata.note || undefined,
+          metadata.description || undefined,
+          metadata.instructorNote || undefined,
           metadata.active,
           (fraction: number) => {
             setUploadProgress(fraction)

@@ -85,7 +85,7 @@ async def _get_or_create_source(
             name=IMAGE_NAME,
             category_id=category_id,
             copyright=IMAGE_COPYRIGHT,
-            note=IMAGE_NOTE,
+            description=IMAGE_NOTE,
             active=True,
             file_size=file_size,
         )
@@ -99,7 +99,7 @@ async def _get_or_create_source(
         source.name = IMAGE_NAME
         source.category_id = category_id
         source.copyright = IMAGE_COPYRIGHT
-        source.note = IMAGE_NOTE
+        source.description = IMAGE_NOTE
         source.active = True
         source.file_size = file_size
     return source
@@ -169,7 +169,7 @@ async def seed_media() -> None:
                 tile_sources=tile_sources_url,
                 category_id=category_id,
                 copyright=IMAGE_COPYRIGHT,
-                note=IMAGE_NOTE,
+                description=IMAGE_NOTE,
                 active=True,
                 metadata_={},
                 sort_order=0,
@@ -184,7 +184,7 @@ async def seed_media() -> None:
             image.tile_sources = tile_sources_url
             image.category_id = category_id
             image.copyright = IMAGE_COPYRIGHT
-            image.note = IMAGE_NOTE
+            image.description = IMAGE_NOTE
             image.active = True
             image.width = width
             image.height = height

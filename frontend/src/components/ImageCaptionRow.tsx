@@ -8,11 +8,11 @@ export interface ImageCaptionRowProps {
   name: string
   /** false appends an ' (inactive)' marker to the title. */
   active?: boolean
-  /** The image's note; whitespace-only notes render nothing. */
-  note?: string | null
-  /** Whether the caller's notes dialog is open (aria-expanded on "…more"). */
+  /** The image's description; whitespace-only text renders nothing. */
+  description?: string | null
+  /** Whether the caller's description dialog is open (aria-expanded on "…more"). */
   noteDialogOpen?: boolean
-  /** Open the full note (callers show a ViewportDialog). */
+  /** Open the full description (callers show a ViewportDialog). */
   onShowNote: () => void
   /** Right-hand content (position readout, Open image, fitted collections). */
   end?: ReactNode
@@ -20,20 +20,23 @@ export interface ImageCaptionRowProps {
 
 /**
  * The caption row shared by the image view and the collection viewers:
- * `[h2 image title] [Notes: note …more] {end}`. The note clamps to one line
- * with an "…more" affordance that opens the caller's dialog. When a note is
- * present the title is capped at min(468px, 40%) so the note gets the room
- * in narrow panes while typical image names still fit.
+ * `[h2 image title] [Description: … …more] {end}`. The description clamps to
+ * one line with an "…more" affordance that opens the caller's dialog. When a
+ * description is present the title is capped at min(468px, 40%) so the text
+ * gets the room in narrow panes while typical image names still fit.
+ *
+ * The instructor note never shows here: this row sits under the viewer, which
+ * instructors share on a projector. It lives in the image details instead.
  */
 export default function ImageCaptionRow({
   name,
   active = true,
-  note,
+  description,
   noteDialogOpen = false,
   onShowNote,
   end,
 }: ImageCaptionRowProps) {
-  const noteText = note?.trim() ?? ''
+  const descriptionText = description?.trim() ?? ''
 
   return (
     <Box
@@ -53,7 +56,7 @@ export default function ImageCaptionRow({
         noWrap
         title={name}
         sx={
-          noteText !== ''
+          descriptionText !== ''
             ? { flex: '0 1 auto', minWidth: 0, maxWidth: 'min(468px, 40%)', mr: 4 }
             : { flex: 1, minWidth: 0 }
         }
@@ -61,7 +64,7 @@ export default function ImageCaptionRow({
         {name}
         {!active ? ' (inactive)' : ''}
       </Typography>
-      {note != null && noteText !== '' && (
+      {descriptionText !== '' && (
         <Box
           sx={{
             flex: 1,
@@ -69,7 +72,7 @@ export default function ImageCaptionRow({
             display: 'flex',
             gap: 0.5,
             alignItems: 'baseline',
-            // Match the title→Notes gap before the end slot.
+            // Match the title→Description gap before the end slot.
             ...(end != null ? { mr: 4 } : {}),
           }}
         >
@@ -79,16 +82,16 @@ export default function ImageCaptionRow({
             component="span"
             sx={{ whiteSpace: 'nowrap', flexShrink: 0, fontWeight: 'bold' }}
           >
-            Notes:
+            Description:
           </Typography>
           <ClampedContent
             lines={1}
             onMore={onShowNote}
             expanded={noteDialogOpen}
-            moreAriaLabel="Show full note"
+            moreAriaLabel="Show full description"
             sx={{ flex: 1, minWidth: 0 }}
           >
-            {note.replace(/\s*\n\s*/g, ' ')}
+            {descriptionText.replace(/\s*\n\s*/g, ' ')}
           </ClampedContent>
         </Box>
       )}

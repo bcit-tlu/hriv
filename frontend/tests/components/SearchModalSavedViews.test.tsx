@@ -25,7 +25,7 @@ beforeEach(() => {
     tile_sources: '/tiles/42/image.dzi',
     category_id: null,
     copyright: null,
-    note: null,
+    description: null,
     active: true,
     sort_order: 0,
     metadata_extra: null,

@@ -17,7 +17,8 @@ import * as ViewportDialogStories from './ViewportDialog.stories'
 
 ## When to use
 
-`ViewportDialog` shows short content (the full note, the full collections list) centred over the
+`ViewportDialog` shows short content (an image's full description, the full collections list)
+centred over the
 image viewport. It is **not** an MUI `Modal` — those are `position: fixed` and cover the whole
 page. Callers render it through `ImageViewer`'s `viewportOverlay` portal, so it lives inside
 `viewer.container` and stays put in OSD full-page mode.

@@ -234,7 +234,7 @@ export default function SequenceCollectionViewer({
     JSON.stringify(markersEnabled ? current?.slot?.viewport_state : null),
     () => viewportStateFromSaved(markersEnabled ? current?.slot?.viewport_state : undefined),
   )
-  // Notes dialog open state; closed on every image change (same
+  // Description dialog open state; closed on every image change (same
   // adjust-during-render pattern as the App's image-details drawer).
   const [noteDialogOpen, setNoteDialogOpen] = useState(false)
   const [noteDialogImageId, setNoteDialogImageId] = useState<number | null>(null)
@@ -622,17 +622,14 @@ export default function SequenceCollectionViewer({
                 {!markersEnabled && <CollectionImageDetailsDrawer />}
                 <ViewportDialog
                   open={noteDialogOpen}
-                  title="Notes"
+                  title="Description"
                   onClose={() => setNoteDialogOpen(false)}
                 >
+                  {/* Over the shared viewport, so never the instructor note. */}
                   <Box
-                    sx={{
-                      typography: 'body2',
-                      whiteSpace: 'pre-wrap',
-                      overflowWrap: 'anywhere',
-                    }}
+                    sx={{ typography: 'body2', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
                   >
-                    {current.note}
+                    {current.description}
                   </Box>
                 </ViewportDialog>
               </>
@@ -680,7 +677,7 @@ export default function SequenceCollectionViewer({
         key={`caption-${memberKey(current)}`}
         name={markersEnabled ? current.slot?.label || current.name : current.name}
         active={current.active}
-        note={current.note}
+        description={current.description}
         noteDialogOpen={noteDialogOpen}
         onShowNote={() => setNoteDialogOpen(true)}
         end={

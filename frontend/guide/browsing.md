@@ -20,15 +20,15 @@ The **Home** tab is the image library — the same view your students get
   list, or pin it while you continue browsing. The drawer is not reorderable.
 - Use the **breadcrumbs** at the top to jump back up, or **Home** to return
   to the top level.
-- The **search icon** in the top bar searches across images by name, note,
-  and other details — plus your collections by name and description. Wrap
-  words in `"quotes"` to match an exact phrase instead of each word on its
-  own — `"lung 2"` finds only the string "lung 2", not everything
+- The **search icon** in the top bar searches across images by name,
+  description and other details — plus your collections by name and
+  description. Wrap words in `"quotes"` to match an exact phrase instead of
+  each word on its own — `"lung 2"` finds only the string "lung 2", not everything
   containing "lung" or "2".
 - Search **chips** narrow the results: the type chips (Categories, Images,
   Collections, and for staff Programs / People / Guide) keep only that kind
-  and its own fields, and the field chips (Note, Copyright, Annotation, …)
-  keep only matches in that field. A collection result opens it on its
+  and its own fields, and the field chips (Description, Copyright,
+  Annotation, …) keep only matches in that field. A collection result opens it on its
   collections page (Sequence or Synchronized).
 - To add several images to a collection, click **Select** next to the result
   count, tick the image rows you want (only images can be selected), then
@@ -45,9 +45,9 @@ zoom" — you can zoom in to see fine detail without losing quality.
 Copyright, programs, groups, dates, dimensions, original file name and type,
 and other image details open from the **i** button in the top-right corner of
 the viewer — it matches the toolbar icons and fades away with them when the
-pointer is idle, and viewer tips are at the bottom of that panel. Notes and
-collections show just below the viewer; long entries have an **…more**
-link that opens the full text over the viewer.
+pointer is idle, and viewer tips are at the bottom of that panel. The
+description and collections show just below the viewer; long entries have an
+**…more** link that opens the full text over the viewer.
 
 ### Viewer toolbar (bottom left)
 

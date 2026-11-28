@@ -507,6 +507,47 @@ behind. Any role works — presenting is a student activity too.
 
 ---
 
+## Test Case 9d: Image Description and Instructor Note Visibility (#1778)
+
+**Purpose:** Verify the public Description shows to every role and the
+staff-only Instructor note never reaches students — in the UI or the API.
+
+1. As `instructor@example.ca`, open an image and **Edit Details**. Enter a
+   Description and an Instructor note and save. **Assert:** the fields run
+   Name, Description, Category, Instructor note, Copyright, and the
+   Instructor note field shows a lock icon and "Visible to instructors, staff
+   and admins".
+2. In the viewer, **Assert:** the caption row shows **Description:** but no
+   instructor note, and **…more** opens a dialog titled "Description" with
+   the description only — the viewer is shared on projectors. **Image
+   details** (the info icon in the viewer side panel; the **i** button when
+   Markers is off) shows the locked **Instructor note:** in its own section
+   below the metadata, after a divider. Add the image to a sequence
+   collection and open it — **Assert:** the same caption, dialog and Image
+   details.
+3. Open **Manage**, enable the **Description** and **Instructor note**
+   columns in **Choose columns**. **Assert:** both render, sort and filter.
+   Open **Search**, type a word from the instructor note, and click the
+   **Instructor note** chip — **Assert:** the image is the only match.
+4. As `staff@example.ca`, repeat steps 2 and the Search part of 3.
+   **Assert:** the Instructor note shows in Image details and Search as
+   it did for the instructor, and staff have no way to edit it (no Edit Details, no Manage).
+5. As `student@example.ca`, open the same image, its collection and Search.
+   **Assert:** the Description shows; the Instructor note appears nowhere
+   (caption, dialog, Image details, collection viewer), and Search shows no
+   **Instructor note** chip and no match on its words.
+6. As the student, request the image over the API:
+
+   ```bash
+   curl -s -H "Authorization: Bearer $STUDENT_TOKEN" \
+     http://localhost:8000/api/images/<id> | python3 -m json.tool
+   ```
+
+   **Assert:** `"instructor_note": null` while `"description"` carries the
+   text. The same request with the instructor's token returns the note.
+
+---
+
 ## Test Case 10: Collection Orphaned by Program Deletion → Admin Reassign (API)
 
 **Purpose:** Verify that deleting a program leaves its collections in place as

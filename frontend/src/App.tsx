@@ -2878,7 +2878,8 @@ export default function App() {
                     tileSources: img.tile_sources,
                     categoryId: img.category_id,
                     copyright: img.copyright,
-                    note: img.note,
+                    description: img.description,
+                    instructorNote: img.instructor_note,
                     active: img.active,
                     sortOrder: img.sort_order,
                     version: img.version,
@@ -3264,9 +3265,10 @@ export default function App() {
                       )}
                       <ViewportDialog
                         open={viewerDialog === 'note'}
-                        title="Notes"
+                        title="Description"
                         onClose={() => setViewerDialog(null)}
                       >
+                        {/* Over the shared viewport, so never the instructor note. */}
                         <Box
                           sx={{
                             typography: 'body2',
@@ -3274,7 +3276,7 @@ export default function App() {
                             overflowWrap: 'anywhere',
                           }}
                         >
-                          {selectedImage.note}
+                          {selectedImage.description}
                         </Box>
                       </ViewportDialog>
                       <ViewportDialog
@@ -3311,7 +3313,7 @@ export default function App() {
                 imageId={selectedImage.id}
                 name={selectedImage.name}
                 active={selectedImage.active}
-                note={selectedImage.note}
+                description={selectedImage.description}
                 collections={selectedImageCollections}
                 onOpenCollection={handleOpenCollection}
                 hrefForCollection={(id) => `${window.location.pathname}?collection=${id}`}

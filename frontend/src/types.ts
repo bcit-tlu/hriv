@@ -5,7 +5,9 @@ export interface ImageItem {
   tileSources: string
   categoryId?: number | null
   copyright?: string | null
-  note?: string | null
+  description?: string | null
+  /** Staff-only; the API sends null to students. */
+  instructorNote?: string | null
   active: boolean
   sortOrder: number
   version: number

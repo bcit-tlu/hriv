@@ -41,6 +41,8 @@ API for the [password-management validation flow](docs/password-management.md).
 | All Boards discovery, including others' private Boards (flag) | Yes   | Yes        | Yes   | No      |
 | Create/edit owned Boards and Markers (feature-gated API)      | Yes   | Yes        | Yes   | Yes     |
 | View image uploader name                                      | Yes   | Yes        | No    | No      |
+| View image instructor notes                                   | Yes   | Yes        | Yes   | No      |
+| Edit image description / instructor note                      | Yes   | Yes        | No    | No      |
 | View collections (API; student deployment gate¶)              | Yes   | Yes        | Yes   | Yes¶    |
 | Create collections‖                                           | Yes   | Yes        | Yes   | Yes     |
 | Edit co-owned collections‖                                    | Yes   | Yes        | Yes   | Yes     |

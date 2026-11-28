@@ -41,7 +41,7 @@ function updatedImage(version = 2, metadata_extra: Record<string, unknown> | nul
     tile_sources: '/tiles',
     category_id: null,
     copyright: null,
-    note: null,
+    description: null,
     active: true,
     sort_order: 0,
     version,

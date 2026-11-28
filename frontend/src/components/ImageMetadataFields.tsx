@@ -2,10 +2,12 @@ import FormControlLabel from '@mui/material/FormControlLabel'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import { MAX_NOTE_LENGTH } from '../constants'
+import InstructorNoteField from './InstructorNoteField'
 
 export interface ImageMetadataValues {
   copyright: string
-  note: string
+  description: string
+  instructorNote: string
   active: boolean
 }
 
@@ -15,7 +17,7 @@ interface ImageMetadataFieldsProps {
   /** Optional id prefix to avoid duplicate DOM ids when multiple instances exist. */
   idPrefix?: string
   copyrightPlaceholder?: string
-  notePlaceholder?: string
+  descriptionPlaceholder?: string
   /** When true the visibility switch is disabled (image inherits hidden from category). */
   categoryHidden?: boolean
 }
@@ -25,11 +27,12 @@ export default function ImageMetadataFields({
   onChange,
   idPrefix,
   copyrightPlaceholder = 'e.g. 2026 BCIT',
-  notePlaceholder = 'Image note',
+  descriptionPlaceholder = 'Image description',
   categoryHidden = false,
 }: ImageMetadataFieldsProps) {
   const copyrightId = idPrefix ? `${idPrefix}-copyright` : undefined
-  const noteId = idPrefix ? `${idPrefix}-note` : undefined
+  const descriptionId = idPrefix ? `${idPrefix}-description` : undefined
+  const instructorNoteId = idPrefix ? `${idPrefix}-instructor-note` : undefined
   const visibilityId = idPrefix ? `${idPrefix}-visibility` : undefined
   const visibilityLabel = categoryHidden
     ? 'Visibility (hidden by category)'
@@ -49,18 +52,23 @@ export default function ImageMetadataFields({
         placeholder={copyrightPlaceholder}
       />
       <TextField
-        id={noteId}
-        label="Note"
+        id={descriptionId}
+        label="Description"
         fullWidth
         variant="outlined"
-        value={values.note}
-        onChange={(e) => onChange({ ...values, note: e.target.value })}
-        placeholder={notePlaceholder}
+        value={values.description}
+        onChange={(e) => onChange({ ...values, description: e.target.value })}
+        placeholder={descriptionPlaceholder}
         multiline
         minRows={3}
         maxRows={10}
         slotProps={{ htmlInput: { maxLength: MAX_NOTE_LENGTH } }}
-        helperText={`${values.note.length}/${MAX_NOTE_LENGTH}`}
+        helperText={`${values.description.length}/${MAX_NOTE_LENGTH}`}
+      />
+      <InstructorNoteField
+        id={instructorNoteId}
+        value={values.instructorNote}
+        onChange={(instructorNote) => onChange({ ...values, instructorNote })}
       />
       <FormControlLabel
         control={

@@ -19,6 +19,7 @@ from ..collection_views import (
     _ViewerContext,
     collection_summary_out,
     collections_accessible_to,
+    image_out,
 )
 from ..database import get_db, settings
 from ..models import Category, Collection, Group, Image, Program, User
@@ -28,7 +29,6 @@ from ..schemas import (
     CategoryOut,
     CategoryTree,
     CategoryWarning,
-    ImageOut,
 )
 from ..browse_state import bump_browse_revision, get_browse_revision
 from ..tile_order import bump_scopes, scope_key_for
@@ -437,7 +437,9 @@ async def _load_tree(
                 updated_at=cat.updated_at,
                 children=_assemble(cat.id),
                 images=[
-                    ImageOut.model_validate(img)
+                    image_out(
+                        img, scrub_instructor_note=user_role == "student"
+                    )
                     for img in cat_images
                 ],
                 collections=[

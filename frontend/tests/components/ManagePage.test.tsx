@@ -73,7 +73,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile.dzi',
         category_id: 10,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 0,
         metadata_extra: null,
@@ -110,7 +110,7 @@ describe('ManagePage', () => {
         name: null,
         category_id: null,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         image_id: null,
         file_size: 10,
@@ -169,7 +169,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile.dzi',
         category_id: 10,
         copyright: null,
-        note: null,
+        description: null,
         active: false,
         sort_order: 0,
         metadata_extra: null,
@@ -215,7 +215,7 @@ describe('ManagePage', () => {
         name: true,
         category: true,
         copyright: false,
-        note: false,
+        description: false,
         program: true,
         group: true,
         active: true,
@@ -253,7 +253,7 @@ describe('ManagePage', () => {
     expect(screen.queryByRole('columnheader', { name: 'ID' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Program' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Copyright' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: 'Note' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Description' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Created' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Dimensions' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'File Size' })).not.toBeInTheDocument()
@@ -271,7 +271,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-a.dzi',
         category_id: 10,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 0,
         metadata_extra: { canvas_annotations: [{ id: 'annotation-1' }] },
@@ -289,7 +289,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-b.dzi',
         category_id: 10,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 1,
         metadata_extra: { canvas_annotations: [] },
@@ -342,7 +342,7 @@ describe('ManagePage', () => {
       tile_sources: '/tile-a.dzi',
       category_id: 10,
       copyright: null,
-      note: null,
+      description: null,
       active: true,
       version: 1,
       width: null,
@@ -380,6 +380,105 @@ describe('ManagePage', () => {
     expect(within(phoneRow).queryByText(/^×/)).not.toBeInTheDocument()
   }, 30_000)
 
+  it('shows, filters and sorts the optional Description column', async () => {
+    const user = userEvent.setup()
+    const base = {
+      thumb: '/thumb.jpg',
+      tile_sources: '/tile.dzi',
+      category_id: 10,
+      copyright: null,
+      active: true,
+      metadata_extra: null,
+      version: 1,
+      width: null,
+      height: null,
+      file_size: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-02T00:00:00Z',
+    }
+    vi.mocked(fetchImages).mockResolvedValue([
+      { ...base, id: 301, name: 'Slide A', sort_order: 0, description: 'Zebra stripes' },
+      { ...base, id: 302, name: 'Slide B', sort_order: 1, description: 'Apple cells' },
+      { ...base, id: 303, name: 'Slide C', sort_order: 2, description: null },
+    ])
+    localStorage.setItem(
+      'hrivpref:table-columns:manage-images:user:1',
+      JSON.stringify({ name: true, description: true }),
+    )
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+    await screen.findByText('Slide A')
+
+    const header = screen.getByRole('columnheader', { name: 'Description' })
+    expect(
+      within(screen.getByText('Slide B').closest('tr')!).getByText('Apple cells'),
+    ).toBeVisible()
+    expect(within(screen.getByText('Slide C').closest('tr')!).getByText('—')).toBeInTheDocument()
+
+    await user.click(within(header).getByRole('button', { name: 'Description' }))
+    const names = () => screen.getAllByText(/^Slide [ABC]$/).map((cell) => cell.textContent)
+    expect(names()).toEqual(['Slide C', 'Slide B', 'Slide A'])
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Description' }))
+    await user.type(screen.getByPlaceholderText('Filter by description'), 'zebra')
+
+    await waitFor(() => {
+      expect(screen.queryByText('Slide B')).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('Slide A')).toBeInTheDocument()
+    expect(within(filterBar).getByText('Description: zebra')).toBeInTheDocument()
+  })
+
+  it('shows, filters and sorts the optional Instructor note column', async () => {
+    const user = userEvent.setup()
+    const base = {
+      thumb: '/thumb.jpg',
+      tile_sources: '/tile.dzi',
+      category_id: 10,
+      copyright: null,
+      description: null,
+      active: true,
+      metadata_extra: null,
+      version: 1,
+      width: null,
+      height: null,
+      file_size: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-02T00:00:00Z',
+    }
+    vi.mocked(fetchImages).mockResolvedValue([
+      { ...base, id: 401, name: 'Slide A', sort_order: 0, instructor_note: 'Zebra stain' },
+      { ...base, id: 402, name: 'Slide B', sort_order: 1, instructor_note: 'Apple quiz' },
+      { ...base, id: 403, name: 'Slide C', sort_order: 2, instructor_note: null },
+    ])
+    localStorage.setItem(
+      'hrivpref:table-columns:manage-images:user:1',
+      JSON.stringify({ name: true, instructor_note: true }),
+    )
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+    await screen.findByText('Slide A')
+
+    const header = screen.getByRole('columnheader', { name: 'Instructor note' })
+    expect(within(screen.getByText('Slide B').closest('tr')!).getByText('Apple quiz')).toBeVisible()
+    expect(within(screen.getByText('Slide C').closest('tr')!).getByText('—')).toBeInTheDocument()
+
+    await user.click(within(header).getByRole('button', { name: 'Instructor note' }))
+    const names = () => screen.getAllByText(/^Slide [ABC]$/).map((cell) => cell.textContent)
+    expect(names()).toEqual(['Slide C', 'Slide B', 'Slide A'])
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Instructor note' }))
+    await user.type(screen.getByPlaceholderText('Filter by instructor note'), 'zebra')
+
+    await waitFor(() => {
+      expect(screen.queryByText('Slide B')).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('Slide A')).toBeInTheDocument()
+    expect(within(filterBar).getByText('Instructor note: zebra')).toBeInTheDocument()
+  })
+
   it('keeps the filter bar in sync with visible columns', async () => {
     const user = userEvent.setup()
     render(<ManagePage categories={categories} programs={programs} groups={groups} />)
@@ -412,7 +511,7 @@ describe('ManagePage', () => {
       tile_sources: '/tile.dzi',
       category_id: 10,
       copyright: null,
-      note: null,
+      description: null,
       active: true,
       sort_order: 0,
       metadata_extra: null,
@@ -559,7 +658,7 @@ describe('ManagePage', () => {
         'active',
         'id',
         'copyright',
-        'note',
+        'description',
         'program',
         'created_at',
         'dimensions',
@@ -704,7 +803,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-a.dzi',
         category_id: 10,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 0,
         metadata_extra: null,
@@ -722,7 +821,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-b.dzi',
         category_id: 11,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 1,
         metadata_extra: null,
@@ -793,7 +892,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-a.dzi',
         category_id: 3,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 0,
         metadata_extra: null,
@@ -811,7 +910,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-b.dzi',
         category_id: 5,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 1,
         metadata_extra: null,
@@ -829,7 +928,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-c.dzi',
         category_id: 4,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 2,
         metadata_extra: null,
@@ -847,7 +946,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-d.dzi',
         category_id: 2,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 3,
         metadata_extra: null,
@@ -919,7 +1018,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-a.dzi',
         category_id: 3,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 0,
         metadata_extra: null,
@@ -937,7 +1036,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-b.dzi',
         category_id: 5,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 1,
         metadata_extra: null,
@@ -955,7 +1054,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-c.dzi',
         category_id: 4,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 2,
         metadata_extra: null,
@@ -973,7 +1072,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-d.dzi',
         category_id: 2,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 3,
         metadata_extra: null,
@@ -1033,7 +1132,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-a.dzi',
         category_id: 10,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 0,
         metadata_extra: null,
@@ -1051,7 +1150,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-b.dzi',
         category_id: 10,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 1,
         metadata_extra: null,
@@ -1105,7 +1204,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-a.dzi',
         category_id: 10,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 0,
         metadata_extra: null,
@@ -1123,7 +1222,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-b.dzi',
         category_id: 10,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 1,
         metadata_extra: null,
@@ -1179,7 +1278,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-a.dzi',
         category_id: 10,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 0,
         metadata_extra: null,
@@ -1197,7 +1296,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-b.dzi',
         category_id: 11,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 1,
         metadata_extra: null,
@@ -1217,7 +1316,7 @@ describe('ManagePage', () => {
         name: true,
         category: true,
         copyright: false,
-        note: false,
+        description: false,
         program: true,
         group: true,
         active: true,
@@ -1270,7 +1369,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-a.dzi',
         category_id: 10,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 0,
         metadata_extra: null,
@@ -1288,7 +1387,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile-b.dzi',
         category_id: 11,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 1,
         metadata_extra: null,
@@ -1308,7 +1407,7 @@ describe('ManagePage', () => {
         name: true,
         category: true,
         copyright: false,
-        note: false,
+        description: false,
         program: true,
         group: true,
         active: true,
@@ -1358,7 +1457,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile.dzi',
         category_id: 10,
         copyright: null,
-        note: null,
+        description: null,
         active: false,
         sort_order: 0,
         metadata_extra: null,
@@ -1385,7 +1484,7 @@ describe('ManagePage', () => {
       tile_sources: '/tile.dzi',
       category_id: 10,
       copyright: null,
-      note: null,
+      description: null,
       active: false,
       sort_order: 0,
       metadata_extra: null,
@@ -1425,7 +1524,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile.dzi',
         category_id: 10,
         copyright: null,
-        note: 'Existing note',
+        description: 'Existing note',
         active: true,
         sort_order: 0,
         metadata_extra: null,
@@ -1469,7 +1568,7 @@ describe('ManagePage', () => {
         tile_sources: '/tile.dzi',
         category_id: 10,
         copyright: null,
-        note: null,
+        description: null,
         active: true,
         sort_order: 0,
         metadata_extra: null,
@@ -1527,7 +1626,7 @@ describe('ManagePage', () => {
         name: true,
         category: true,
         copyright: false,
-        note: false,
+        description: false,
         program: true,
         group: true,
         active: true,

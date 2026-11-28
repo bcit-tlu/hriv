@@ -694,9 +694,10 @@ export default function SynchronizedCollectionViewer({
                           <CollectionImageDetailsDrawer />
                           <ViewportDialog
                             open={noteDialogImageId === memberKey(image)}
-                            title="Notes"
+                            title="Description"
                             onClose={() => setNoteDialogImageId(null)}
                           >
+                            {/* Over the shared viewport, so never the instructor note. */}
                             <Box
                               sx={{
                                 typography: 'body2',
@@ -704,7 +705,7 @@ export default function SynchronizedCollectionViewer({
                                 overflowWrap: 'anywhere',
                               }}
                             >
-                              {image.note}
+                              {image.description}
                             </Box>
                           </ViewportDialog>
                         </>
@@ -748,7 +749,7 @@ export default function SynchronizedCollectionViewer({
                   key={`caption-${memberKey(image)}`}
                   name={markersEnabled ? image.slot?.label || image.name : image.name}
                   active={image.active}
-                  note={image.note}
+                  description={image.description}
                   noteDialogOpen={noteDialogImageId === memberKey(image)}
                   onShowNote={() => setNoteDialogImageId(memberKey(image))}
                   end={

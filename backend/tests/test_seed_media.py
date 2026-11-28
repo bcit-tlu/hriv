@@ -149,7 +149,7 @@ async def test_get_or_create_source_updates_existing_seed_source(tmp_path):
         name="Old name",
         category_id=1,
         copyright="old",
-        note="old",
+        description="old",
         active=False,
         file_size=1,
     )

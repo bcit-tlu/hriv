@@ -42,7 +42,7 @@ function makeAuth(user: User): AuthContextValue {
   }
 }
 
-function makeImage(id: number, name: string, note?: string): ImageItem {
+function makeImage(id: number, name: string, description?: string): ImageItem {
   return {
     id,
     name,
@@ -50,7 +50,7 @@ function makeImage(id: number, name: string, note?: string): ImageItem {
     // .storybook/static/sample.dzi parses but serves no tiles, so the viewer
     // mounts deterministically instead of racing an open-failed fallback.
     tileSources: '/sample.dzi',
-    note,
+    description,
     active: true,
     sortOrder: id,
     version: 1,

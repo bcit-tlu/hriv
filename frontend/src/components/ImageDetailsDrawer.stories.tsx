@@ -98,6 +98,29 @@ export const Open: Story = {
   },
 }
 
+export const WithInstructorNote: Story = {
+  args: {
+    image: {
+      ...IMAGE,
+      instructorNote:
+        'Ask students to compare the façade proportions with the 1887 competition entries before revealing the architect. Keep the restoration dates for the follow-up discussion.',
+    },
+    initialOpen: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      await canvas.findByTitle('Visible to instructors, staff and admins'),
+    ).toBeInTheDocument()
+    // Its own section below the metadata, after a divider.
+    const divider = canvas.getByRole('separator')
+    await expect(
+      divider.compareDocumentPosition(canvas.getByTestId('image-details-instructor-note')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  },
+}
+
 export const LongValues: Story = {
   args: {
     image: {

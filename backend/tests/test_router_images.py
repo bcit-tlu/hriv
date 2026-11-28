@@ -63,7 +63,8 @@ def _make_image(
         tile_sources="/tiles/1",
         category_id=category_id,
         copyright=None,
-        note=None,
+        description=None,
+        instructor_note=None,
         active=active,
         sort_order=sort_order,
         metadata_=None,
@@ -98,6 +99,13 @@ def _mock_request(if_match: str | None = None) -> MagicMock:
     req.headers.get.side_effect = lambda key, default=None: (
         if_match if key == "If-Match" else default
     )
+    return req
+
+
+def _form_request(form: dict | None = None) -> MagicMock:
+    """Mock Request whose parsed multipart form holds *form*."""
+    req = MagicMock()
+    req.form = AsyncMock(return_value=form or {})
     return req
 
 
@@ -739,6 +747,21 @@ async def test_create_image_success() -> None:
     db.add.assert_called_once()
 
 
+async def test_create_image_persists_description_and_instructor_note() -> None:
+    db = AsyncMock()
+    db.add = MagicMock()
+    body = ImageCreate(
+        name="new-img",
+        thumb="/thumb.jpg",
+        tile_sources="/tiles/new",
+        description="public",
+        instructor_note="staff only",
+    )
+    await create_image(body, _make_user(), db)
+    img = db.add.call_args.args[0]
+    assert (img.description, img.instructor_note) == ("public", "staff only")
+
+
 async def test_update_image_success() -> None:
     img = _make_image()
     db = AsyncMock()
@@ -753,15 +776,34 @@ async def test_update_image_success() -> None:
 
 async def test_update_image_normalizes_empty_note() -> None:
     img = _make_image()
-    img.note = "existing note"
+    img.description = "existing note"
     db = AsyncMock()
     db.get = AsyncMock(return_value=img)
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
 
-    body = ImageUpdate(note="")
+    body = ImageUpdate(description="")
     await update_image(1, body, _mock_request(), _make_user(), db)
-    assert img.note is None
+    assert img.description is None
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"instructor_note": "new staff note"}, "new staff note"),
+        ({"instructor_note": ""}, None),  # explicit empty clears
+        ({"name": "renamed"}, "existing staff note"),  # omitted = unchanged
+    ],
+)
+async def test_update_image_instructor_note(payload, expected) -> None:
+    img = _make_image()
+    img.instructor_note = "existing staff note"
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    await update_image(1, ImageUpdate(**payload), _mock_request(), _make_user(), db)
+
+    assert img.instructor_note == expected
 
 
 async def test_update_image_not_found() -> None:
@@ -929,7 +971,7 @@ async def test_update_image_dirty_if_match_still_bumps() -> None:
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
 
-    body = ImageUpdate(note="new note")
+    body = ImageUpdate(description="new note")
     await update_image(1, body, _mock_request(if_match='"3"'), _make_user(), db)
     db.execute.assert_awaited_once()
     assert img.version == 4
@@ -968,6 +1010,27 @@ async def test_bulk_update_images_success() -> None:
 
     for img in imgs:
         assert img.copyright == "CC"
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"instructor_note": "shared staff note"}, "shared staff note"),
+        ({"copyright": "CC"}, "existing staff note"),  # omitted = no change
+    ],
+)
+async def test_bulk_update_images_instructor_note(payload, expected) -> None:
+    imgs = [_make_image(id=1), _make_image(id=2)]
+    for img in imgs:
+        img.instructor_note = "existing staff note"
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = imgs
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    await bulk_update_images(ImageBulkUpdate(image_ids=[1, 2], **payload), _make_user(), db)
+
+    assert [img.instructor_note for img in imgs] == [expected, expected]
 
 
 async def test_bulk_update_images_category_move_bumps_scopes() -> None:
@@ -1361,7 +1424,8 @@ def _make_source_image(id: int = 10, image_id: int = 1) -> SimpleNamespace:
         name="test-img",
         category_id=None,
         copyright=None,
-        note=None,
+        description=None,
+        instructor_note=None,
         active=True,
         image_id=image_id,
         file_size=1024,
@@ -1413,6 +1477,7 @@ async def test_replace_image_success(
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -1454,6 +1519,7 @@ async def test_replace_image_normalizes_original_filename(
             image_id=1,
             file=file,
             background_tasks=MagicMock(),
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -1486,6 +1552,7 @@ async def test_replace_image_rejects_oversized_file(tmp_path) -> None:
                 image_id=1,
                 file=file,
                 background_tasks=MagicMock(),
+                request=_form_request(),
                 _user=_make_user(),
                 db=db,
             )
@@ -1525,6 +1592,7 @@ async def test_replace_image_fallback_to_background_tasks(
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -1573,12 +1641,14 @@ async def test_replace_image_applies_metadata_updates(
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
             name="renamed",
             category_id="",
             copyright="",
-            note="updated note",
+            description="updated note",
+            instructor_note="updated staff note",
             active="0",
             metadata_extra='{"source":"upload"}',
         )
@@ -1586,7 +1656,8 @@ async def test_replace_image_applies_metadata_updates(
     assert img.name == "renamed"
     assert img.category_id is None
     assert img.copyright is None
-    assert img.note == "updated note"
+    assert img.description == "updated note"
+    assert img.instructor_note == "updated staff note"
     assert img.active is False
     assert img.metadata_ == {"source": "upload"}
     assert img.version == 2
@@ -1616,7 +1687,8 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
     )
     img = _make_image(name="original", category_id=7, active=True)
     img.copyright = "Original copyright"
-    img.note = "Original note"
+    img.description = "Original note"
+    img.instructor_note = "Original staff note"
     img.metadata_ = {
         "keep": "this",
         "canvas_annotations": [{"type": "rect"}],
@@ -1627,7 +1699,8 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
             "name",
             "category_id",
             "copyright",
-            "note",
+            "description",
+            "instructor_note",
             "active",
             "metadata_",
             "version",
@@ -1654,12 +1727,14 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
                 image_id=1,
                 file=_make_upload_file(filename="rejected.png", content_type="image/png"),
                 background_tasks=background_tasks,
+                request=_form_request(),
                 _user=_make_user(),
                 db=db,
                 name="new-name",
                 category_id="9",
                 copyright="New copyright",
-                note="New note",
+                description="New note",
+                instructor_note="New staff note",
                 active="0",
                 metadata_extra='{"replace": "me"}',
             )
@@ -1670,7 +1745,8 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
     assert restore_values["name"] == original["name"]
     assert restore_values["category_id"] == original["category_id"]
     assert restore_values["copyright"] == original["copyright"]
-    assert restore_values["note"] == original["note"]
+    assert restore_values["description"] == original["description"]
+    assert restore_values["instructor_note"] == original["instructor_note"]
     assert restore_values["active"] == original["active"]
     assert restore_values["metadata"] == original["metadata_"]
     assert restore_values["version"] == original["version"]
@@ -1734,6 +1810,7 @@ async def test_replace_image_rejection_uses_fresh_session_when_bookkeeping_fails
                 image_id=1,
                 file=_make_upload_file(filename="rejected.png", content_type="image/png"),
                 background_tasks=background_tasks,
+                request=_form_request(),
                 _user=_make_user(),
                 db=db,
             )
@@ -1776,6 +1853,7 @@ async def test_replace_image_unchanged_category_does_not_bump_scopes(
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
             category_id="7",
@@ -1789,16 +1867,17 @@ async def test_replace_image_unchanged_category_does_not_bump_scopes(
 @patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
-async def test_replace_image_empty_note_clears_note(
+async def test_replace_image_empty_values_clear_both_notes(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
     mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
-    """An explicit note="" on replace must erase the stored note."""
+    """Explicit empty description/instructor_note on replace erase both."""
     mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
     img = _make_image()
-    img.note = "existing note"
+    img.description = "existing note"
+    img.instructor_note = "existing staff note"
 
     db = AsyncMock()
     db.get = AsyncMock(return_value=img)
@@ -1816,12 +1895,73 @@ async def test_replace_image_empty_note_clears_note(
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
-            note="",
+            description="",
+            instructor_note="",
         )
 
-    assert img.note is None
+    assert img.description is None
+    assert img.instructor_note is None
+
+
+@pytest.mark.parametrize(
+    ("form", "expected"),
+    [
+        # Explicit empty fields clear the stored values.
+        (
+            {"description": "", "instructor_note": "", "copyright": "", "category_id": ""},
+            (None, None, None, None),
+        ),
+        # Omitted fields leave them untouched.
+        ({"name": "renamed"}, ("old description", "old staff note", "old copyright", 7)),
+    ],
+)
+@patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_http_empty_vs_omitted_fields(
+    mock_open, mock_makedirs, mock_replace, mock_getsize, form, expected
+) -> None:
+    """Over real multipart parsing, "" clears and an omitted field is kept.
+
+    FastAPI coerces an empty form value to the parameter default (``None``),
+    so this guards the endpoint's recovery of explicit empty fields.
+    """
+    img = _make_image(category_id=7)
+    img.description = "old description"
+    img.instructor_note = "old staff note"
+    img.copyright = "old copyright"
+
+    def _refresh(obj, *_args, **_kwargs):
+        obj.id = 10
+        obj.progress = 0
+        obj.created_at = obj.updated_at = datetime.now(timezone.utc)
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.add = MagicMock()
+    db.refresh = AsyncMock(side_effect=_refresh)
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
+
+    transport = httpx.ASGITransport(app=_images_test_app("admin", db))
+    with patch.dict("sys.modules", {
+        "app.processing": MagicMock(process_replace_image=MagicMock()),
+        "app.worker": MagicMock(enqueue_replace_image=mock_enqueue),
+    }), patch("app.routers.images.bump_scopes", new=AsyncMock()):
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/images/1/replace",
+                files={"file": ("new.png", b"png-bytes", "image/png")},
+                data=form,
+            )
+
+    assert resp.status_code == 201, resp.text
+    assert (
+        img.description, img.instructor_note, img.copyright, img.category_id
+    ) == expected
 
 
 async def test_replace_image_not_found() -> None:
@@ -1836,6 +1976,7 @@ async def test_replace_image_not_found() -> None:
             image_id=999,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -1855,6 +1996,7 @@ async def test_replace_image_invalid_file() -> None:
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -1875,6 +2017,7 @@ async def test_replace_image_invalid_metadata_extra() -> None:
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
             metadata_extra="{invalid-json}",
@@ -1882,6 +2025,30 @@ async def test_replace_image_invalid_metadata_extra() -> None:
 
     assert exc.value.status_code == 400
     assert "metadata_extra" in exc.value.detail
+
+
+@pytest.mark.parametrize(
+    ("field", "label"),
+    [("description", "Description"), ("instructor_note", "Instructor note")],
+)
+async def test_replace_image_rejects_overlong_notes(field, label) -> None:
+    img = _make_image()
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    with pytest.raises(HTTPException) as exc:
+        await replace_image(
+            image_id=1,
+            file=_make_upload_file(),
+            background_tasks=MagicMock(),
+            request=_form_request(),
+            _user=_make_user(),
+            db=db,
+            **{field: "x" * 501},
+        )
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == f"{label} must be 500 characters or fewer"
 
 
 async def test_replace_image_no_filename() -> None:
@@ -1897,6 +2064,7 @@ async def test_replace_image_no_filename() -> None:
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -1932,6 +2100,7 @@ async def test_replace_image_enospc(
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -1970,6 +2139,7 @@ async def test_replace_image_reraises_non_enospc_oserror(
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -2010,6 +2180,7 @@ async def test_replace_image_commit_failure_retains_file_unconditionally(
                 image_id=1,
                 file=_make_upload_file(filename="commitfail.png", content_type="image/png"),
                 background_tasks=MagicMock(),
+                request=_form_request(),
                 _user=_make_user(),
                 db=db,
             )
@@ -2049,6 +2220,7 @@ async def test_replace_image_pre_commit_failure_routes_through_ownership_cleanup
                 image_id=1,
                 file=_make_upload_file(filename="commitfail.png", content_type="image/png"),
                 background_tasks=MagicMock(),
+                request=_form_request(),
                 _user=_make_user(),
                 db=db,
             )
@@ -2147,3 +2319,44 @@ async def test_bulk_delete_images_member_of_collection_bumps() -> None:
     body = ImageBulkDelete(image_ids=[1, 2])
     await bulk_delete_images(body, _make_user(), db=db)
     images_router.bump_browse_revision.assert_awaited_once()
+
+
+# ── instructor_note scrubbing (#1779) ─────────────────────
+
+
+@pytest.mark.parametrize(
+    ("role", "expected"),
+    [("student", None), ("staff", "staff only"), ("instructor", "staff only"), ("admin", "staff only")],
+)
+async def test_get_image_scrubs_instructor_note_for_students(role, expected) -> None:
+    img = _make_image()
+    img.description = "public"
+    img.instructor_note = "staff only"
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    with patch(
+        "app.routers.images.is_category_visible_to_student",
+        new=AsyncMock(return_value=True),
+    ):
+        out = await get_image(1, _make_user(role), db=db)
+    assert (out.description, out.instructor_note) == ("public", expected)
+
+
+@pytest.mark.parametrize(
+    ("role", "expected"),
+    [("student", None), ("staff", "staff only"), ("instructor", "staff only"), ("admin", "staff only")],
+)
+async def test_list_images_scrubs_instructor_note_for_students(role, expected) -> None:
+    img = _make_image(active=True)
+    img.description = "public"
+    img.instructor_note = "staff only"
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [img]
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+    with patch(
+        "app.routers.images.get_student_excluded_category_ids",
+        new=AsyncMock(return_value=set()),
+    ):
+        result = await list_images(_make_user(role), db=db)
+    assert [(o.description, o.instructor_note) for o in result] == [("public", expected)]

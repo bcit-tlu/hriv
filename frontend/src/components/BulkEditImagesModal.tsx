@@ -14,6 +14,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { isCategoryHiddenInTree } from '../treeUtils'
 import CategoryPickerSelect from './CategoryPickerSelect'
+import InstructorNoteField from './InstructorNoteField'
 import { MAX_NOTE_LENGTH } from '../constants'
 import type { Category, Group, Program } from '../types'
 
@@ -23,7 +24,8 @@ interface BulkEditImagesModalProps {
   onSave: (data: {
     category_id?: number | null
     copyright?: string
-    note?: string
+    description?: string
+    instructor_note?: string
     active?: boolean
   }) => Promise<void>
   onDelete: () => Promise<void>
@@ -65,7 +67,8 @@ export default function BulkEditImagesModal({
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [categoryChanged, setCategoryChanged] = useState(false)
   const [copyright, setCopyright] = useState('')
-  const [note, setNote] = useState('')
+  const [description, setDescription] = useState('')
+  const [instructorNote, setInstructorNote] = useState('')
   const [active, setActive] = useState(true)
   const [activeChanged, setActiveChanged] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -83,7 +86,8 @@ export default function BulkEditImagesModal({
     setCategoryId(null)
     setCategoryChanged(false)
     setCopyright('')
-    setNote('')
+    setDescription('')
+    setInstructorNote('')
     setActive(true)
     setActiveChanged(false)
     setConfirmDelete(false)
@@ -106,12 +110,15 @@ export default function BulkEditImagesModal({
     const data: {
       category_id?: number | null
       copyright?: string
-      note?: string
+      description?: string
+      instructor_note?: string
       active?: boolean
     } = {}
     if (categoryChanged) data.category_id = categoryId
     if (copyright.trim()) data.copyright = copyright.trim()
-    if (note.trim()) data.note = note.trim()
+    // Blank means "no change": omitted fields keep each image's stored value.
+    if (description.trim()) data.description = description.trim()
+    if (instructorNote.trim()) data.instructor_note = instructorNote.trim()
     // A locked switch means the destination category governs visibility —
     // a toggle made before it locked must not leak into the payload.
     if (activeChanged && !visibilityDisabled) data.active = active
@@ -181,17 +188,18 @@ export default function BulkEditImagesModal({
           onChange={(e) => setCopyright(e.target.value)}
         />
         <TextField
-          label="Note"
+          label="Description"
           fullWidth
           variant="outlined"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
           multiline
           minRows={3}
           maxRows={10}
           slotProps={{ htmlInput: { maxLength: MAX_NOTE_LENGTH } }}
-          helperText={`${note.length}/${MAX_NOTE_LENGTH}`}
+          helperText={`${description.length}/${MAX_NOTE_LENGTH}`}
         />
+        <InstructorNoteField value={instructorNote} onChange={setInstructorNote} />
         <FormControlLabel
           control={
             <Switch

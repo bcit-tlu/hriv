@@ -119,7 +119,8 @@ async def _create_import(db_factory, tmp_path, names=("a.png", "b.png", "c.png")
             bulk_import_job=bulk,
             file_entries=entries,
             copyright=None,
-            note=None,
+            description=None,
+            instructor_note=None,
             active=True,
             parallelism=4,
         )
@@ -195,7 +196,8 @@ async def test_resume_after_mid_import_crash(
         stored_path=str(first_meta["stored_path"]),
         category_id=None,
         copyright=None,
-        note=None,
+        description=None,
+        instructor_note=None,
         active=True,
         requested_by=None,
         batch_progress=_BulkImportProgress(

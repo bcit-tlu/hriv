@@ -22,7 +22,7 @@ function makeFailed(overrides: Partial<ApiSourceImage> = {}): ApiSourceImage {
     name: null,
     category_id: null,
     copyright: null,
-    note: null,
+    description: null,
     active: true,
     image_id: null,
     file_size: 100,
