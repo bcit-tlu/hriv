@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/bcit-tlu/hriv/compare/frontend-v1.2.0...frontend-v1.2.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* **frontend:** fix failing Storybook play tests and run them in CI ([#1964](https://github.com/bcit-tlu/hriv/issues/1964)) ([e0d90cc](https://github.com/bcit-tlu/hriv/commit/e0d90ccbb97fd5bd15d78664f2e5711e4fba8f35))
+
 ## [1.2.0](https://github.com/bcit-tlu/hriv/compare/frontend-v1.1.0...frontend-v1.2.0) (2026-11-20)
 
 
