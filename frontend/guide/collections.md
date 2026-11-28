@@ -64,6 +64,8 @@ visible but can't be changed here.
   press the ← and → arrow keys — they step the sequence from anywhere on
   the page, so they keep working after a dialog closes or a button click
   moves focus elsewhere.
+- In full screen, the **‹** and **›** buttons appear the same way when you
+  move the pointer, and stepping keeps you in full screen.
 - The caption under the viewer shows the image name, its note when it has
   one (longer notes clamp behind an **…more** link that opens the full
   note over the viewer), the position
