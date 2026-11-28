@@ -9,7 +9,7 @@ Open **Manage → Categories** to see the full tree.
 
 ## Add a category
 
-1. Click the **+** next to _Root level_ (top level) or next to any category
+1. Click the **+** next to _Top level_ or next to any category
    (makes a sub-category).
 2. Type a name and press **Create**.
 

@@ -129,9 +129,9 @@ describe('ManageCategoriesDialog — basics', () => {
     expect(screen.getByText('No categories yet.')).toBeInTheDocument()
   })
 
-  it('shows Root level label', () => {
+  it('shows Top level label', () => {
     renderDialog()
-    expect(screen.getByText('Root level')).toBeInTheDocument()
+    expect(screen.getByText('Top level')).toBeInTheDocument()
   })
 
   it('renders category labels with image counts', () => {
@@ -271,11 +271,11 @@ describe('ManageCategoriesDialog — add category', () => {
   it('opens AddCategoryDialog when root "+" button is clicked', async () => {
     const user = userEvent.setup()
     renderDialog()
-    // The root-level add button has the tooltip "Add root category"
+    // The root-level add button has the tooltip "Add top-level category"
     const addButtons = screen
       .getAllByRole('button')
       .filter((btn) => btn.querySelector('svg[data-testid="AddIcon"]'))
-    // First add button is root level
+    // First add button is top level
     await user.click(addButtons[0])
     // AddCategoryDialog should open with a label input
     expect(screen.getByLabelText('Category name')).toBeInTheDocument()

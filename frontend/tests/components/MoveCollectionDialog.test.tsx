@@ -10,7 +10,7 @@ vi.mock('../../src/components/CategoryPickerSelect', () => ({
     value,
     onChange,
     label,
-    rootLabel = 'None (root level)',
+    rootLabel = 'None (top level)',
   }: {
     value: number | null
     onChange: (v: number | null) => void
