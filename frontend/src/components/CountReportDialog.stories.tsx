@@ -96,8 +96,8 @@ export const NoObjects: Story = {
   },
 }
 
-// #1746: adjust mode — the report opens in it. Two outlines marked
-// removed (dashed/dimmed), one user-drawn circle appended; the legend and
+// #1746: adjust mode — the report opens in it. Two outlines removed
+// (not drawn, #1977), one user-drawn circle appended; the legend and
 // chip show the adjusted counts.
 export const AdjustMode: Story = {
   args: {
@@ -125,7 +125,28 @@ export const AdjustMode: Story = {
     const canvas = within(canvasElement.ownerDocument.body)
     // The dialog fades in from opacity 0; wait for it to finish.
     await waitFor(() =>
-      expect(canvas.getByText(/Click an outline to remove it — click again to undo/)).toBeVisible(),
+      expect(
+        canvas.getByText(/Click an outline to remove it — Reset returns to the original count/),
+      ).toBeVisible(),
+    )
+    // Real browser hit test (#1977): a removed outline must not catch clicks,
+    // so the drawing area — not an outline — sits under its centre.
+    const doc = canvasElement.ownerDocument
+    const svg = doc.querySelector<SVGSVGElement>('svg[data-count-outlines]')
+    const ctm = svg?.getScreenCTM()
+    if (!svg || !ctm) throw new Error('Count outlines SVG not rendered')
+    const hitAt = ([x, y]: [number, number]) => {
+      const pt = new DOMPoint(x, y).matrixTransform(ctm)
+      return doc.elementFromPoint(pt.x, pt.y)
+    }
+    // OBJECTS[17] is removed and centred inside the selection (OBJECTS[3] is clipped out).
+    const removedHit = hitAt(OBJECTS[17].centroid)
+    await expect(removedHit?.closest('[data-count-object]')).toBeNull()
+    await expect(removedHit?.closest('svg[data-count-outlines]')).toBe(svg)
+    // Control: a kept outline still catches clicks at its centre.
+    await expect(hitAt(OBJECTS[12].centroid)?.closest('[data-count-object]')).toHaveAttribute(
+      'data-count-object',
+      '12',
     )
   },
 }

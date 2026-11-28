@@ -70,6 +70,10 @@ specified in detail.
   (noise amplification; Otsu-invariance). `scripts/counting_regress.py`
   diffs masks/counts across variants on a small corpus — the safety net
   for any future preprocessing change.
+- Removing an outline in the count report is permanent until **Reset**
+  (#1977): removed outlines are not drawn, so the spot can be redrawn. This
+  replaces #1746's click-again-to-restore; there is no per-outline undo. See
+  [`object-counting.md`](object-counting.md).
 
 ## UI conventions
 

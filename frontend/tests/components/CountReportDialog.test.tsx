@@ -6,6 +6,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 
 import CountReportDialog from '../../src/components/CountReportDialog'
 import { countGroupColor } from '../../src/countPalette'
@@ -39,7 +40,24 @@ const OBJECTS: ApiCountObject[] = [
   },
 ]
 
-function renderDialog(overrides: Partial<Parameters<typeof CountReportDialog>[0]> = {}) {
+type DialogProps = Parameters<typeof CountReportDialog>[0]
+
+/** Owns `removed` like SelectionCountLayer does, so removed outlines really unmount. */
+function StatefulAdjustDialog(props: DialogProps) {
+  const [removed, setRemoved] = useState<number[]>([])
+  return (
+    <CountReportDialog
+      {...props}
+      removed={removed}
+      onToggleObject={(index) => {
+        props.onToggleObject?.(index)
+        setRemoved((prev) => [...prev, index])
+      }}
+    />
+  )
+}
+
+function renderDialog(overrides: Partial<DialogProps> = {}, { stateful = false } = {}) {
   const props = {
     open: true,
     onClose: vi.fn(),
@@ -57,7 +75,7 @@ function renderDialog(overrides: Partial<Parameters<typeof CountReportDialog>[0]
     onLearnMore: vi.fn(),
     ...overrides,
   }
-  render(<CountReportDialog {...props} />)
+  render(stateful ? <StatefulAdjustDialog {...props} /> : <CountReportDialog {...props} />)
   return props
 }
 
@@ -157,7 +175,7 @@ describe('CountReportDialog adjust mode (#1746)', () => {
     const user = userEvent.setup()
     renderDialog(adjustProps())
     expect(
-      screen.getByText(/Click an outline to remove it — click again to undo/),
+      screen.getByText(/Click an outline to remove it — Reset returns to the original count/),
     ).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /outline — activate to remove/ })).toHaveLength(5)
     await user.click(screen.getByRole('button', { name: 'Done' }))
@@ -182,14 +200,70 @@ describe('CountReportDialog adjust mode (#1746)', () => {
     expect(props.onToggleObject).toHaveBeenCalledWith(0)
   })
 
-  it('removed outlines render dimmed with a restore label', () => {
+  it('keyboard removal unmounts the outline and focuses the next, or the previous at the end (#1977)', async () => {
+    const user = userEvent.setup()
+    renderDialog(adjustProps(), { stateful: true })
+    const outline = (i: number) => document.querySelector(`g[data-count-object="${i}"]`)
+    ;(outline(0) as SVGGElement).focus()
+    await user.keyboard('{Enter}')
+    expect(outline(0)).toBeNull()
+    expect(document.activeElement).toBe(outline(1))
+
+    ;(outline(4) as SVGGElement).focus()
+    await user.keyboard('{Enter}')
+    expect(outline(4)).toBeNull()
+    expect(document.activeElement).toBe(outline(3))
+  })
+
+  it('keyboard removal of the only outline focuses the drawing area (#1977)', async () => {
+    const user = userEvent.setup()
+    renderDialog(
+      adjustProps({ objects: [OBJECTS[0]], total: 1, groups: [{ group: 0, count: 1 }] }),
+      { stateful: true },
+    )
+    screen.getByRole('button', { name: /outline — activate to remove/ }).focus()
+    await user.keyboard('{Enter}')
+    expect(document.querySelector('g[data-count-object]')).toBeNull()
+    expect(document.activeElement).toBe(document.querySelector('svg[data-count-outlines]'))
+  })
+
+  it('a held key removes only the first outline (#1977)', () => {
+    const props = renderDialog(adjustProps(), { stateful: true })
+    const first = document.querySelector('g[data-count-object="0"]') as SVGGElement
+    first.focus()
+    fireEvent.keyDown(first, { key: ' ' })
+    // Key repeats now land on the newly focused outline; they must not remove it.
+    const focused = document.activeElement as Element
+    expect(focused).toHaveAttribute('data-count-object', '1')
+    fireEvent.keyDown(focused, { key: ' ', repeat: true })
+    fireEvent.keyDown(focused, { key: ' ', repeat: true })
+    expect(props.onToggleObject).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('g[data-count-object="1"]')).not.toBeNull()
+  })
+
+  it('removed outlines are not drawn, so they cannot be clicked back (#1977)', () => {
     renderDialog(adjustProps({ removed: [1] }))
-    const removedG = document.querySelector('g[data-count-object="1"]')
-    expect(removedG).toHaveAttribute('data-removed')
-    expect(removedG).toHaveAttribute('opacity', '0.3')
-    expect(
-      screen.getByRole('button', { name: /outline — removed; activate to restore/ }),
-    ).toBeInTheDocument()
+    expect(document.querySelector('g[data-count-object="1"]')).toBeNull()
+    expect(document.querySelector('g[data-count-object="0"]')).not.toBeNull()
+    expect(screen.getAllByRole('button', { name: /outline — activate to remove/ })).toHaveLength(4)
+    expect(screen.queryByRole('button', { name: /restore/ })).not.toBeInTheDocument()
+  })
+
+  it('removed outlines added by the user are not drawn either', () => {
+    const added = [
+      {
+        group: 0,
+        centroid: [10, 10],
+        polygon: [
+          [0, 0],
+          [20, 0],
+          [20, 20],
+        ],
+      },
+    ]
+    // Combined index 5 = the first added outline after the 5 detected objects.
+    renderDialog(adjustProps({ added, removed: [5] }))
+    expect(document.querySelector('g[data-count-object="5"]')).toBeNull()
   })
 
   it('a click on empty space adds a median-sized outline there', () => {
